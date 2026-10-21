@@ -8,6 +8,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![WebUI](https://img.shields.io/badge/UI-WebUI%20%28FastAPI%29-blueviolet.svg)](#)
 [![Tests](https://img.shields.io/badge/tests-1908%20passed-brightgreen.svg)](#测试与验证)
+[![CI](https://img.shields.io/badge/CI-4%2F4%20matrix%20passed-brightgreen.svg)](#测试与验证)
 
 </div>
 
@@ -20,6 +21,8 @@
 > - 阶段 0～9 已在离线环境完成：运行时缓存、稳定前缀、主模型原生视觉、
 >   独立视觉接口、协议转换、WebUI、usage 口径与合成基准。
 > - 最后一次干净 venv 验证：`1908 passed`，`ruff check .` 通过。
+> - GitHub Actions 当前 `main` 提交通过 Ubuntu/Windows × Python 3.11/3.12
+>   四矩阵（pytest + ruff）。
 > - 未调用真实付费视觉 API，未发送 QQ 消息，未重启生产服务。
 > - 没有真实服务端 KV 命中率数据；本地估算和前缀测试不等于线上指标。
 
@@ -343,6 +346,20 @@ httpx 0.28.1
 > 两者分别在报告中标注，不声称完全一致。
 > `tests/test_kv_cache_real.py` 需要真实 API/网络，默认不跑。
 
+### GitHub Actions
+
+当前 `main` 提交已在 GitHub Actions 的四个矩阵任务上通过：
+
+```text
+Ubuntu 3.11  ✅ pytest + ruff
+Ubuntu 3.12  ✅ pytest + ruff
+Windows 3.11 ✅ pytest + ruff
+Windows 3.12 ✅ pytest + ruff
+```
+
+Windows 测试中的 FIFO 断言按平台跳过，符号链接创建受权限限制时跳过；
+其余图片路径/原子写/安全校验照常运行。
+
 ### 定向测试
 
 ```bash
@@ -457,8 +474,9 @@ Debata-Refactor/
 4. **旧无 metadata 的 runtime 记录保守保留**，可能增加部分旧历史 prompt；
    这是为避免误删真实聊天。
 5. **旧 usage 记录按 legacy 展示**：新旧口径不直接混算命中率。
-6. **当前验证平台只有 Linux ARM64 / Python 3.12**；Windows/x86 由 CI 配置覆盖，
-   但本次提交没有重新跑远端矩阵。
+6. **本机只验证 Linux ARM64 / Python 3.12**；GitHub Actions 当前 `main`
+   提交已通过 Ubuntu/Windows × Python 3.11/3.12 四矩阵，但真实视觉 API
+   仍未在 CI 中调用。
 7. **本仓库是重构快照**，不包含上游完整提交历史；上游稳定版本见
    [binglang001/Debata_Agent](https://github.com/binglang001/Debata_Agent)。
 
