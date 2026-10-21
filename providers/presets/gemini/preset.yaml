@@ -1,0 +1,27 @@
+id: gemini
+display_name: Google Gemini
+protocol: openai_compat
+base_url: https://generativelanguage.googleapis.com/v1beta/openai
+registration_url: https://aistudio.google.com/apikey
+reasoning_style: openai_native
+
+models:
+  - id: gemini-3-pro
+    display_name: Gemini 3 Pro（推荐 · 2M 上下文）
+    capabilities: [chat, tool_call, reasoning, vision]
+    context_length: 2000000
+
+  - id: gemini-2.5-flash
+    display_name: Gemini 2.5 Flash（推荐 · 性价比）
+    capabilities: [chat, tool_call, vision]
+    context_length: 1000000
+
+  - id: gemini-2.5-pro
+    display_name: Gemini 2.5 Pro
+    capabilities: [chat, tool_call, reasoning, vision]
+    context_length: 1000000
+
+  - id: gemini-2.5-flash-lite
+    display_name: Gemini 2.5 Flash Lite
+    capabilities: [chat, tool_call, vision]
+    context_length: 1000000

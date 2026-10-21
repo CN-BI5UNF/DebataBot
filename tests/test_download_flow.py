@@ -1,0 +1,294 @@
+"""模型安装/历史下载入口回归测试。"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from pathlib import Path
+
+import pytest
+
+from plugins import DownloadSource, PluginMeta, PluginRecord, PluginStatus
+from plugins.downloader import _download_one
+
+
+class _SlowResponse:
+    headers: dict[str, str] = {}
+
+    def raise_for_status(self) -> None:
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def aiter_bytes(self, _chunk_size: int):
+        yield b"partial"
+        await asyncio.sleep(60)
+
+
+class _SlowClient:
+    def stream(self, *_args, **_kwargs):
+        return _SlowResponse()
+
+
+@pytest.mark.asyncio
+async def test_download_cancel_removes_partial_file(tmp_path: Path):
+    src = DownloadSource(
+        url="https://example.com/model.bin",
+        dest_filename="model.bin",
+        size_bytes=1024,
+    )
+    dest = tmp_path / src.dest_filename
+
+    task = asyncio.create_task(_download_one(_SlowClient(), src, dest, None))
+    for _ in range(50):
+        if dest.exists() and dest.stat().st_size > 0:
+            break
+        await asyncio.sleep(0.01)
+    assert dest.exists()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not dest.exists()
+
+
+def test_install_guide_matches_nested_model_folder_and_preserves_dest_prefix(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from webui.model_guide import (
+        find_matching_record_for_folder,
+        install_model_folder,
+    )
+
+    monkeypatch.setenv("DEBATA_MODELS_DIR", str(tmp_path / "models"))
+    source = tmp_path / "downloads" / "large-v3"
+    source.mkdir(parents=True)
+    (source / "model.bin").write_bytes(b"model")
+    (source / "config.json").write_text("{}", encoding="utf-8")
+    (source / "extra.json").write_text("{}", encoding="utf-8")
+
+    record = PluginRecord(
+        meta=PluginMeta(
+            name="voxcpm2",
+            display_name="VoxCPM2",
+            kind="tts",
+            model_dir="VoxCPM2",
+            download_sources=[
+                DownloadSource(
+                    url="https://example.com/model.bin",
+                    dest_filename="large-v3/model.bin",
+                ),
+                DownloadSource(
+                    url="https://example.com/config.json",
+                    dest_filename="large-v3/config.json",
+                ),
+            ],
+        ),
+        status=PluginStatus.NOT_INSTALLED,
+    )
+
+    match = find_matching_record_for_folder(tmp_path / "downloads", [record])
+    assert match == (record, source)
+
+    install_model_folder(source, record)
+
+    target = tmp_path / "models" / "VoxCPM2" / "large-v3"
+    assert (target / "model.bin").read_bytes() == b"model"
+    assert (target / "config.json").read_text(encoding="utf-8") == "{}"
+    assert (target / "extra.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_install_guide_markdown_contains_manual_steps(tmp_path: Path, monkeypatch):
+    from webui.model_guide import build_model_install_markdown
+
+    monkeypatch.setenv("DEBATA_MODELS_DIR", str(tmp_path / "models"))
+    record = PluginRecord(
+        meta=PluginMeta(
+            name="demo",
+            display_name="Demo Model",
+            kind="tts",
+            model_dir="demo",
+            download_url="https://example.com/demo",
+            download_sources=[
+                DownloadSource(
+                    url="https://example.com/model.bin",
+                    dest_filename="model.bin",
+                )
+            ],
+        ),
+        status=PluginStatus.NOT_INSTALLED,
+    )
+
+    text = build_model_install_markdown(record)
+
+    assert "Demo Model 安装指引" in text
+    assert "https://example.com/demo" in text
+    assert str(tmp_path / "models" / "demo" / "model.bin") in text
+    assert "拖进模型管理页" in text
+
+
+def test_voxcpm2_install_guide_mentions_project_ffmpeg_shared_dir():
+    from webui.model_guide import build_model_install_markdown
+
+    record = PluginRecord(
+        meta=PluginMeta(
+            name="voxcpm2",
+            display_name="VoxCPM2",
+            kind="tts",
+            model_dir="VoxCPM2",
+            download_url="https://huggingface.co/OpenBMB/VoxCPM2",
+        ),
+        status=PluginStatus.NOT_INSTALLED,
+    )
+
+    text = build_model_install_markdown(record)
+
+    assert "full-shared" in text
+    assert "data" in text
+    assert "tools" in text
+    assert "ffmpeg" in text
+    assert "https://ffmpeg.org/download.html" in text
+    assert "https://www.gyan.dev/ffmpeg/builds/" in text
+    assert "avutil-*.dll" in text
+
+
+def test_missing_python_deps_uses_import_name_mapping(monkeypatch):
+    from webui import model_guide as model_install_guide
+
+    record = PluginRecord(
+        meta=PluginMeta(
+            name="demo",
+            display_name="Demo",
+            kind="asr",
+            model_dir="demo",
+            python_deps=[
+                "sentence-transformers>=2.7.0",
+                "soundfile>=0.12.1",
+            ],
+        ),
+        status=PluginStatus.NOT_INSTALLED,
+    )
+
+    def fake_find_spec(name: str):
+        return object() if name == "soundfile" else None
+
+    monkeypatch.setattr(model_install_guide.importlib.util, "find_spec", fake_find_spec)
+
+    assert model_install_guide.missing_python_deps(record) == [
+        "sentence-transformers>=2.7.0",
+    ]
+
+
+def test_pip_install_args_use_selected_index():
+    from webui import model_guide as model_install_guide
+
+    deps = ["voxcpm>=2.0.0"]
+
+    assert model_install_guide.pip_install_args(deps, "tsinghua") == [
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--no-input",
+        "-i",
+        "https://pypi.tuna.tsinghua.edu.cn/simple",
+        "voxcpm>=2.0.0",
+    ]
+    assert "-i" not in model_install_guide.pip_install_args(deps, "official")
+
+
+def test_dependency_install_env_removes_proxy(monkeypatch):
+    from webui import model_guide as model_install_guide
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example")
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.example")
+
+    env = model_install_guide.dependency_install_env(dict(os.environ))
+
+    assert "HTTPS_PROXY" not in env
+    assert "HTTP_PROXY" not in env
+    assert env["PIP_NO_INPUT"] == "1"
+
+
+def test_plugin_install_status_requires_download_sources(tmp_path: Path):
+    from plugins.base import PluginManager
+
+    manager = PluginManager(tmp_path / "plugins")
+    meta = PluginMeta(
+        name="demo",
+        display_name="Demo",
+        kind="asr",
+        model_dir=str(tmp_path / "model"),
+        auto_download=True,
+        download_sources=[
+            DownloadSource(
+                url="https://example.com/model.bin",
+                dest_filename="large-v3/model.bin",
+            ),
+            DownloadSource(
+                url="https://example.com/config.json",
+                dest_filename="large-v3/config.json",
+            ),
+        ],
+    )
+    (tmp_path / "model" / "large-v3").mkdir(parents=True)
+    (tmp_path / "model" / "large-v3" / "model.bin").write_bytes(b"x")
+
+    assert manager._detect_install_status(meta) == PluginStatus.NOT_INSTALLED
+
+    (tmp_path / "model" / "large-v3" / "config.json").write_text("{}", encoding="utf-8")
+    assert manager._detect_install_status(meta) == PluginStatus.INSTALLED
+
+
+def test_embedding_plugin_accepts_sentence_transformer_bin_weights(tmp_path: Path):
+    from plugins.base import PluginManager
+
+    manager = PluginManager(tmp_path / "plugins")
+    model_dir = tmp_path / "bge"
+    (model_dir / "1_Pooling").mkdir(parents=True)
+    for filename in (
+        "config.json",
+        "modules.json",
+        "sentence_bert_config.json",
+        "tokenizer_config.json",
+        "vocab.txt",
+        "1_Pooling/config.json",
+    ):
+        (model_dir / filename).write_text("{}", encoding="utf-8")
+    (model_dir / "pytorch_model.bin").write_bytes(b"x")
+
+    meta = PluginMeta(
+        name="embedding_bge_zh",
+        display_name="BGE",
+        kind="embedding",
+        model_dir=str(model_dir),
+        download_sources=[
+            DownloadSource(
+                url="https://example.com/model.safetensors",
+                dest_filename="model.safetensors",
+            ),
+        ],
+    )
+
+    assert manager._detect_install_status(meta) == PluginStatus.INSTALLED
+
+
+def test_downloader_uses_only_configured_proxy(monkeypatch):
+    from plugins import downloader
+
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("http_proxy", raising=False)
+
+    assert downloader._build_proxy_url() is None
+
+    monkeypatch.setenv("HTTPS_PROXY", "https://proxy.example")
+
+    assert downloader._build_proxy_url() == "https://proxy.example"

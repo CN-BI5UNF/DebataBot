@@ -1,0 +1,540 @@
+"""真实 QQ 可见聊天时间线。
+
+该模块只记录 QQ 上真实可见的消息：
+    - 入站消息：通过白名单/限速后进入 pipeline 的消息。
+    - 出站消息：adapter 真实发送成功并返回 msg_id 后的消息。
+
+Agent 工具参数、stale/unsent 草稿、system note 和模型思考不进入这里。
+"""
+
+from __future__ import annotations
+
+import copy
+import logging
+import queue
+import re
+import threading
+import time
+from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+from adapters.types import IncomingMessage, MediaSegment, MediaType
+from utils import get_time
+
+_PARAM_SPLIT_RE = re.compile(r",(?=\w+=)")
+logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class ChatTimelineMessage:
+    conversation_id: str
+    direction: Literal["inbound", "outbound"]
+    timestamp: float
+    time_text: str
+    sender_name: str
+    sender_id: str
+    target_id: str | None
+    group_id: str | None
+    msg_id: str | None
+    text: str
+    raw_message: str
+    reply_to: str | None = None
+    cq_segments: list[dict[str, Any]] = field(default_factory=list)
+    attachments: list[dict[str, Any]] = field(default_factory=list)
+    source: Literal["qq"] = "qq"
+
+
+ChatTimelineListener = Callable[[ChatTimelineMessage], None]
+
+
+class ChatTimelineStore:
+    """每会话滑动窗口，默认保留最近 1000 条真实 QQ 消息。"""
+
+    def __init__(self, *, max_per_conversation: int = 1000) -> None:
+        self.max_per_conversation = max(1, int(max_per_conversation))
+        self._items: dict[str, deque[ChatTimelineMessage]] = {}
+        self._lock = threading.RLock()
+        self._listeners: dict[int, ChatTimelineListener] = {}
+        self._next_listener_id = 0
+        self._notify_queue: queue.Queue[ChatTimelineMessage] = queue.Queue()
+        self._notify_worker: threading.Thread | None = None
+
+    def append(self, message: ChatTimelineMessage) -> None:
+        stored = _copy_message(message)
+        with self._lock:
+            bucket = self._items.get(stored.conversation_id)
+            if bucket is None:
+                bucket = deque(maxlen=self.max_per_conversation)
+                self._items[stored.conversation_id] = bucket
+            bucket.append(stored)
+            should_notify = bool(self._listeners)
+        if should_notify:
+            self._notify_queue.put_nowait(stored)
+
+    def subscribe(self, listener: ChatTimelineListener) -> Callable[[], None]:
+        """订阅新消息通知，返回可重复调用的取消订阅函数。"""
+        if not callable(listener):
+            raise TypeError("listener must be callable")
+        with self._lock:
+            listener_id = self._next_listener_id
+            self._next_listener_id += 1
+            self._listeners[listener_id] = listener
+            self._ensure_notify_worker_locked()
+
+        active = True
+        unsubscribe_lock = threading.Lock()
+
+        def unsubscribe() -> None:
+            nonlocal active
+            with unsubscribe_lock:
+                if not active:
+                    return
+                active = False
+            with self._lock:
+                self._listeners.pop(listener_id, None)
+
+        return unsubscribe
+
+    def append_inbound_event(
+        self,
+        event: IncomingMessage,
+        *,
+        conversation_id: str,
+        text: str,
+        timestamp: float | None = None,
+    ) -> None:
+        timestamp = float(timestamp if timestamp is not None else time.time())
+        raw_message = event.raw_message or text
+        self.append(
+            ChatTimelineMessage(
+                conversation_id=conversation_id,
+                direction="inbound",
+                timestamp=timestamp,
+                time_text=_format_time(timestamp),
+                sender_name=event.nickname or event.user_id,
+                sender_id=event.user_id,
+                target_id=event.group_id if event.is_group() else event.user_id,
+                group_id=event.group_id,
+                msg_id=event.message_id,
+                reply_to=event.reply_to,
+                text=text,
+                raw_message=raw_message,
+                cq_segments=_parse_cq_segments(raw_message),
+                attachments=_attachments_from_event(event, raw_message),
+            )
+        )
+
+    def append_outbound_action(
+        self,
+        action: dict[str, Any],
+        *,
+        conversation_id: str,
+        msg_id: str | None,
+        self_id: str | None = None,
+        timestamp: float | None = None,
+    ) -> None:
+        timestamp = float(timestamp if timestamp is not None else time.time())
+        target_scope = str(action.get("target_scope") or "")
+        target_id = str(action.get("target_id") or "")
+        raw_message = str(action.get("content") or "")
+        label = str(action.get("label") or raw_message)
+        sender_id = str(self_id or "self")
+        sender_name = "我"
+        self.append(
+            ChatTimelineMessage(
+                conversation_id=conversation_id,
+                direction="outbound",
+                timestamp=timestamp,
+                time_text=_format_time(timestamp),
+                sender_name=sender_name,
+                sender_id=sender_id,
+                target_id=target_id,
+                group_id=target_id if target_scope == "group" else None,
+                msg_id=str(msg_id) if msg_id is not None else None,
+                reply_to=None,
+                text=label,
+                raw_message=raw_message,
+                cq_segments=_parse_cq_segments(raw_message),
+                attachments=_attachments_from_raw(raw_message),
+            )
+        )
+
+    def recent(
+        self,
+        conversation_id: str,
+        limit: int,
+        *,
+        since_msg_id: str | None = None,
+        before_msg_id: str | None = None,
+    ) -> list[ChatTimelineMessage]:
+        with self._lock:
+            items = [_copy_message(item) for item in self._items.get(conversation_id) or []]
+        if before_msg_id:
+            items = _items_before_msg_id(items, before_msg_id)
+        if since_msg_id:
+            items = _items_since_msg_id(items, since_msg_id)
+        limit = max(1, min(self.max_per_conversation, int(limit)))
+        return items[-limit:]
+
+    def conversation_ids(self) -> list[str]:
+        """返回当前有真实消息的会话 ID 拷贝。"""
+        with self._lock:
+            return list(self._items)
+
+    def snapshot(self) -> dict[str, list[ChatTimelineMessage]]:
+        """返回所有会话真实消息的安全快照。"""
+        with self._lock:
+            return {
+                conversation_id: [_copy_message(item) for item in items]
+                for conversation_id, items in self._items.items()
+            }
+
+    def to_markdown(
+        self,
+        messages: list[ChatTimelineMessage],
+        *,
+        include_raw: bool = False,
+        compact: bool = True,
+    ) -> str:
+        lines: list[str] = []
+        for message in messages:
+            content = _timeline_content(message, compact=compact)
+            refs: list[str] = []
+            if message.reply_to:
+                refs.append(f"reply_to={message.reply_to}")
+            if message.msg_id:
+                refs.append(f"msg_id={message.msg_id}")
+            suffix = f" [{' '.join(refs)}]" if refs else ""
+            lines.append(
+                f"{message.time_text} {message.sender_name}({message.sender_id})："
+                f"{content}{suffix}"
+            )
+            if include_raw and message.raw_message and message.raw_message != content:
+                lines.append(f"    raw: {message.raw_message}")
+        return "\n".join(lines)
+
+    def _ensure_notify_worker_locked(self) -> None:
+        worker = self._notify_worker
+        if worker is not None and worker.is_alive():
+            return
+        worker = threading.Thread(
+            target=self._notify_loop,
+            name="chat-timeline-listeners",
+            daemon=True,
+        )
+        self._notify_worker = worker
+        worker.start()
+
+    def _notify_loop(self) -> None:
+        while True:
+            try:
+                message = self._notify_queue.get(timeout=1.0)
+            except queue.Empty:
+                with self._lock:
+                    if not self._listeners:
+                        self._notify_worker = None
+                        return
+                continue
+            try:
+                for listener in self._listener_snapshot():
+                    try:
+                        listener(_copy_message(message))
+                    except Exception:
+                        logger.warning("聊天时间线 listener 处理失败", exc_info=True)
+            finally:
+                self._notify_queue.task_done()
+
+    def _listener_snapshot(self) -> list[ChatTimelineListener]:
+        with self._lock:
+            return list(self._listeners.values())
+
+
+def _format_time(timestamp: float) -> str:
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+    except (OverflowError, OSError, ValueError):
+        return get_time()
+
+
+def _copy_message(message: ChatTimelineMessage) -> ChatTimelineMessage:
+    return copy.deepcopy(message)
+
+
+def _items_before_msg_id(
+    items: list[ChatTimelineMessage],
+    msg_id: str,
+) -> list[ChatTimelineMessage]:
+    for index, item in enumerate(items):
+        if str(item.msg_id or "") == str(msg_id):
+            return items[:index]
+    return items
+
+
+def _items_since_msg_id(
+    items: list[ChatTimelineMessage],
+    msg_id: str,
+) -> list[ChatTimelineMessage]:
+    for index, item in enumerate(items):
+        if str(item.msg_id or "") == str(msg_id):
+            return items[index + 1 :]
+    return items
+
+
+def _timeline_content(message: ChatTimelineMessage, *, compact: bool = True) -> str:
+    text = (message.text or "").strip()
+    rendered_text = _compact_text_attachments(text) if compact and text else text
+    if message.attachments:
+        attachment_texts = [
+            rendered
+            for item in message.attachments
+            if (rendered := _format_attachment_if_missing(item, rendered_text, compact=compact))
+        ]
+        if rendered_text and attachment_texts:
+            return f"{rendered_text} {' '.join(attachment_texts)}"
+        if rendered_text:
+            return rendered_text
+        return " ".join(_format_attachment(item, compact=compact) for item in message.attachments)
+    if rendered_text:
+        return rendered_text
+    return "(空消息)"
+
+
+def _attachments_from_event(
+    event: IncomingMessage,
+    raw_message: str,
+) -> list[dict[str, Any]]:
+    attachments = [_attachment_from_media(seg) for seg in event.media]
+    attachments.extend(_attachments_from_raw(raw_message))
+    return _dedupe_attachments([item for item in attachments if item])
+
+
+def _attachment_from_media(seg: MediaSegment) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "type": _media_type_value(seg.type),
+    }
+    if seg.url:
+        item["url"] = seg.url
+    if seg.file_id:
+        if item["type"] == "forward":
+            item["forward_id"] = seg.file_id
+        else:
+            item["file"] = seg.file_id
+    if seg.name:
+        item["name"] = seg.name
+    if seg.extra:
+        item["extra"] = dict(seg.extra)
+        if seg.extra.get("summary"):
+            item["summary"] = seg.extra.get("summary")
+    return item
+
+
+def _media_type_value(value: MediaType | str) -> str:
+    if isinstance(value, MediaType):
+        return value.value
+    return str(value)
+
+
+def _attachments_from_raw(raw_message: str) -> list[dict[str, Any]]:
+    attachments: list[dict[str, Any]] = []
+    for segment in _parse_cq_segments(raw_message):
+        cq_type = str(segment.get("type") or "")
+        params = segment.get("data") if isinstance(segment.get("data"), dict) else {}
+        if cq_type == "image":
+            item = _attachment_from_params("image", params, segment.get("raw"))
+        elif cq_type == "face":
+            item = _attachment_from_params("face", params, segment.get("raw"))
+        elif cq_type == "file":
+            item = _attachment_from_params("file", params, segment.get("raw"))
+        elif cq_type in {"record", "voice"}:
+            item = _attachment_from_params("voice", params, segment.get("raw"))
+        elif cq_type == "forward":
+            item = _attachment_from_params("forward", params, segment.get("raw"))
+            if params.get("id"):
+                item["forward_id"] = params.get("id")
+        else:
+            continue
+        attachments.append(item)
+    return attachments
+
+
+def _attachment_from_params(
+    item_type: str,
+    params: dict[str, str],
+    raw: Any,
+) -> dict[str, Any]:
+    item: dict[str, Any] = {"type": item_type}
+    for src, dst in (
+        ("summary", "summary"),
+        ("url", "url"),
+        ("file", "file"),
+        ("file_id", "file"),
+        ("workspace", "workspace"),
+        ("id", "id"),
+        ("name", "name"),
+    ):
+        if params.get(src):
+            item[dst] = params[src]
+    if raw:
+        item["raw"] = str(raw)
+    return item
+
+
+def _parse_cq_segments(raw_message: str) -> list[dict[str, Any]]:
+    if not raw_message:
+        return []
+    segments: list[dict[str, Any]] = []
+    for segment_match in _iter_cq_segments(raw_message):
+        body = segment_match["body"]
+        if "," in body:
+            cq_type, params_str = body.split(",", 1)
+        else:
+            cq_type, params_str = body, ""
+        raw = segment_match["raw"]
+        segments.append(
+            {
+                "type": cq_type,
+                "data": _parse_cq_params(params_str),
+                "raw": raw,
+            }
+        )
+    return segments
+
+
+def _iter_cq_segments(raw_message: str) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    i = 0
+    while True:
+        start = raw_message.find("[CQ:", i)
+        if start < 0:
+            break
+        pos = start + 4
+        while True:
+            end = raw_message.find("]", pos)
+            if end < 0:
+                return segments
+            tail = raw_message[end + 1 :]
+            if not re.match(r"^,\w+=", tail):
+                break
+            pos = end + 1
+        raw = raw_message[start : end + 1]
+        segments.append(
+            {
+                "body": raw_message[start + 4 : end],
+                "raw": raw,
+            }
+        )
+        i = end + 1
+    return segments
+
+
+def _parse_cq_params(params_str: str) -> dict[str, str]:
+    if not params_str:
+        return {}
+    params: dict[str, str] = {}
+    for part in _PARAM_SPLIT_RE.split(params_str):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        params[key] = value
+    return params
+
+
+def _dedupe_attachments(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for item in items:
+        key = (
+            str(item.get("type") or ""),
+            str(item.get("url") or ""),
+            str(item.get("file") or ""),
+            str(item.get("forward_id") or item.get("id") or ""),
+        )
+        existing = seen.get(key)
+        if existing is not None:
+            for field, value in item.items():
+                if value and not existing.get(field):
+                    existing[field] = value
+            continue
+        seen[key] = item
+        result.append(item)
+    return result
+
+
+def _format_attachment(item: dict[str, Any], *, compact: bool = False) -> str:
+    item_type = str(item.get("type") or "unknown")
+    if compact:
+        return _format_attachment_compact(item, item_type)
+    parts = [item_type]
+    for key in ("summary", "url", "file", "forward_id", "name", "id"):
+        value = item.get(key)
+        if value:
+            parts.append(f"{key}={value}")
+    return "[" + " ".join(parts) + "]"
+
+
+def _format_attachment_compact(item: dict[str, Any], item_type: str) -> str:
+    if item_type == "image":
+        workspace = item.get("workspace")
+        name = item.get("name")
+        if workspace:
+            return f"[图片 workspace={workspace}]"
+        if name:
+            return f"[图片 name={name}]"
+        return "[图片]"
+    if item_type == "face":
+        face_id = item.get("id") or item.get("file")
+        return f"[表情{face_id}]" if face_id else "[表情]"
+    if item_type == "forward":
+        forward_id = item.get("forward_id") or item.get("id")
+        return f"[合并转发 id={forward_id}]" if forward_id else "[合并转发]"
+    if item_type in {"file", "voice", "record", "video"}:
+        name = item.get("name") or item.get("file")
+        return f"[{item_type} {name}]" if name else f"[{item_type}]"
+    return f"[{item_type}]"
+
+
+def _compact_text_attachments(text: str) -> str:
+    """压缩正文里已经展开的图片/转发 CQ 可读文本，保留可操作字段。"""
+    text = re.sub(
+        r"\[图片[^\]]*\]",
+        lambda m: (
+            f"[图片 workspace={workspace.group(1)}]"
+            if (workspace := re.search(r"workspace=([^\]\s]+)", m.group(0)))
+            else "[图片]"
+        ),
+        text,
+    )
+    text = re.sub(
+        r"\[image summary=[^\]]*\]",
+        "[图片]",
+        text,
+    )
+    text = re.sub(
+        r"\[合并转发[^\]]*?id=([^\]\s]+)[^\]]*\]",
+        r"[合并转发 id=\1]",
+        text,
+    )
+    return text
+
+
+def _format_attachment_if_missing(
+    item: dict[str, Any],
+    text: str,
+    *,
+    compact: bool = True,
+) -> str:
+    """只补充正文里没有体现的关键附件信息，避免重复刷屏。"""
+    if compact:
+        compacted = _format_attachment(item, compact=True)
+        if compacted == "[图片]" and "[图片" in text:
+            return ""
+        if compacted and compacted not in text:
+            return compacted
+        return ""
+    for key in ("url", "file", "forward_id", "id"):
+        value = item.get(key)
+        if value and str(value) not in text:
+            return _format_attachment(item)
+    return ""

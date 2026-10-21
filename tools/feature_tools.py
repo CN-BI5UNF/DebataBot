@@ -1,0 +1,491 @@
+"""可选功能工具：图像理解 / 联网搜索 / 天气查询。
+
+设计：
+    - 工具始终注册（让 LLM schema 稳定，避免在 file/rag/启用切换时大幅重排）
+    - 但运行时检查 ctx 是否注入对应 service，未注入则返回 {"ok": false, "error": "未启用..."}
+    - 这样 build_default_registry 决定的"启用 vs 不启用"通过 ctx 字段控制，
+      ToolRegistry 本身的 schema 不变化（缓存友好）
+
+⚠️ 严格来说"schema 稳定"和"按 feature 启用工具列表"有矛盾。
+本项目采用折中：默认按 feature.enabled 决定注册（影响 schema），
+但允许调用方自行决定是否启用。详见 build_default_registry。
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+from html import unescape
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from adapters.types import Target
+from utils.token_budget import TokenEstimator
+
+from .base import ToolContext, tool
+from .result_shrink import add_condensed_marker, tool_budget
+from .schemas import (
+    DescribeImageArgs,
+    GetWeatherArgs,
+    SendVoiceMessageArgs,
+    WebSearchArgs,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@tool(
+    name="describe_image",
+    description=(
+        "理解图片内容。传入图片 URL、已存在 workspace 路径或 data URL，"
+        "返回图片的文字描述。主模型已原生附图时优先直接看图，只有需要额外专门"
+        "分析时才调用本工具。没有真实图片块/路径/URL 时不要凭文件名猜画面。"
+        "不要根据 msg_id 猜 incoming/img_*.jpg。"
+        "可根据场景自定义 prompt，如识别文字、分析表情、判断场景等。"
+    ),
+    args_model=DescribeImageArgs,
+    category="feature",
+    feature="vision",
+)
+async def describe_image(args: DescribeImageArgs, ctx: ToolContext) -> dict:
+    if ctx.vision is None:
+        ctx.extras["vision_unavailable_this_turn"] = "未启用图像理解功能"
+        return {
+            "ok": False,
+            "status": "failed",
+            "brief": "未启用图像理解功能。",
+            "error": "未启用图像理解功能",
+        }
+
+    try:
+        image_url = await _normalize_image_input(args.image_url, ctx)
+        question = (args.question or args.prompt or "").strip()
+        raw = await ctx.vision.describe(image_url, question)
+    except ImageInputError as e:
+        short_error = str(e)
+        ctx.extras["vision_unavailable_this_turn"] = short_error
+        return _image_input_failure_result(args.image_url, args.question or args.prompt, short_error)
+    except Exception as e:
+        short_error = _short_image_error(e)
+        ctx.extras["vision_unavailable_this_turn"] = short_error
+        logger.warning("describe_image 失败: %s", short_error)
+        return {
+            "ok": False,
+            "status": "failed",
+            "brief": "图片理解失败。",
+            "error": short_error,
+            "summary": "图片识别失败",
+            "data": {
+                "image_ref": _compact_image_ref(args.image_url),
+                "question": (args.question or args.prompt or "").strip() or None,
+            },
+        }
+
+    parsed = _vision_result(raw)
+    description = parsed["description"]
+    summary = parsed["summary"]
+    result: dict[str, Any] = {
+        "ok": True,
+        "status": "inline",
+        "brief": "已完成图片理解。",
+        "summary": summary,
+        "data": {
+            "image_ref": _compact_image_ref(args.image_url),
+            "question": question or None,
+        },
+    }
+    threshold = tool_budget("describe_image", ctx).artifact_threshold
+    if question:
+        threshold = max(threshold, tool_budget("describe_image", ctx).inline * 2)
+
+    if TokenEstimator().estimate_text(description) > threshold:
+        saved = _save_image_description(args.image_url, description, ctx)
+        if saved:
+            result["status"] = "artifact"
+            result["brief"] = f"图片描述较长，完整描述已写入 {saved}。"
+            result["full_saved"] = saved
+            result["artifact"] = {
+                "path": saved,
+                "type": "markdown",
+            }
+            result["next"] = "需要完整图片描述时读取 artifact.path；也可带更具体 question 重调 describe_image。"
+        else:
+            result["description"] = description[:2000]
+            add_condensed_marker(
+                result,
+                reason="图片描述过长且 workspace 不可写，已截断",
+                full="配置 workspace 后可保存完整描述；也可带 question 重调 describe_image。",
+            )
+    else:
+        result["description"] = description
+    return result
+
+
+class ImageInputError(ValueError):
+    """图片入参在调用视觉 provider 前即判定不可用。"""
+
+
+async def _normalize_image_input(image_url: str, ctx: ToolContext) -> str:
+    """统一走安全 loader，返回规范化后的受管 data URL。"""
+    value = _image_ref_value(image_url)
+    if not value:
+        raise ImageInputError("图片引用为空")
+    from features.vision.image_assets import ImageAssetError, prepare_image_data_url
+
+    if value.lower().startswith(("data:", "http://", "https://")):
+        try:
+            return await prepare_image_data_url(value)
+        except ImageAssetError as exc:
+            raise ImageInputError(exc.safe_message()) from None
+
+    from .workspace import WorkspaceError, resolve_in_workspace
+
+    try:
+        path = resolve_in_workspace(value, ctx.workspace_dir)
+    except WorkspaceError as e:
+        raise ImageInputError(
+            _unavailable_workspace_image_error(value, image_url, ctx)
+        ) from e
+    if not path.is_file():
+        raise ImageInputError(_missing_workspace_image_error(value, image_url))
+    try:
+        return await prepare_image_data_url(path, trusted_local=True)
+    except ImageAssetError as exc:
+        raise ImageInputError(exc.safe_message()) from None
+
+
+_IMAGE_REF_FIELD_RE = re.compile(r"(?:^|[\s\[])(workspace|url)=([^\]\s]+)")
+
+
+def _image_ref_fields(image_url: str) -> dict[str, str]:
+    value = unescape((image_url or "").strip())
+    if not value:
+        return {}
+    return {
+        m.group(1): m.group(2).strip()
+        for m in _IMAGE_REF_FIELD_RE.finditer(value)
+        if m.group(2).strip()
+    }
+
+
+def _image_ref_value(image_url: str) -> str:
+    value = unescape((image_url or "").strip())
+    if not value:
+        return ""
+    fields = _image_ref_fields(value)
+    if fields.get("workspace"):
+        return fields["workspace"].strip()
+    if fields.get("url"):
+        return fields["url"].strip()
+    if value.startswith("workspace="):
+        return value.split("=", 1)[1].strip()
+    if value.startswith("url="):
+        return value.split("=", 1)[1].strip()
+    return value.strip("[] ")
+
+
+def _unavailable_workspace_image_error(value: str, image_ref: str, ctx: ToolContext) -> str:
+    hint = _image_retry_hint(image_ref)
+    compact = _compact_image_ref(value)
+    if ctx.workspace_dir is None:
+        return f"workspace 未配置，无法读取相对图片路径 {compact!r}。{hint}"
+    return f"图片路径 {compact!r} 不能作为可用 workspace 图片读取。{hint}"
+
+
+def _missing_workspace_image_error(value: str, image_ref: str) -> str:
+    hint = _image_retry_hint(image_ref)
+    return f"workspace 图片不存在：{_compact_image_ref(value)!r}。{hint}"
+
+
+def _image_retry_hint(image_ref: str) -> str:
+    fields = _image_ref_fields(image_ref)
+    if fields.get("url") and fields.get("workspace"):
+        return (
+            "消息标记同时包含 url= 和 workspace= 时，本工具按现有语义优先使用 workspace=；"
+            "该路径不可用时，请改为直接传消息中真实出现的 url= 图片 URL，"
+            "或传一个已经存在的 workspace 路径。不要根据 msg_id 猜 incoming/img_*.jpg。"
+        )
+    return (
+        "请使用消息中真实出现的 [图片 url=...]，或一个已经存在的 workspace 路径；"
+        "不要根据 msg_id 猜 incoming/img_*.jpg。"
+    )
+
+
+def _image_input_failure_result(image_ref: str, prompt: str | None, error: str) -> dict:
+    question = (prompt or "").strip() or None
+    fields = _image_ref_fields(image_ref)
+    data: dict[str, Any] = {
+        "image_ref": _compact_image_ref(image_ref),
+        "question": question,
+        "retry_hint": (
+            "改用用户消息里真实出现的 [图片 url=...]，或确认 workspace 路径存在后再调用 describe_image。"
+        ),
+    }
+    if fields.get("url"):
+        data["message_url"] = _compact_image_ref(fields["url"])
+    if fields.get("workspace"):
+        workspace = fields["workspace"]
+        path = Path(workspace)
+        data["workspace_path"] = path.name if path.is_absolute() else workspace
+
+    return {
+        "ok": False,
+        "status": "failed",
+        "brief": "图片引用不可用。",
+        "error": error,
+        "summary": "图片识别失败",
+        "data": data,
+    }
+
+
+def _short_image_error(error: Exception) -> str:
+    text = str(error)
+    lowered = text.lower()
+    if "图片链接下载失败" in text:
+        return "图片链接下载失败"
+    if "error while downloading" in lowered or "image_url" in lowered:
+        return "视觉服务无法读取图片链接"
+    if "timeout" in lowered or "timed out" in lowered or "超时" in text:
+        return "图片理解超时"
+    if "401" in text or "403" in text or "认证失败" in text:
+        return "视觉服务认证失败"
+    if "429" in text or "限流" in text:
+        return "视觉服务限流"
+    if "400" in text or "badrequest" in lowered or "invalidparameter" in lowered:
+        return "视觉服务拒绝了图片参数"
+    return "视觉服务调用失败"
+
+
+def _compact_image_ref(image_ref: str) -> str:
+    value = _image_ref_value(image_ref)
+    if value.lower().startswith("data:"):
+        _, _, payload = value.partition(",")
+        hasher = hashlib.sha256()
+        for offset in range(0, len(payload), 8192):
+            hasher.update(payload[offset : offset + 8192].encode("ascii", "replace"))
+        return f"data-image:{hasher.hexdigest()[:16]}:chars={len(value)}"
+    if value.lower().startswith(("http://", "https://")):
+        try:
+            host = urlparse(value).hostname or "remote"
+        except ValueError:
+            host = "remote"
+        return f"{host}/..."
+    return value
+
+
+def _vision_result(raw: Any) -> dict[str, str]:
+    if isinstance(raw, dict):
+        description = str(raw.get("description") or raw.get("content") or "").strip()
+        summary = str(raw.get("summary") or "").strip()
+    else:
+        description = str(raw or "").strip()
+        summary = ""
+    if not description:
+        description = "（模型未返回内容）"
+    if not summary:
+        first_line = next((line.strip() for line in description.splitlines() if line.strip()), description)
+        summary = first_line[:80]
+    return {"summary": summary, "description": description}
+
+
+def _save_image_description(image_ref: str, description: str, ctx: ToolContext) -> str | None:
+    if ctx.workspace_dir is None:
+        return None
+    workspace = ctx.workspace_dir.resolve(strict=False)
+    try:
+        if "workspace=" in image_ref:
+            image_ref = image_ref.split("workspace=", 1)[1].split("]", 1)[0].strip()
+        if not image_ref.startswith(("http://", "https://", "data:")):
+            rel = image_ref.strip().lstrip("/\\")
+            target = (workspace / rel).with_suffix(".desc.md")
+            target = target.resolve(strict=False)
+            if workspace not in target.parents and target != workspace:
+                target = workspace / ".run" / _hashed_desc_name(image_ref)
+        else:
+            target = workspace / ".run" / _hashed_desc_name(
+                _compact_image_ref(image_ref)
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(description, encoding="utf-8")
+        return str(target.relative_to(workspace)).replace("\\", "/")
+    except OSError as e:
+        logger.warning(f"保存图片完整描述失败: {e}")
+    except ValueError:
+        return None
+    return None
+
+
+def _hashed_desc_name(value: str) -> str:
+    digest = hashlib.sha1(value.encode("utf-8", errors="replace")).hexdigest()[:12]
+    return f"image_{digest}.desc.md"
+
+
+@tool(
+    name="web_search",
+    description=(
+        "搜索互联网获取实时信息。当需要查找当前新闻、事实核查、"
+        "最新资讯、网页资料或不确定事实时使用。query 要具体，返回相关结果摘要；"
+        "如果用户只是闲聊或问题不依赖实时信息，不要调用。"
+    ),
+    args_model=WebSearchArgs,
+    category="feature",
+    feature="web_search",
+)
+async def web_search(args: WebSearchArgs, ctx: ToolContext) -> dict:
+    if ctx.web_search is None:
+        return {
+            "ok": False,
+            "status": "failed",
+            "brief": "未启用联网搜索功能。",
+            "error": "未启用联网搜索功能",
+        }
+
+    try:
+        result = await ctx.web_search.search(args.query)
+    except Exception as e:
+        logger.warning(f"web_search 失败: {e}")
+        return {
+            "ok": False,
+            "status": "failed",
+            "brief": f"联网搜索失败：{e}",
+            "error": str(e),
+        }
+
+    return {
+        "ok": True,
+        "status": "inline",
+        "brief": f"已搜索：{args.query}",
+        "query": args.query,
+        "result": result,
+        "data": {
+            "query": args.query,
+        },
+    }
+
+
+@tool(
+    name="get_weather",
+    description=(
+        "查询指定城市的天气。支持实时天气和多日预报。"
+        "参数 city 为城市名称，days 为预报天数（1-7，默认 1）。"
+    ),
+    args_model=GetWeatherArgs,
+    category="feature",
+    feature="weather",
+)
+async def get_weather(args: GetWeatherArgs, ctx: ToolContext) -> dict:
+    if ctx.weather is None:
+        return {
+            "ok": False,
+            "status": "failed",
+            "brief": "未启用天气查询功能。",
+            "error": "未启用天气查询功能",
+        }
+
+    try:
+        result = await ctx.weather.query(args.city, args.days)
+    except Exception as e:
+        logger.warning(f"get_weather 失败: {e}")
+        return {
+            "ok": False,
+            "status": "failed",
+            "brief": f"天气查询失败：{e}",
+            "error": str(e),
+        }
+
+    return {
+        "ok": True,
+        "status": "inline",
+        "brief": f"已查询 {args.city} 天气（{args.days} 天）。",
+        "result": result,
+        "data": {
+            "city": args.city,
+            "days": args.days,
+        },
+    }
+
+
+@tool(
+    name="send_voice_message",
+    description=(
+        "用本地 TTS 合成语音并立即发送到 QQ。仅在你想表达情绪比文字更直接、"
+        "或对方明确说想听你声音时使用。合成耗时较长（数秒），慎用。"
+        "调用时必须填写 prompt，用一句话描述语气、音色和节奏；"
+        "语音发出后如果还需要文字说明，再另行调用 send_*。"
+    ),
+    args_model=SendVoiceMessageArgs,
+    category="feature",
+    feature="tts",
+)
+async def send_voice_message(args: SendVoiceMessageArgs, ctx: ToolContext) -> dict:
+    if ctx.tts is None:
+        return {"ok": False, "error": "未启用 TTS 语音合成"}
+    if ctx.adapter is None:
+        return {"ok": False, "error": "adapter 未就绪"}
+    send_voice = getattr(ctx.adapter, "send_voice", None)
+    if send_voice is None:
+        return {"ok": False, "error": "当前适配器不支持发送语音"}
+
+    try:
+        prompt = _voice_prompt_or_default(args.text, args.prompt)
+        audio_path = await ctx.tts.synthesize(
+            args.text,
+            prompt=prompt,
+        )
+    except Exception as e:
+        logger.warning(f"TTS 合成失败: {e}")
+        return {"ok": False, "error": f"合成失败：{e}"}
+
+    target = Target(
+        adapter=ctx.adapter.name,
+        scope=args.target_type,
+        target_id=str(args.target_id),
+    )
+
+    if ctx.send_actions_cb is not None:
+        return await ctx.send_actions_cb(
+            [
+                {
+                    "kind": "voice",
+                    "order": 1,
+                    "target_scope": args.target_type,
+                    "target_id": str(args.target_id),
+                    "content": "",
+                    "label": f"[语音] {args.text}",
+                    "delay": 0.0,
+                    "audio_path": str(audio_path),
+                }
+            ],
+            "send_voice_message",
+            metadata={
+                "ignore_review_interrupts": args.ignore_review_interrupts,
+                "tool_call_id": str(ctx.extras.get("tool_call_id") or ""),
+            },
+        )
+
+    try:
+        msg_id = await send_voice(target, Path(audio_path))
+        if ctx.activity_cb is not None:
+            ctx.activity_cb()
+    except Exception as e:
+        logger.warning(f"语音发送失败: {e}")
+        return {"ok": False, "error": f"发送失败：{e}", "audio_path": str(audio_path)}
+
+    return {
+        "ok": True,
+        "sent": {
+            "target_type": args.target_type,
+            "target_id": str(args.target_id),
+            "msg_id": str(msg_id) if msg_id is not None else None,
+        },
+        "audio_path": str(audio_path),
+    }
+
+
+def _voice_prompt_or_default(text: str, prompt: str | None) -> str:
+    prompt = (prompt or "").strip()
+    if prompt:
+        return prompt
+    return "年轻女性，自然口语，语速中等，尾音自然，避免电音和机械感"

@@ -1,0 +1,152 @@
+[project]
+name = "debata_agent"
+version = "0.9.0-alpha"
+description = "Debata_Agent —— 让虚拟角色真正活过来的通用聊天智能体框架"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "binglang" }]
+readme = "README.md"
+
+dependencies = [
+    # === 网络与协议 ===
+    "websockets>=12.0",       # NapCat WebSocket 直连
+    "httpx>=0.27.0",          # 异步 HTTP（替代 requests）
+    "aiofiles>=23.2.0",       # 异步文件 I/O
+
+    # === WebUI（默认界面，取代原 PySide6 桌面端）===
+    "fastapi>=0.110.0",       # HTTP + WebSocket 路由
+    "uvicorn[standard]>=0.27.0",  # ASGI 服务器
+    "python-multipart>=0.0.9",    # 表单 / 文件上传
+
+    # === LLM 提供商 SDK（按需懒加载）===
+    "openai>=1.50.0",         # OpenAI 协议（DeepSeek/GLM/Moonshot/Qwen 等都用此）
+    # 暂时锁定 0.116.0：anthropic 1.x 改用 httpx2，会拒绝本项目传入的
+    # httpx.Timeout；1.x 适配需单独立项并回归流式/超时/关闭行为。
+    "anthropic==0.116.0",     # Anthropic Claude
+    "google-genai>=0.3.0",    # Google Gemini
+
+    # === 配置与数据 ===
+    "pydantic>=2.6.0",        # 配置 schema 校验
+    "pydantic-settings>=2.2.0",
+    "pyyaml>=6.0.1",
+    "orjson>=3.10.0",         # 高速 JSON
+    "tiktoken>=0.7.0",        # 上下文 token 预算估算
+
+    # === 加密与密钥管理 ===
+    "cryptography>=42.0.0",   # AES-GCM + RSA
+    "keyring>=24.0.0",        # 跨平台系统密钥环
+
+    # === 工具 ===
+    "ddgs>=8.0.0",            # DuckDuckGo 搜索
+    "edge-tts>=7.2.0",        # 免费 Edge 在线语音合成（依赖微软在线服务，可能受网络/策略影响）
+    "platformdirs>=4.2.0",    # 跨平台用户数据目录
+    "python-dotenv>=1.0.0",   # 旧 .env 迁移时使用
+    "pypdf>=4.0.0",           # workspace 内 PDF 文件文本抽取
+    "pillow>=10.4.0",         # 校验并规范化主模型视觉图片（含尺寸/解压限制）
+]
+
+[project.optional-dependencies]
+# 性能优化（Linux/Mac 自动使用 uvloop）
+perf = [
+    "uvloop>=0.19.0 ; sys_platform != 'win32'",
+]
+
+# 本地 TTS 插件依赖。也会在用户打开模型安装指引时按需后台安装。
+tts-local = [
+    "voxcpm>=2.0.0",
+    "soundfile>=0.12.1",
+]
+
+# 本地 Embedding 插件依赖。也会在用户打开模型安装指引时按需后台安装。
+embedding-local = [
+    "sentence-transformers>=2.7.0",
+]
+
+# 一次性安装全部本地模型运行依赖。
+local-models = [
+    "voxcpm>=2.0.0",
+    "soundfile>=0.12.1",
+    "sentence-transformers>=2.7.0",
+]
+
+
+# 开发依赖
+dev = [
+    "ruff>=0.5.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "setuptools>=65",
+]
+
+[project.scripts]
+debata = "main:main"
+
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# 顶层脚本模块：main.py / main_cli.py 不是包，必须显式声明，
+# 否则 [project.scripts] 的 debata 入口装上后会 ModuleNotFoundError。
+py-modules = ["main", "main_cli", "webui_server", "service_cli"]
+
+[tool.setuptools.packages.find]
+include = [
+    "adapters*",
+    "agents*",
+    "app_config*",
+    "core*",
+    "features*",
+    "mind*",
+    "memory*",
+    "plugins*",
+    "providers*",
+    "tools*",
+    "utils*",
+    "webui*",
+]
+exclude = [
+    "data*",
+    "docs*",
+    "personas*",
+    "tests*",
+]
+
+[tool.setuptools.package-data]
+providers = [
+    "presets/*/preset.yaml",
+    "presets/*/tutorial/*.md",
+    "presets/*/tutorial/.gitkeep",
+    "presets/*/icon.png",
+    # 能力矩阵：providers/model_capabilities.py 运行时读取，漏打包会让装后的
+    # wheel 在「获取模型列表」时 FileNotFound。
+    "model_capabilities.yaml",
+]
+plugins = [
+    "PLUGIN_SPEC.md",
+    "voxcpm2/*.py",
+    "embedding_bge_zh/*.py",
+    "embedding_minilm/*.py",
+]
+webui = [
+    "static/*.html",
+    "static/*.css",
+    "static/*.svg",
+    "static/js/*.js",
+    "static/js/**/*.js",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-m 'not live'"
+markers = [
+    "live: 需要真实 API 密钥的端到端测试（默认不跑）",
+]
