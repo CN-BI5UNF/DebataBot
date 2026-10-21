@@ -161,18 +161,22 @@ def test_local_source_requires_explicit_trust(tmp_path):
 
 @pytest.mark.asyncio
 async def test_fifo_and_symlink_escape_are_rejected(tmp_path):
-    fifo = tmp_path / "pipe"
-    os.mkfifo(fifo)
     store = ImageAssetStore(tmp_path / "workspace")
-    with pytest.raises(ImageAssetError):
-        await store.ingest(str(fifo), trusted_local=True)
+    if hasattr(os, "mkfifo"):
+        fifo = tmp_path / "pipe"
+        os.mkfifo(fifo)
+        with pytest.raises(ImageAssetError):
+            await store.ingest(str(fifo), trusted_local=True)
 
     outside = tmp_path / "outside.png"
     outside.write_bytes(_png_bytes())
     ref = await store.ingest(_png_bytes(), message_id="sym", index=0)
     managed = tmp_path / "workspace" / ref["path"]
     managed.unlink()
-    managed.symlink_to(outside)
+    try:
+        managed.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("当前平台/权限不能创建符号链接")
     with pytest.raises(ImageAssetError):
         await store.image_content(ref)
 
