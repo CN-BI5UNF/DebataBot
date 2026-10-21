@@ -130,39 +130,68 @@ export async function render(container, ctx) {
         rangeBar);
       return;
     }
-    const hit = Number(usage.cache_hit_rate || 0);
-    const estimateSamples = Number(usage.estimate_samples || 0);
-    const estimateError = Number(usage.estimate_error_rate || 0);
-    const estimateText = estimateSamples > 0
-      ? `${(estimateError * 100).toFixed(1)}%`
+    const currentCount = Number(usage.current_semantics_request_count || 0);
+    const currentAvailable = currentCount > 0
+      && usage.current_semantics_available !== false;
+    const ratio = usage.current_cache_hit_rate ?? usage.cache_hit_rate;
+    const ratioNumber = ratio === null || ratio === undefined ? NaN : Number(ratio);
+    const hitText = currentAvailable && Number.isFinite(ratioNumber)
+      ? `${(ratioNumber * 100).toFixed(1)}%`
+      : '—';
+    const currentValue = (value) => (
+      currentAvailable
+      && value !== null
+      && value !== undefined
+      && Number.isFinite(Number(value))
+        ? formatNumber(value)
+        : '—'
+    );
+    const estimateSamples = Number(usage.current_estimate_samples || 0);
+    const estimateError = usage.current_estimate_error_rate;
+    const estimateText = currentAvailable
+      && estimateSamples > 0
+      && estimateError !== null
+      && Number.isFinite(Number(estimateError))
+      ? `${(Number(estimateError) * 100).toFixed(1)}%`
       : '—';
     const legacySamples = Number(usage.legacy_request_count || 0);
+    const unknownSamples = Number(usage.unknown_semantics_request_count || 0);
     const inconsistentSamples = Number(usage.raw_cache_inconsistent_count || 0);
     fill(usageCard,
       h('h2', { class: 'card-title' }, '用量统计'),
-      h('p', { class: 'card-sub' }, 'Token 消耗、缓存命中与估算准确性。'),
+      h('p', { class: 'card-sub' },
+        '总消耗包含全部历史记录；缓存命中率只使用当前 V2 口径。'),
       rangeBar,
       h('div', { class: 'grid grid-4', style: { marginTop: '16px' } },
-        statCard('请求数', formatNumber(usage.request_count)),
-        statCard('总 token', formatNumber(usage.total_tokens)),
-        statCard('缓存命中率', `${(hit <= 1 ? hit * 100 : hit).toFixed(1)}%`),
-        statCard('输出 token', formatNumber(usage.completion_tokens)),
+        statCard('请求数（全历史）', formatNumber(usage.request_count)),
+        statCard('总 token（全历史）', formatNumber(usage.total_tokens)),
+        statCard('V2 缓存命中率', hitText),
+        statCard('输出 token（全历史）', formatNumber(usage.completion_tokens)),
       ),
       h('div', { class: 'grid grid-4', style: { marginTop: '16px' } },
-        statCard('输入 token', formatNumber(usage.prompt_tokens)),
-        statCard('未命中输入 token', formatNumber(usage.uncached_prompt_tokens)),
-        statCard('命中缓存 token', formatNumber(usage.cached_tokens)),
-        statCard('写入缓存 token', formatNumber(usage.cache_creation_tokens)),
+        statCard('V2 输入 token', currentValue(usage.current_prompt_tokens)),
+        statCard('V2 未命中输入', currentValue(usage.current_uncached_prompt_tokens)),
+        statCard('V2 命中缓存', currentValue(usage.current_cached_tokens)),
+        statCard('V2 写入缓存', currentValue(usage.current_cache_creation_tokens)),
       ),
       h('div', { class: 'grid grid-4', style: { marginTop: '16px' } },
-        statCard('推理 token', formatNumber(usage.reasoning_tokens)),
-        statCard('估算误差', estimateText),
-        statCard('估算样本', formatNumber(estimateSamples)),
-        statCard('估算输入 token', formatNumber(usage.estimated_prompt_tokens)),
+        statCard('推理 token（全历史）', formatNumber(usage.reasoning_tokens)),
+        statCard('V2 估算误差', estimateText),
+        statCard('V2 估算样本', currentValue(estimateSamples)),
+        statCard('V2 估算输入', currentValue(usage.current_estimated_prompt_tokens)),
       ),
+      h('p', { class: 'field-help', style: { marginTop: '12px' } },
+        currentAvailable
+          ? `V2 样本 ${formatNumber(currentCount)} 条。`
+          : '暂无新口径数据；旧记录不会被当成 V2 计算缓存命中率。'),
       legacySamples > 0
-        ? h('p', { class: 'field-help', style: { marginTop: '12px' } },
-            `含 ${formatNumber(legacySamples)} 条旧口径记录；旧口径输入 token 不含 cache 读写，勿与新口径直接比较命中率。`)
+        ? h('p', { class: 'field-help' },
+            `含 ${formatNumber(legacySamples)} 条旧口径记录（输入 ${formatNumber(usage.legacy_prompt_tokens)}，总 token ${formatNumber(usage.legacy_total_tokens)}）；`
+            + '旧口径输入 token 不含 cache 读写，没有可与新口径直接比较的命中率。')
+        : null,
+      unknownSamples > 0
+        ? h('p', { class: 'field-help' },
+            `含 ${formatNumber(unknownSamples)} 条未知未来 usage 口径记录，未纳入 V2 主缓存命中率。`)
         : null,
       inconsistentSamples > 0
         ? h('p', { class: 'field-help' },

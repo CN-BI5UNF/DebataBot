@@ -312,7 +312,10 @@ async def _synthetic_image_metrics(*, rounds: int, seed: int) -> dict[str, Any]:
             "content": "合成图片消息",
             "conversation_id": "bench:images",
             "metadata": {
-                "messages": [{"message_id": "m0", "inbound_seq": 1}],
+                "messages": [
+                    {"message_id": f"m{index}", "inbound_seq": index + 1}
+                    for index in range(len(refs))
+                ],
                 "image_assets": refs,
             },
         }

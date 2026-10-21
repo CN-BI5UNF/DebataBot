@@ -15,6 +15,7 @@ def test_summary_clamps_cached_tokens_and_exposes_uncached():
             "cache_creation_tokens": 200,
             "completion_tokens": 10,
             "total_tokens": 110,
+            "usage_semantics_version": 2,
         },
     )
     assert summary.prompt_tokens == 100
@@ -49,9 +50,12 @@ def test_summary_collects_estimate_error_only_for_samples():
     assert abs(summary.estimate_error_rate - 0.1) < 1e-9
 
 
-def test_empty_summary_has_zero_error_rate():
+def test_empty_summary_has_no_current_cache_rate():
     summary = UsageSummary()
-    assert summary.uncached_prompt_tokens == 0
+    assert summary.uncached_prompt_tokens is None
+    assert summary.cache_hit_rate is None
+    assert summary.current_cache_hit_rate is None
+    assert summary.has_current_semantics_data is False
     assert summary.estimate_error_rate == 0.0
 
 
@@ -80,3 +84,50 @@ def test_summary_distinguishes_legacy_and_current_usage_semantics():
     assert summary.current_semantics_request_count == 1
     assert summary.cache_miss_tokens == 40
     assert summary.cache_creation_tokens == 15
+    assert summary.current_prompt_tokens == 185
+    assert summary.current_cached_tokens == 70
+    assert summary.current_cache_hit_rate == 70 / 185
+    assert summary.cache_hit_rate == 70 / 185
+    assert summary.legacy_cache_hit_rate is None
+
+
+def test_future_and_legacy_do_not_enter_v2_cache_rate():
+    summary = UsageSummary()
+    add_record_to_summary(
+        summary,
+        {
+            "prompt_tokens": 100,
+            "cached_tokens": 80,
+            "total_tokens": 110,
+        },
+    )
+    add_record_to_summary(
+        summary,
+        {
+            "prompt_tokens": 200,
+            "cached_tokens": 100,
+            "total_tokens": 210,
+            "usage_semantics_version": 3,
+        },
+    )
+
+    assert summary.legacy_request_count == 1
+    assert summary.unknown_semantics_request_count == 1
+    assert summary.current_semantics_request_count == 0
+    assert summary.cache_hit_rate is None
+    assert summary.unknown_semantics_prompt_tokens == 200
+    assert summary.legacy_prompt_tokens == 100
+
+
+def test_real_zero_v2_hit_rate_is_distinct_from_no_data():
+    summary = UsageSummary()
+    add_record_to_summary(
+        summary,
+        {
+            "prompt_tokens": 100,
+            "cached_tokens": 0,
+            "total_tokens": 110,
+            "usage_semantics_version": 2,
+        },
+    )
+    assert summary.cache_hit_rate == 0.0

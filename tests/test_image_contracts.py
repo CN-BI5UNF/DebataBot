@@ -257,3 +257,178 @@ def test_request_body_estimate_is_additive_not_clamped():
             text_serialized_bytes=-1,
             encoded_image_bytes=0,
         )
+
+
+# ============================================================
+# 合并批次的原始消息归属
+# ============================================================
+
+
+def _merged_message(
+    refs,
+    origins,
+    *,
+    conversation_id="private:1",
+):
+    return {
+        "role": "user",
+        "content": "merged",
+        "conversation_id": conversation_id,
+        "metadata": {
+            "messages": [
+                {"message_id": message_id, "inbound_seq": seq}
+                for message_id, seq in origins
+            ],
+            "image_assets": refs,
+        },
+    }
+
+
+def test_merged_messages_allow_same_index_from_different_origins():
+    message = _merged_message(
+        [_ref(message_id="m0", index=0), _ref(message_id="m1", index=0)],
+        [("m0", 0), ("m1", 1)],
+    )
+    validated = validate_declared_assets([message])
+    assert [(ref["message_id"], ref["index"]) for _, ref in validated] == [
+        ("m0", 0),
+        ("m1", 0),
+    ]
+
+
+def test_merged_messages_allow_three_plus_two_and_count_by_origin():
+    refs = [
+        _ref(message_id="m0", index=0),
+        _ref(message_id="m0", index=1),
+        _ref(message_id="m0", index=2),
+        _ref(message_id="m1", index=0),
+        _ref(message_id="m1", index=1),
+    ]
+    message = _merged_message(refs, [("m0", 0), ("m1", 1)])
+    assert len(validate_declared_assets([message])) == 5
+
+
+def test_merged_messages_reject_same_origin_duplicate_index():
+    message = _merged_message(
+        [_ref(message_id="m0", index=0), _ref(message_id="m0", index=0)],
+        [("m0", 0)],
+    )
+    with pytest.raises(ImageAssetError) as error:
+        validate_declared_assets([message])
+    assert error.value.code == "invalid_asset_reference"
+
+
+def test_merged_messages_reject_five_images_from_one_origin():
+    refs = [_ref(message_id="m0", index=index) for index in range(5)]
+    message = _merged_message(refs, [("m0", 0)])
+    with pytest.raises(ImageAssetError) as error:
+        validate_declared_assets([message])
+    assert error.value.code == "image_request_count_exceeded"
+
+
+def test_merged_messages_reject_21_images_across_origins():
+    refs = []
+    origins = []
+    for origin in range(6):
+        message_id = f"m{origin}"
+        origins.append((message_id, origin))
+        refs.extend(
+            _ref(message_id=message_id, index=index) for index in range(4)
+        )
+    message = _merged_message(refs, origins)
+    with pytest.raises(ImageAssetError) as error:
+        validate_declared_assets([message])
+    assert error.value.code == "image_request_count_exceeded"
+
+
+def test_merged_messages_reject_forged_or_ambiguous_origins():
+    forged = _merged_message(
+        [_ref(message_id="evil", index=0)],
+        [("m0", 0)],
+    )
+    with pytest.raises(ImageAssetError) as error:
+        validate_declared_assets([forged])
+    assert error.value.code == "invalid_asset_reference"
+
+    ambiguous = _merged_message(
+        [_ref(message_id="m0", index=0)],
+        [("m0", 0), ("m0", 1)],
+    )
+    with pytest.raises(ImageAssetError) as error:
+        validate_declared_assets([ambiguous])
+    assert error.value.code == "invalid_asset_reference"
+
+
+def test_legacy_record_without_metadata_requires_single_origin():
+    one_origin = {
+        "role": "user",
+        "content": "legacy",
+        "metadata": {
+            "image_assets": [
+                _ref(message_id="m0", index=0),
+                _ref(message_id="m0", index=1),
+            ]
+        },
+    }
+    assert len(validate_declared_assets([one_origin])) == 2
+
+    multi_origin = {
+        "role": "user",
+        "content": "legacy",
+        "metadata": {
+            "image_assets": [
+                _ref(message_id="m0", index=0),
+                _ref(message_id="m1", index=0),
+            ]
+        },
+    }
+    with pytest.raises(ImageAssetError) as error:
+        validate_declared_assets([multi_origin])
+    assert error.value.code == "invalid_asset_reference"
+
+
+def test_legacy_empty_message_id_uses_record_fallback_without_cross_record_quota():
+    first = {
+        "role": "user",
+        "content": "legacy a",
+        "conversation_id": "c",
+        "metadata": {"image_assets": [_ref(message_id="", index=0)]},
+    }
+    second = {
+        "role": "user",
+        "content": "legacy b",
+        "conversation_id": "c",
+        "metadata": {"image_assets": [_ref(message_id="", index=0)]},
+    }
+    assert len(validate_declared_assets([first, second])) == 2
+
+
+def test_origin_validation_survives_enforce_request_limits_false():
+    duplicate = _merged_message(
+        [_ref(message_id="m0", index=0), _ref(message_id="m0", index=0)],
+        [("m0", 0)],
+    )
+    with pytest.raises(ImageAssetError):
+        validate_declared_assets([duplicate], enforce_request_limits=False)
+
+    five = _merged_message(
+        [_ref(message_id="m0", index=index) for index in range(5)],
+        [("m0", 0)],
+    )
+    with pytest.raises(ImageAssetError) as error:
+        validate_declared_assets([five], enforce_request_limits=False)
+    assert error.value.code == "image_request_count_exceeded"
+
+
+def test_conversation_id_separates_same_message_id_origins():
+    first = _merged_message(
+        [_ref(message_id="m0", index=0)],
+        [("m0", 0)],
+        conversation_id="private:1",
+    )
+    second = _merged_message(
+        [_ref(message_id="m0", index=0)],
+        [("m0", 0)],
+        conversation_id="private:2",
+    )
+    assert len(validate_declared_assets([first, second])) == 2

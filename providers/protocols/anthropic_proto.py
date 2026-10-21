@@ -140,21 +140,27 @@ class AnthropicProvider(IProvider):
                 return await self._stream_call(kwargs, first_token_timeout)
             return await self._nonstream_call(kwargs)
         except AuthenticationError as e:
-            raise ProviderAuthError(f"{self.name}: 认证失败: {e}") from e
+            raise ProviderAuthError(
+                f"{self.name}: 认证失败: {safe_provider_error_text(e)}"
+            ) from None
         except RateLimitError as e:
-            raise ProviderRateLimitError(f"{self.name}: 限流: {e}") from e
+            raise ProviderRateLimitError(
+                f"{self.name}: 限流: {safe_provider_error_text(e)}"
+            ) from None
         except (APITimeoutError, asyncio.TimeoutError, httpx.TimeoutException) as e:
-            raise ProviderTimeoutError(f"{self.name}: 超时: {e}") from e
+            raise ProviderTimeoutError(
+                f"{self.name}: 超时: {safe_provider_error_text(e)}"
+            ) from None
         except APIError as e:
             raise ProviderError(
                 f"{self.name}: API 错误: {safe_provider_error_text(e)}"
-            ) from e
+            ) from None
         except TypeError as e:
-            # 请求还没发出去就炸的编程错误（比如给 SDK 传了不存在的参数）。
-            # 不兜住的话它既不是 APIError 也不是 TimeoutError，会一路冒到 AgentRunner
-            # 的兜底分支，被记成含糊的「未知错误」，排查时得翻整个 traceback 才知道
-            # 其实是本地的调用签名写错了。
-            raise ProviderError(f"{self.name}: 内部错误（请求未发出）: {e}") from e
+            # 请求未发出，但异常文本同样脱敏，避免 SDK 消息带签名 URL。
+            raise ProviderError(
+                f"{self.name}: 内部错误（请求未发出）: "
+                f"{safe_provider_error_text(e)}"
+            ) from None
 
     # ============================================================
     # 协议翻译

@@ -21,6 +21,7 @@ def test_usage_analysis_groups_runtime_flags_and_top_records():
             "cached_tokens": 800,
             "cache_creation_tokens": 200,
             "total_tokens": 1020,
+            "usage_semantics_version": 2,
             "kv_message_count": 10,
             "kv_tools_count": 25,
             "kv_tools_full_count": 20,
@@ -63,6 +64,7 @@ def test_usage_analysis_groups_runtime_flags_and_top_records():
             "cached_tokens": 1500,
             "cache_creation_tokens": 500,
             "total_tokens": 2030,
+            "usage_semantics_version": 2,
             "kv_message_count": 80,
             "kv_tools_count": 25,
             "kv_tools_full_count": 15,
@@ -90,7 +92,12 @@ def test_usage_analysis_groups_runtime_flags_and_top_records():
 
     assert analysis.total.request_count == 3
     assert analysis.total.prompt_tokens == 3300
-    assert analysis.total.cache_hit_rate == 2300 / 3300
+    assert analysis.total.current_request_count == 2
+    assert analysis.total.legacy_request_count == 1
+    assert analysis.total.current_prompt_tokens == 3000
+    assert analysis.total.cache_hit_rate == 2300 / 3000
+    assert analysis.total.legacy_cache_hit_rate is None
+    assert analysis.by_agent[0].cache_hit_rate == 2300 / 3000
     assert analysis.by_agent[0].key == "主模型"
     assert analysis.by_operation[0].key == "agent_loop"
     assert analysis.by_kv_flags[0].key == "send_receipt+recent_group+rag"
@@ -116,6 +123,8 @@ def test_usage_analysis_groups_runtime_flags_and_top_records():
     assert "按 Runtime 组件" in report
     assert "tools_schema" in report
     assert "最大输入调用 Top 2" in report
+    assert "V2 缓存命中率" in report
+    assert "legacy 1 条" in report
 
 
 def test_load_usage_records_skips_invalid_jsonl(tmp_path):
@@ -137,3 +146,34 @@ def test_percentile_handles_empty_and_singleton():
     assert percentile([], 0.95) == 0
     assert percentile([7], 0.95) == 7
     assert percentile([1, 2, 3, 4, 5], 0.50) == 3
+
+
+def test_all_legacy_usage_analysis_has_no_cache_rate():
+    analysis = analyze_usage_records(
+        [
+            {
+                "prompt_tokens": 100,
+                "cached_tokens": 70,
+                "total_tokens": 110,
+            }
+        ]
+    )
+    assert analysis.total.cache_hit_rate is None
+    assert "V2 缓存命中率 暂无" in format_usage_analysis(analysis)
+
+
+def test_future_usage_analysis_is_not_v2_or_legacy():
+    analysis = analyze_usage_records(
+        [
+            {
+                "prompt_tokens": 100,
+                "cached_tokens": 70,
+                "total_tokens": 110,
+                "usage_semantics_version": 3,
+            }
+        ]
+    )
+    assert analysis.total.cache_hit_rate is None
+    assert analysis.total.unknown_semantics_request_count == 1
+    assert analysis.total.current_request_count == 0
+    assert analysis.total.legacy_request_count == 0

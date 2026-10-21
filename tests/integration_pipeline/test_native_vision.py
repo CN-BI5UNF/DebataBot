@@ -11,12 +11,13 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
+from adapters.types import IncomingMessage, MediaSegment, MediaType
 from agents.runner import AgentRunner
 from app_config.schema import AgentConfig
 from core.message_pipeline import MessagePipeline
 from core.model_view import build_model_view
 from core.pipeline_summary import SummaryAttemptResult
-from core.state import ProtectedInput
+from core.state import PendingMessageItem, ProtectedInput
 from features.vision.image_assets import ImageAssetStore
 from memory import ArchiveStore, HistoryManager, RollingSummaryStore
 from utils.image_contracts import ImageBudgetProfile, ImageLimits
@@ -354,7 +355,14 @@ async def test_summary_triggered_by_image_count_and_bytes(tmp_path):
     refs = []
     for index in range(3):
         holder = _make_pipeline(tmp_path / f"ref{index}")
-        refs.append(await _ref(tmp_path / f"ref{index}", holder, index=index))
+        refs.append(
+            await _ref(
+                tmp_path / f"ref{index}",
+                holder,
+                index=0,
+                message_id=f"m{index}",
+            )
+        )
 
     async def make_summary_pipeline(limits: ImageLimits):
         pipeline = _make_pipeline(tmp_path / "summary", limits=limits)
@@ -555,7 +563,14 @@ async def test_real_compaction_exits_whole_records_and_respects_protected_input(
         refs = []
         for index in range(3):
             holder = _make_pipeline(root / f"holder{index}")
-            refs.append(await _ref(root / f"holder{index}", holder, index=0))
+            refs.append(
+                await _ref(
+                    root / f"holder{index}",
+                    holder,
+                    index=0,
+                    message_id=f"m{index}",
+                )
+            )
         records = [
             _history_image_record(index, ref)
             for index, ref in enumerate(refs)
@@ -796,3 +811,152 @@ async def test_final_tool_loop_guard_blocks_images_without_network(tmp_path):
 
     assert result is None
     assert calls["count"] == 0
+
+
+# ============================================================
+# C1：真实合并批次的原始消息归属
+# ============================================================
+
+
+class _ResolverAdapter:
+    def __init__(self, paths: dict[str, str]) -> None:
+        self.paths = paths
+
+    async def get_image_url(self, file_id: str) -> str:
+        return self.paths[file_id]
+
+
+def _incoming_image_event(message_id: str, file_id: str) -> IncomingMessage:
+    return IncomingMessage(
+        adapter="fake",
+        timestamp=1.0,
+        self_id="999",
+        message_id=message_id,
+        scope="private",
+        user_id="123",
+        nickname="用户",
+        text="[图片]",
+        raw_message="[图片]",
+        media=[MediaSegment(type=MediaType.IMAGE, file_id=file_id)],
+    )
+
+
+async def _prepare_merged_batch(
+    build_pipeline,
+    tmp_path,
+    counts: list[int],
+):
+    paths = {}
+    for origin, count in enumerate(counts):
+        for index in range(count):
+            file_id = f"img-{origin}-{index}"
+            path = tmp_path / f"{file_id}.png"
+            path.write_bytes(_png_bytes(20 + origin, 20 + index))
+            paths[file_id] = str(path)
+
+    workspace = tmp_path / "workspace"
+    pipeline, provider, _, history, _ = await build_pipeline(
+        [],
+        workspace_dir=workspace,
+    )
+    pipeline.adapter = _ResolverAdapter(paths)
+    pipeline.main_model_images_enabled = True
+    pipeline.image_limits = ImageLimits()
+    pipeline._image_budget_profile = _profile()
+    pipeline._image_asset_store_instance = None
+
+    items = []
+    for origin, count in enumerate(counts):
+        message_id = f"m{origin}"
+        event = _incoming_image_event(
+            message_id,
+            f"img-{origin}-0",
+        )
+        event.media = [
+            MediaSegment(type=MediaType.IMAGE, file_id=f"img-{origin}-{index}")
+            for index in range(count)
+        ]
+        await pipeline._build_readable_text(event)
+        items.append(
+            PendingMessageItem(
+                message_id=message_id,
+                user_id="123",
+                nickname="用户",
+                location="私聊",
+                text=event.text,
+                conversation_id="private:123",
+                inbound_seq=origin,
+                received_at=1.0,
+                raw_event=event,
+            )
+        )
+    await pipeline._process_batch(items)
+    return pipeline, provider, history, items
+
+
+def _provider_image_blocks(provider) -> list[dict]:
+    blocks = []
+    for call in provider.calls:
+        for message in call["messages"]:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            blocks.extend(
+                block
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "image_url"
+            )
+    return blocks
+
+
+@pytest.mark.asyncio
+async def test_merged_batch_two_origins_same_index_reaches_provider(
+    build_pipeline,
+    tmp_path,
+):
+    _, provider, history, items = await _prepare_merged_batch(
+        build_pipeline,
+        tmp_path,
+        [1, 1],
+    )
+    assert len(provider.calls) == 1
+    assert len(_provider_image_blocks(provider)) == 2
+    assert [asset["message_id"] for item in items for asset in item.raw_event.image_assets] == [
+        "m0",
+        "m1",
+    ]
+    assert [asset["index"] for item in items for asset in item.raw_event.image_assets] == [0, 0]
+    dumped = json.dumps(await history.records(), ensure_ascii=False)
+    assert "base64" not in dumped
+
+
+@pytest.mark.asyncio
+async def test_merged_batch_three_plus_two_passes_per_origin_limit(
+    build_pipeline,
+    tmp_path,
+):
+    _, provider, _, _ = await _prepare_merged_batch(
+        build_pipeline,
+        tmp_path,
+        [3, 2],
+    )
+    assert len(provider.calls) == 1
+    blocks = _provider_image_blocks(provider)
+    assert len(blocks) == 5
+    assert all(
+        block["image_url"]["url"].startswith("data:image/png;base64,")
+        for block in blocks
+    )
+
+
+@pytest.mark.asyncio
+async def test_merged_batch_24_images_rejected_before_provider(
+    build_pipeline,
+    tmp_path,
+):
+    _, provider, _, _ = await _prepare_merged_batch(
+        build_pipeline,
+        tmp_path,
+        [4, 4, 4, 4, 4, 4],
+    )
+    assert provider.calls == []

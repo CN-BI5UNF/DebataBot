@@ -16,6 +16,8 @@ from typing import Any
 
 import orjson
 
+from utils.usage_summary import usage_semantics_bucket
+
 TOKEN_FIELDS = (
     "prompt_tokens",
     "completion_tokens",
@@ -38,19 +40,39 @@ class UsageBucket:
     cached_tokens: int = 0
     cache_creation_tokens: int = 0
     total_tokens: int = 0
+    current_request_count: int = 0
+    current_prompt_tokens: int = 0
+    current_cached_tokens: int = 0
+    current_cache_creation_tokens: int = 0
+    legacy_request_count: int = 0
+    unknown_semantics_request_count: int = 0
     prompt_values: list[int] = field(default_factory=list)
     cache_creation_values: list[int] = field(default_factory=list)
 
     def add(self, record: dict[str, Any]) -> None:
+        prompt = _int(record.get("prompt_tokens"))
+        cached = min(max(0, _int(record.get("cached_tokens"))), prompt)
+        creation = min(max(0, _int(record.get("cache_creation_tokens"))), prompt)
         self.request_count += 1
-        self.prompt_tokens += _int(record.get("prompt_tokens"))
+        self.prompt_tokens += prompt
         self.completion_tokens += _int(record.get("completion_tokens"))
         self.reasoning_tokens += _int(record.get("reasoning_tokens"))
-        self.cached_tokens += _int(record.get("cached_tokens"))
-        self.cache_creation_tokens += _int(record.get("cache_creation_tokens"))
+        self.cached_tokens += cached
+        self.cache_creation_tokens += creation
         self.total_tokens += _int(record.get("total_tokens"))
-        self.prompt_values.append(_int(record.get("prompt_tokens")))
-        self.cache_creation_values.append(_int(record.get("cache_creation_tokens")))
+        self.prompt_values.append(prompt)
+        self.cache_creation_values.append(creation)
+
+        bucket = usage_semantics_bucket(record)
+        if bucket == "current":
+            self.current_request_count += 1
+            self.current_prompt_tokens += prompt
+            self.current_cached_tokens += cached
+            self.current_cache_creation_tokens += creation
+        elif bucket == "unknown":
+            self.unknown_semantics_request_count += 1
+        else:
+            self.legacy_request_count += 1
 
     @property
     def avg_prompt_tokens(self) -> float:
@@ -59,10 +81,22 @@ class UsageBucket:
         return self.prompt_tokens / self.request_count
 
     @property
-    def cache_hit_rate(self) -> float:
-        if self.prompt_tokens <= 0:
-            return 0.0
-        return self.cached_tokens / self.prompt_tokens
+    def has_current_semantics_data(self) -> bool:
+        return self.current_request_count > 0 and self.current_prompt_tokens > 0
+
+    @property
+    def cache_hit_rate(self) -> float | None:
+        """V2-only 缓存命中率；没有 V2 样本时为 None。"""
+        if not self.has_current_semantics_data:
+            return None
+        return max(
+            0.0,
+            min(1.0, self.current_cached_tokens / self.current_prompt_tokens),
+        )
+
+    @property
+    def legacy_cache_hit_rate(self) -> None:
+        return None
 
     @property
     def prompt_p50(self) -> int:
@@ -202,7 +236,14 @@ def format_usage_analysis(analysis: UsageAnalysis, *, top_n: int = 10) -> str:
         f"思考 {total.reasoning_tokens:,}，"
         f"KV 命中 {total.cached_tokens:,}，"
         f"KV 写入 {total.cache_creation_tokens:,}，"
-        f"命中率 {_fmt_rate(total.cache_hit_rate)}。"
+        f"V2 缓存命中率 {_fmt_rate(total.cache_hit_rate)}。"
+    )
+    lines.append(
+        "口径: "
+        f"V2 {total.current_request_count:,} 条，"
+        f"legacy {total.legacy_request_count:,} 条，"
+        f"unknown/future {total.unknown_semantics_request_count:,} 条；"
+        "主缓存命中率只使用 V2，旧/未知口径不参与。"
     )
     if total.request_count:
         lines.append(
@@ -431,7 +472,7 @@ def _append_table(
         return
     lines.append("")
     lines.append(f"{title}:")
-    lines.append("  名称 | 请求 | 总 token | 输入 | KV 命中率 | P50/P95 输入")
+    lines.append("  名称 | 请求 | 总 token | 输入 | V2 KV 命中率 | P50/P95 输入")
     for bucket in buckets[:top_n]:
         lines.append(
             f"  {bucket.key} | "
@@ -473,7 +514,9 @@ def _int(value: Any) -> int:
         return 0
 
 
-def _fmt_rate(value: float) -> str:
+def _fmt_rate(value: float | None) -> str:
+    if value is None:
+        return "暂无"
     return f"{value * 100:.1f}%"
 
 

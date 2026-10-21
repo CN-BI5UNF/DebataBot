@@ -318,6 +318,125 @@ def has_declared_image_assets(messages: list[Mapping[str, Any]]) -> bool:
     return False
 
 
+_ORIGIN_KIND_METADATA = "metadata"
+_ORIGIN_KIND_LEGACY = "legacy_message_id"
+_ORIGIN_KIND_LEGACY_RECORD = "legacy_record"
+
+
+def _origin_conversation(message: Mapping[str, Any]) -> str:
+    conversation_id = message.get("conversation_id")
+    return conversation_id if isinstance(conversation_id, str) else ""
+
+
+def _metadata_messages(message: Mapping[str, Any]) -> list[Any] | None:
+    metadata = message.get("metadata")
+    if not isinstance(metadata, Mapping) or "messages" not in metadata:
+        return None
+    entries = metadata.get("messages")
+    if not isinstance(entries, list):
+        raise ImageAssetError("图片资产消息来源列表无效")
+    return entries
+
+
+def _entry_message_id(entry: Mapping[str, Any]) -> str:
+    value = entry.get("message_id")
+    return value if isinstance(value, str) else ""
+
+
+def _entry_inbound_seq(entry: Mapping[str, Any]) -> int | None:
+    value = entry.get("inbound_seq")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def _metadata_origin(
+    message: Mapping[str, Any],
+    ref: Mapping[str, Any],
+    entries: list[Any],
+) -> tuple[Any, ...]:
+    """从合并 record 的 metadata.messages 解析唯一原始消息归属。"""
+    conversation = _origin_conversation(message)
+    ref_message_id = str(ref.get("message_id") or "")
+    if not entries:
+        raise ImageAssetError("图片资产缺少可信原始消息来源")
+    valid_entries = [entry for entry in entries if isinstance(entry, Mapping)]
+    if len(valid_entries) != len(entries):
+        raise ImageAssetError("图片资产消息来源列表无效")
+
+    if ref_message_id:
+        matches = [
+            entry
+            for entry in valid_entries
+            if _entry_message_id(entry) == ref_message_id
+        ]
+        if len(matches) != 1:
+            raise ImageAssetError(
+                "图片资产消息归属不存在或不唯一",
+                code="invalid_asset_reference",
+            )
+        entry = matches[0]
+    else:
+        # 旧 ref 可能没有 message_id；只有来源唯一时才允许绑定。
+        if len(valid_entries) != 1:
+            raise ImageAssetError(
+                "图片资产消息归属为空且无法唯一绑定",
+                code="invalid_asset_reference",
+            )
+        entry = valid_entries[0]
+        if not _entry_message_id(entry):
+            raise ImageAssetError(
+                "图片资产消息归属为空且无法唯一绑定",
+                code="invalid_asset_reference",
+            )
+    matched_message_id = _entry_message_id(entry)
+    if not matched_message_id:
+        raise ImageAssetError(
+            "图片资产消息归属为空且无法唯一绑定",
+            code="invalid_asset_reference",
+        )
+    return (
+        conversation,
+        _ORIGIN_KIND_METADATA,
+        matched_message_id,
+        _entry_inbound_seq(entry),
+    )
+
+
+def _legacy_origin_for_record(
+    message: Mapping[str, Any],
+    message_index: int,
+    refs: list[dict[str, Any]],
+) -> tuple[Any, ...]:
+    """没有 metadata.messages 时的保守兼容归属。
+
+    - 所有 refs 共享一个非空 message_id：视为同一条旧消息；
+    - 所有 refs 都没有 message_id：只绑定到当前顶层 record；
+    - 多个不同 message_id 或空/非空混合：无法验证，拒绝。
+    """
+    conversation = _origin_conversation(message)
+    message_ids = {str(ref.get("message_id") or "") for ref in refs}
+    if len(message_ids) != 1:
+        raise ImageAssetError(
+            "图片资产缺少可信原始消息归属",
+            code="invalid_asset_reference",
+        )
+    message_id = next(iter(message_ids))
+    if message_id:
+        return (
+            conversation,
+            _ORIGIN_KIND_LEGACY,
+            message_id,
+            None,
+        )
+    return (
+        conversation,
+        _ORIGIN_KIND_LEGACY_RECORD,
+        message_index,
+        None,
+    )
+
+
 def validate_declared_assets(
     messages: list[Mapping[str, Any]],
     *,
@@ -327,39 +446,68 @@ def validate_declared_assets(
 ) -> list[tuple[int, dict[str, Any]]]:
     """严格验证所有声明资产，返回 (message_index, ref) 顺序列表。
 
+    图片数量限制按“可信原始入站消息”分组，而不是按模型可见的合并 user
+    record 分组。合并 record 通过 metadata.messages + ref.message_id 解析归属；
+    无 metadata.messages 的旧记录只允许单 message_id 或单 record 兼容绑定。
+
     - 任意一条非法：整条请求失败；
-    - 每条 message 的 index 不得重复；
-    - 每条 message 图片数量/整请求数量受 limits 约束；
-    - ``enforce_request_limits=False`` 只跳过整请求图片数量上限，供预算预检
-      在压缩前统计超量图片；单个 ref 与单条消息限制仍然严格执行。
+    - 同一原始消息的 index 不得重复；
+    - 同一原始消息图片数 / 整请求数量受 limits 约束；
+    - ``enforce_request_limits=False`` 只跳过整请求数量上限，原始消息上限与
+      重复/归属校验仍严格执行。
     """
     limits = limits or ImageLimits()
     validated: list[tuple[int, dict[str, Any]]] = []
+    origin_counts: dict[tuple[Any, ...], int] = {}
+    seen_origin_indices: set[tuple[tuple[Any, ...], int]] = set()
     total = 0
     for message_index, message in enumerate(messages):
         assets = declared_image_assets(message)
         if not assets:
             continue
-        if len(assets) > limits.max_images_per_message:
-            raise ImageAssetError(
-                "单条消息图片数量超过限制", code="image_request_count_exceeded"
-            )
-        seen_indices: set[int] = set()
-        for asset in assets:
-            ref = validate_image_asset_ref(
+        refs = [
+            validate_image_asset_ref(
                 asset,
                 allowed_versions=allowed_versions,
                 limits=limits,
             )
-            if ref["index"] in seen_indices:
-                raise ImageAssetError("图片资产消息索引重复")
-            seen_indices.add(ref["index"])
+            for asset in assets
+        ]
+        entries = _metadata_messages(message)
+        legacy_origin: tuple[Any, ...] | None = None
+        if entries is None:
+            legacy_origin = _legacy_origin_for_record(
+                message,
+                message_index,
+                refs,
+            )
+        for ref in refs:
+            if entries is None:
+                origin = legacy_origin
+            else:
+                origin = _metadata_origin(message, ref, entries)
+            if origin is None:
+                raise ImageAssetError(
+                    "图片资产缺少可信原始消息归属",
+                    code="invalid_asset_reference",
+                )
+            origin_index = (origin, ref["index"])
+            if origin_index in seen_origin_indices:
+                raise ImageAssetError(
+                    "同一原始消息的图片资产消息索引重复",
+                    code="invalid_asset_reference",
+                )
+            seen_origin_indices.add(origin_index)
+            origin_count = origin_counts.get(origin, 0) + 1
+            origin_counts[origin] = origin_count
+            if origin_count > limits.max_images_per_message:
+                raise ImageAssetError(
+                    "同一原始消息图片数量超过限制",
+                    code="image_request_count_exceeded",
+                )
             validated.append((message_index, ref))
             total += 1
-            if (
-                enforce_request_limits
-                and total > limits.max_images_per_request
-            ):
+            if enforce_request_limits and total > limits.max_images_per_request:
                 raise ImageAssetError(
                     "请求图片数量超过限制", code="image_request_count_exceeded"
                 )

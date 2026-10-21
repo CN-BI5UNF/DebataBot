@@ -63,3 +63,27 @@ async def test_usage_stats_records_extra_kv_diagnostics(tmp_path):
     text = (tmp_path / "usage.jsonl").read_text(encoding="utf-8")
     assert '"kv_message_count":3' in text
     assert '"kv_prefix_8k_hash":"abc123"' in text
+
+
+@pytest.mark.asyncio
+async def test_usage_stats_store_separates_legacy_v2_and_future(tmp_path):
+    store = UsageStatsStore(tmp_path / "usage.jsonl")
+    await store.load()
+    await store.record(
+        Usage(prompt_tokens=100, cached_tokens=70, total_tokens=120),
+        extra={"usage_semantics_version": 1},
+    )
+    await store.record(
+        Usage(prompt_tokens=185, cached_tokens=70, total_tokens=205)
+    )
+    await store.record(
+        Usage(prompt_tokens=50, cached_tokens=20, total_tokens=60),
+        extra={"usage_semantics_version": 3},
+    )
+
+    summary = store.summarize("all")
+    assert summary.current_semantics_request_count == 1
+    assert summary.legacy_request_count == 1
+    assert summary.unknown_semantics_request_count == 1
+    assert summary.current_prompt_tokens == 185
+    assert summary.cache_hit_rate == 70 / 185

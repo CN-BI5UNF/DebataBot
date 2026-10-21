@@ -41,13 +41,26 @@ _DATA_IMAGE_ERROR_RE = re.compile(
     re.IGNORECASE,
 )
 _HTTP_ERROR_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_BEARER_ERROR_RE = re.compile(
+    r"(?i)\b(authorization\s*:\s*bearer\s+)[^\s,;\"']+"
+)
+_BEARER_TOKEN_RE = re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+")
+_API_KEY_ERROR_RE = re.compile(
+    r"(?i)\b(api[_-]?key|access[_-]?token|signature|sig)\s*[:=]\s*[^\s,;\"']+"
+)
 
 
 def safe_provider_error_text(error: Any, *, limit: int = 300) -> str:
-    """受控 provider 错误摘要：去掉图片 base64 和 URL 鉴权参数。"""
-    text = str(error or "")
+    """受控 provider 错误摘要：去掉图片 base64、URL 鉴权和常见密钥文本。"""
+    try:
+        text = str(error or "")
+    except Exception:  # noqa: BLE001
+        text = f"<{type(error).__name__}>"
     text = _DATA_IMAGE_ERROR_RE.sub("<image-data>", text)
     text = _HTTP_ERROR_URL_RE.sub(_safe_error_url, text)
+    text = _BEARER_ERROR_RE.sub(r"\1<redacted>", text)
+    text = _BEARER_TOKEN_RE.sub(r"\1<redacted>", text)
+    text = _API_KEY_ERROR_RE.sub(r"\1=<redacted>", text)
     text = " ".join(text.split())
     return text[: max(1, int(limit))]
 
@@ -55,11 +68,12 @@ def safe_provider_error_text(error: Any, *, limit: int = 300) -> str:
 def _safe_error_url(match: re.Match[str]) -> str:
     try:
         parsed = urlsplit(match.group(0))
+        host = parsed.hostname or "remote"
     except ValueError:
         return "<invalid-url>"
     if parsed.scheme not in {"http", "https"}:
         return "<unsupported-url>"
-    return f"{parsed.scheme}://{parsed.hostname or 'remote'}/..."
+    return f"{parsed.scheme}://{host}/..."
 
 
 # ============================================================

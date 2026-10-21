@@ -61,11 +61,11 @@ def _usage_dict(rt: Any, range_name: str) -> dict[str, Any]:
         return {"range": range_name, "available": False}
     try:
         summary = store.summarize(range_name)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("读取用量统计失败：%s", e)
-        return {"range": range_name, "available": False, "error": str(e)}
+    except Exception:  # noqa: BLE001
+        logger.warning("读取用量统计失败")
+        return {"range": range_name, "available": False, "error": "读取用量统计失败"}
     data = {"range": range_name, "available": True}
-    for key in (
+    keys = (
         "request_count",
         "prompt_tokens",
         "completion_tokens",
@@ -73,19 +73,70 @@ def _usage_dict(rt: Any, range_name: str) -> dict[str, Any]:
         "cached_tokens",
         "cache_creation_tokens",
         "cache_miss_tokens",
-        "current_semantics_request_count",
-        "legacy_request_count",
-        "raw_cache_inconsistent_count",
         "total_tokens",
-        "cache_hit_rate",
-        "uncached_prompt_tokens",
+        "raw_cache_inconsistent_count",
+        "current_semantics_request_count",
+        "current_prompt_tokens",
+        "current_completion_tokens",
+        "current_reasoning_tokens",
+        "current_cached_tokens",
+        "current_cache_creation_tokens",
+        "current_cache_miss_tokens",
+        "current_total_tokens",
+        "current_raw_cache_inconsistent_count",
+        "current_estimated_prompt_tokens",
+        "current_estimate_actual_prompt_tokens",
+        "current_estimate_abs_error_tokens",
+        "current_estimate_samples",
+        "legacy_request_count",
+        "legacy_prompt_tokens",
+        "legacy_completion_tokens",
+        "legacy_reasoning_tokens",
+        "legacy_cached_tokens",
+        "legacy_cache_creation_tokens",
+        "legacy_cache_miss_tokens",
+        "legacy_total_tokens",
+        "legacy_raw_cache_inconsistent_count",
+        "legacy_estimated_prompt_tokens",
+        "legacy_estimate_actual_prompt_tokens",
+        "legacy_estimate_abs_error_tokens",
+        "legacy_estimate_samples",
+        "unknown_semantics_request_count",
+        "unknown_semantics_prompt_tokens",
+        "unknown_semantics_completion_tokens",
+        "unknown_semantics_reasoning_tokens",
+        "unknown_semantics_cached_tokens",
+        "unknown_semantics_cache_creation_tokens",
+        "unknown_semantics_cache_miss_tokens",
+        "unknown_semantics_total_tokens",
         "estimated_prompt_tokens",
         "estimate_actual_prompt_tokens",
         "estimate_abs_error_tokens",
         "estimate_samples",
         "estimate_error_rate",
-    ):
-        data[key] = getattr(summary, key, 0)
+        "cache_hit_rate",
+        "current_cache_hit_rate",
+        "legacy_cache_hit_rate",
+        "uncached_prompt_tokens",
+        "current_uncached_prompt_tokens",
+        "current_estimate_error_rate",
+        "legacy_estimate_error_rate",
+    )
+    nullable = {
+        "cache_hit_rate",
+        "current_cache_hit_rate",
+        "legacy_cache_hit_rate",
+        "uncached_prompt_tokens",
+        "current_uncached_prompt_tokens",
+        "current_estimate_error_rate",
+        "legacy_estimate_error_rate",
+    }
+    for key in keys:
+        data[key] = getattr(summary, key, None if key in nullable else 0)
+    data["current_semantics_available"] = bool(
+        getattr(summary, "has_current_semantics_data", False)
+    )
+    data["legacy_cache_rate_available"] = False
     return data
 
 

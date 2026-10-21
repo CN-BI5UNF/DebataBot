@@ -236,3 +236,31 @@ def _insert_usage_record_json(
         db.connect().commit()
     finally:
         db.close()
+
+
+@pytest.mark.asyncio
+async def test_debata_store_separates_legacy_v2_and_future(tmp_path):
+    store = DebataUsageStatsStore(tmp_path / "debata.db", "yuexi")
+    await store.load()
+    await store.record(
+        Usage(prompt_tokens=100, cached_tokens=70, total_tokens=120),
+        extra={"usage_semantics_version": 1},
+    )
+    await store.record(
+        Usage(prompt_tokens=185, cached_tokens=70, total_tokens=205)
+    )
+    await store.record(
+        Usage(prompt_tokens=50, cached_tokens=20, total_tokens=60),
+        extra={"usage_semantics_version": 3},
+    )
+
+    summary = store.summarize("all")
+    assert summary.current_semantics_request_count == 1
+    assert summary.legacy_request_count == 1
+    assert summary.unknown_semantics_request_count == 1
+    assert summary.current_prompt_tokens == 185
+    assert summary.cache_hit_rate == 70 / 185
+
+    reloaded = DebataUsageStatsStore(tmp_path / "debata.db", "yuexi")
+    await reloaded.load()
+    assert reloaded.summarize("all") == summary

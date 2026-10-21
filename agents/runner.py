@@ -35,6 +35,7 @@ from providers.base import (
     ReasoningConfig,
     ToolCall,
     normalize_messages,
+    safe_provider_error_text,
 )
 from utils.image_budget import assert_wire_request_fits
 from utils.image_contracts import (
@@ -293,7 +294,11 @@ class AgentRunner:
                     first_token_timeout=self.cfg.first_token_timeout_seconds,
                 )
             except ProviderTimeoutError as e:
-                logger.error(f"AgentRunner 超时（轮次 {loop_count}）: {e}")
+                logger.error(
+                    "AgentRunner 超时（轮次 %s）：%s",
+                    loop_count,
+                    safe_provider_error_text(e),
+                )
                 self._emit_status(
                     status_callback,
                     state="error",
@@ -311,7 +316,11 @@ class AgentRunner:
                     first_prompt_tokens=first_prompt_tokens,
                 )
             except ProviderError as e:
-                logger.error(f"AgentRunner API 错误（轮次 {loop_count}）: {e}")
+                logger.error(
+                    "AgentRunner API 错误（轮次 %s）：%s",
+                    loop_count,
+                    safe_provider_error_text(e),
+                )
                 self._emit_status(
                     status_callback,
                     state="error",
@@ -329,7 +338,12 @@ class AgentRunner:
                     first_prompt_tokens=first_prompt_tokens,
                 )
             except Exception as e:
-                logger.exception(f"AgentRunner 未知错误（轮次 {loop_count}）: {e}")
+                logger.error(
+                    "AgentRunner 未知错误（轮次 %s，type=%s）：%s",
+                    loop_count,
+                    type(e).__name__,
+                    safe_provider_error_text(e),
+                )
                 self._emit_status(
                     status_callback,
                     state="error",
@@ -821,7 +835,10 @@ class AgentRunner:
             )
             return result
         except Exception as e:
-            logger.warning("AgentRunner 工具循环无工具收尾失败: %s", e)
+            logger.warning(
+                "AgentRunner 工具循环无工具收尾失败: %s",
+                safe_provider_error_text(e),
+            )
             self._emit_status(
                 status_callback,
                 state="error",
@@ -886,7 +903,12 @@ class AgentRunner:
                 if not isinstance(result, dict):
                     result = {"ok": True, "value": result}
             except Exception as e:
-                logger.exception(f"工具 {name} 执行失败: {e}")
+                logger.error(
+                    "工具 %s 执行失败（type=%s）：%s",
+                    name,
+                    type(e).__name__,
+                    safe_provider_error_text(e),
+                )
                 result = _build_runner_tool_error_result(
                     name,
                     brief="工具执行失败。",

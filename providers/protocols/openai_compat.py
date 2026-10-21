@@ -28,7 +28,13 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
-from openai import APIError, AsyncOpenAI, AuthenticationError, RateLimitError
+from openai import (
+    APIError,
+    APITimeoutError,
+    AsyncOpenAI,
+    AuthenticationError,
+    RateLimitError,
+)
 
 from providers.base import (
     CompletionResult,
@@ -165,19 +171,27 @@ class OpenAICompatProvider(IProvider):
                 return await self._chat_stream(kwargs, first_token_timeout)
             return await self._chat_nonstream(kwargs)
         except AuthenticationError as e:
-            raise ProviderAuthError(f"{self.name}: 认证失败: {e}") from e
+            raise ProviderAuthError(
+                f"{self.name}: 认证失败: {safe_provider_error_text(e)}"
+            ) from None
         except RateLimitError as e:
-            raise ProviderRateLimitError(f"{self.name}: 限流: {e}") from e
-        except (asyncio.TimeoutError, httpx.TimeoutException) as e:
-            raise ProviderTimeoutError(f"{self.name}: 超时: {e}") from e
+            raise ProviderRateLimitError(
+                f"{self.name}: 限流: {safe_provider_error_text(e)}"
+            ) from None
+        except (APITimeoutError, asyncio.TimeoutError, httpx.TimeoutException) as e:
+            raise ProviderTimeoutError(
+                f"{self.name}: 超时: {safe_provider_error_text(e)}"
+            ) from None
         except APIError as e:
             raise ProviderError(
                 f"{self.name}: API 错误: {safe_provider_error_text(e)}"
-            ) from e
+            ) from None
         except TypeError as e:
-            # 同 anthropic_proto：SDK 调用签名写错时给出明确原因，
-            # 别让它冒到上层变成含糊的「未知错误」。
-            raise ProviderError(f"{self.name}: 内部错误（请求未发出）: {e}") from e
+            # SDK 调用签名写错时给出明确原因，但文本同样经过脱敏。
+            raise ProviderError(
+                f"{self.name}: 内部错误（请求未发出）: "
+                f"{safe_provider_error_text(e)}"
+            ) from None
 
     # ============================================================
     # 内部：流式 / 非流式
