@@ -11,6 +11,7 @@
 - 新增 `/api/storage/*` 存储盘点与安全清理 API：preview → execute → job，支持确认令牌、盘点代次、幂等键与取消。
 - 新增 `/api/context/status` 只读预算快照：有效窗口、输出预留、安全余量、净输入预算与阈值。
 - 新增 WebUI「存储与缓存」页面，以及设置页 Token 预算分组的当前预算快照。
+- 新增 `storage.retention.inbound_media_hours`（默认 48 小时）：`workspace/incoming` 下的入站图片/视频超过 TTL 后进入可预览清理类别；音频和普通文件仍受保护。
 - 新增 `docs/storage_maintenance.md`。
 
 ### Changed
@@ -22,7 +23,8 @@
 - 修正 `tests/test_provider_error_redaction.py` 导入未声明 `httpx2` 导致全量测试无法收集的问题（当前锁定 anthropic 0.116 使用 httpx）。
 
 ### Known limitations
-- 自动磁盘 GC 定时器、聊天/唯一图片按范围删除、资源引用/租约、隔离区恢复、预算策略 v2 运行时切换与工具循环统一 guard 尚未实现。
+- 自动磁盘 GC 定时器、聊天记录按范围删除、资源引用/租约、隔离区恢复、预算策略 v2 运行时切换与工具循环统一 guard 尚未实现。
+- 入站图片/视频的 TTL 清理不做历史引用检查；删除后历史文字仍在，但原媒体字节不可用，模型需要时必须要求重传。音频和普通入站文件不在此策略内。
 
 ## [Unreleased] — token 效率重构
 

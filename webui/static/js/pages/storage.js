@@ -59,7 +59,8 @@ export async function render(container, ctx) {
   const head = h('div', { class: 'page-head' },
     h('h1', { class: 'page-title' }, '存储与缓存'),
     h('p', { class: 'page-desc' },
-      '只清理可重建缓存和受管临时文件；原始聊天、唯一图片与用户文件受保护。'),
+      '只清理可重建缓存、受管临时文件和超过保留期的入站图片/视频；'
+      + '原始聊天、用户文件与备份受保护。'),
   );
   const summaryHost = h('div', { class: 'grid grid-4' });
   const warningHost = h('div', {});
@@ -130,13 +131,13 @@ export async function render(container, ctx) {
       h('div', { class: 'card' },
         h('div', { class: 'stat-label' }, '可回收缓存'),
         h('div', { class: 'stat-value' }, formatBytes(usage.reclaimable_bytes)),
-        h('div', { class: 'field-help' }, '内存缓存 + 过期临时文件'),
+        h('div', { class: 'field-help' }, '内存缓存 + 过期临时文件 + 到期入站媒体'),
       ),
       h('div', { class: 'card' },
         h('div', { class: 'stat-label' }, '受保护数据'),
         h('div', { class: 'stat-value' }, formatBytes(usage.protected_bytes)),
         h('div', { class: 'field-help' },
-          '聊天/图片/用户文件/日志/备份，不在安全清理范围'),
+          '聊天/用户文件/其他附件/日志/备份，不在安全清理范围'),
       ),
       h('div', { class: 'card' },
         h('div', { class: 'stat-label' }, '历史分页缓存'),
@@ -362,7 +363,8 @@ export async function render(container, ctx) {
     );
     const view = modal({
       title: '确认清理影响',
-      subtitle: '原始聊天、唯一图片与用户文件不会出现在候选里。',
+      subtitle: '原始聊天、用户文件与备份不会出现在候选里；'
+        + '入站图片/视频删除后原媒体字节不可用。',
       body,
       footer: h('div', { class: 'row' },
         h('div', { class: 'spacer' }),

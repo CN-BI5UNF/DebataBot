@@ -441,6 +441,11 @@ SETTINGS_GROUPS: list[Section] = [
             {"path": "storage.maintenance.derived_cache_days",
              "label": "派生缓存保留（天）", "type": "int", "default": 7,
              "min": 1, "max": 365, "needs_restart": False},
+            {"path": "storage.retention.inbound_media_hours",
+             "label": "入站图片/视频保留（小时）", "type": "int", "default": 48,
+             "min": 1, "max": 720, "needs_restart": False,
+             "help": "只对 workspace/incoming 中的图片/视频生效；清理后历史文字保留，"
+                     "但原媒体字节不可用，需要时让用户重传"},
             {"path": "storage.maintenance.min_free_bytes",
              "label": "磁盘低水位（字节）", "type": "int", "default": 1073741824,
              "min": 0, "needs_restart": False},

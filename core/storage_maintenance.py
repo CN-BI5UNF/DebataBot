@@ -34,6 +34,14 @@ logger = logging.getLogger(__name__)
 
 PREVIEW_TTL_SECONDS = 300
 
+IMAGE_EXTENSIONS = frozenset(
+    {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".avif"}
+)
+VIDEO_EXTENSIONS = frozenset(
+    {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".m4v", ".ts", ".3gp"}
+)
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
 
 @dataclass(frozen=True, slots=True)
 class CategorySpec:
@@ -80,9 +88,14 @@ CATEGORY_SPECS: dict[str, CategorySpec] = {
         implemented=False, protected=True,
     ),
     "image_assets": CategorySpec(
-        "image_assets", "唯一图片附件", "durable",
-        "历史图片是唯一事实副本，不能在无跨人格引用校验时清理；本轮未启用。",
-        implemented=False, protected=True,
+        "image_assets", "入站图片", "disk_media",
+        "workspace/incoming 下的图片文件；用户确认超过保留期可清理。"
+        "删除后历史文字保留，但原图字节不可用，模型需要时会要求重传。",
+    ),
+    "inbound_videos": CategorySpec(
+        "inbound_videos", "入站视频", "disk_media",
+        "workspace/incoming 下的视频文件；用户确认超过保留期可清理。"
+        "删除后历史文字保留，但原视频字节不可用。",
     ),
     "rag_index": CategorySpec(
         "rag_index", "RAG 向量索引", "durable",
@@ -101,7 +114,7 @@ CATEGORY_SPECS: dict[str, CategorySpec] = {
     ),
     "workspace_incoming_other": CategorySpec(
         "workspace_incoming_other", "其他入站附件", "durable",
-        "workspace/incoming 下的音频、视频、文件等唯一副本，默认永久保留。",
+        "workspace/incoming 下除图片/视频外的音频和文件副本，默认永久保留。",
         implemented=False, protected=True,
     ),
     "workspace_agent_tasks": CategorySpec(
@@ -170,6 +183,7 @@ class StorageMaintenanceService:
     async def usage(self) -> dict[str, Any]:
         await self.ensure_started()
         cfg = self._maintenance_cfg()
+        retention = self._retention_cfg()
         memory = await self._memory_cache_usage()
         history_stats: dict[str, Any] = {}
         try:
@@ -179,7 +193,7 @@ class StorageMaintenanceService:
         disk = await asyncio.to_thread(self._scan_disk_sync)
         categories: list[dict[str, Any]] = []
         for key, spec in CATEGORY_SPECS.items():
-            if spec.kind in {"memory", "disk_temp", "disk_cache"}:
+            if spec.kind in {"memory", "disk_temp", "disk_cache", "disk_media"}:
                 data = memory.get(key) or disk.get(key) or {}
                 categories.append(
                     {
@@ -233,6 +247,9 @@ class StorageMaintenanceService:
                 "mode": str(getattr(cfg, "mode", "inventory_only")),
                 "temp_hours": int(getattr(cfg, "temp_hours", 24)),
                 "derived_cache_days": int(getattr(cfg, "derived_cache_days", 7)),
+                "inbound_media_hours": int(
+                    getattr(retention, "inbound_media_hours", 48)
+                ),
                 "preview_ttl_seconds": PREVIEW_TTL_SECONDS,
                 "automatic_cleanup": False,
             },
@@ -288,7 +305,6 @@ class StorageMaintenanceService:
         vector_dir = self.paths.VECTOR_DIR
         workspace = self.paths.WORKSPACE_DIR
         incoming = workspace / "incoming"
-        images = incoming / "images"
         agent_tasks = workspace / "agent_tasks"
         runtime_dir = workspace / "runtime"
         logs = self.paths.LOGS_DIR
@@ -299,8 +315,14 @@ class StorageMaintenanceService:
 
         db_size = _tree_size(memory_dir)
         rag_size = _tree_size(vector_dir)
-        incoming_images = _tree_size(images)
-        incoming_other = _tree_size(incoming, exclude_dirs={images})
+        incoming_all = _tree_size(incoming)
+        incoming_images = _tree_size_matching(incoming, IMAGE_EXTENSIONS)
+        incoming_videos = _tree_size_matching(incoming, VIDEO_EXTENSIONS)
+        incoming_other = _subtract_sizes(
+            incoming_all,
+            incoming_images,
+            incoming_videos,
+        )
         tasks_size = _tree_size(agent_tasks)
         runtime_size = _tree_size(runtime_dir)
         workspace_other = _tree_size(
@@ -317,6 +339,7 @@ class StorageMaintenanceService:
             "derived_cache": cache_size,
             "chat_history": db_size,
             "image_assets": incoming_images,
+            "inbound_videos": incoming_videos,
             "rag_index": rag_size,
             "logs": logs_size,
             "workspace_user": workspace_other,
@@ -334,6 +357,7 @@ class StorageMaintenanceService:
         await self.ensure_started()
         selected = self._validate_categories(categories)
         cfg = self._maintenance_cfg()
+        retention = self._retention_cfg()
         items: list[dict[str, Any]] = []
         category_counts: dict[str, dict[str, int]] = {}
         now = time.time()
@@ -367,6 +391,25 @@ class StorageMaintenanceService:
                     max(0, int(getattr(cfg, "derived_cache_days", 7)) * 86400),
                     key,
                     now,
+                )
+                items.extend(found)
+                category_counts[key] = _category_totals(found)
+            elif spec.kind == "disk_media":
+                extensions = (
+                    IMAGE_EXTENSIONS if key == "image_assets" else VIDEO_EXTENSIONS
+                )
+                found = await asyncio.to_thread(
+                    _collect_disk_items,
+                    self.paths.WORKSPACE_DIR / "incoming",
+                    self.paths.DATA_DIR,
+                    max(
+                        1,
+                        int(getattr(retention, "inbound_media_hours", 48)),
+                    )
+                    * 3600,
+                    key,
+                    now,
+                    extensions,
                 )
                 items.extend(found)
                 category_counts[key] = _category_totals(found)
@@ -630,7 +673,11 @@ class StorageMaintenanceService:
                 outcome["skipped"] += 1
                 _bump(outcome["skip_reasons"], "changed_since_preview")
                 continue
-            root = self.paths.TMP_DIR if item.get("category") == "temp_files" else self.paths.CACHE_DIR
+            root = self._disk_root_for_category(str(item.get("category") or ""))
+            if root is None:
+                outcome["skipped"] += 1
+                _bump(outcome["skip_reasons"], "unknown_root")
+                continue
             deleted, status = await asyncio.to_thread(safe_unlink, target, root)
             if deleted:
                 outcome["deleted"] += 1
@@ -673,6 +720,19 @@ class StorageMaintenanceService:
     def _maintenance_cfg(self) -> Any:
         storage = getattr(self.rt.config, "storage", None)
         return getattr(storage, "maintenance", None)
+
+    def _retention_cfg(self) -> Any:
+        storage = getattr(self.rt.config, "storage", None)
+        return getattr(storage, "retention", None)
+
+    def _disk_root_for_category(self, category: str) -> Path | None:
+        if category == "temp_files":
+            return self.paths.TMP_DIR
+        if category == "derived_cache":
+            return self.paths.CACHE_DIR
+        if category in {"image_assets", "inbound_videos"}:
+            return self.paths.WORKSPACE_DIR / "incoming"
+        return None
 
     def _validate_categories(self, categories: list[str]) -> list[str]:
         cleaned = []
@@ -735,12 +795,63 @@ def _tree_size(
     return result
 
 
+def _tree_size_matching(
+    root: Path,
+    extensions: frozenset[str],
+) -> dict[str, int]:
+    """只统计指定扩展名的普通文件，不跟随符号链接。"""
+
+    result = {"bytes": 0, "files": 0, "items": 0}
+    try:
+        root = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return result
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_symlink():
+                            continue
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False):
+                            if Path(entry.name).suffix.lower() not in extensions:
+                                continue
+                            stat = entry.stat(follow_symlinks=False)
+                            result["bytes"] += int(stat.st_size)
+                            result["files"] += 1
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    result["items"] = result["files"]
+    return result
+
+
+def _subtract_sizes(
+    base: dict[str, int],
+    *parts: dict[str, int],
+) -> dict[str, int]:
+    bytes_left = int(base.get("bytes") or 0)
+    files_left = int(base.get("files") or 0)
+    for part in parts:
+        bytes_left -= int(part.get("bytes") or 0)
+        files_left -= int(part.get("files") or 0)
+    bytes_left = max(0, bytes_left)
+    files_left = max(0, files_left)
+    return {"bytes": bytes_left, "files": files_left, "items": files_left}
+
+
 def _collect_disk_items(
     root: Path,
     data_dir: Path,
     min_age_seconds: int,
     category: str,
     now: float,
+    extensions: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     try:
         root_resolved = root.resolve(strict=True)
@@ -766,6 +877,10 @@ def _collect_disk_items(
                             continue
                         if not entry.is_file(follow_symlinks=False):
                             continue
+                        if extensions is not None:
+                            suffix = Path(entry.name).suffix.lower()
+                            if suffix not in extensions:
+                                continue
                         stat = entry.stat(follow_symlinks=False)
                         if now - float(stat.st_mtime) < min_age_seconds:
                             continue

@@ -136,6 +136,50 @@ async def test_preview_and_execute_only_expired_temp_files(tmp_paths):
 
 
 @pytest.mark.asyncio
+async def test_inbound_media_ttl_preview_and_execute(tmp_paths):
+    runtime = _runtime(tmp_paths)
+    incoming = tmp_paths.WORKSPACE_DIR / "incoming"
+    old_image = incoming / "images" / "old.jpg"
+    new_image = incoming / "new.png"
+    old_video = incoming / "old.mp4"
+    old_audio = incoming / "keep.ogg"
+    _old_file(old_image, b"jpg-old")
+    _new_file(new_image, b"png-new")
+    _old_file(old_video, b"mp4-old")
+    _old_file(old_audio, b"ogg-keep")
+
+    service = StorageMaintenanceService(runtime)
+    preview = await service.preview(["image_assets", "inbound_videos"])
+
+    assert preview["expected_items"] == 2
+    assert preview["expected_bytes"] == len(b"jpg-old") + len(b"mp4-old")
+    assert preview["category_counts"]["image_assets"]["items"] == 1
+    assert preview["category_counts"]["inbound_videos"]["items"] == 1
+    assert "old.jpg" not in str(preview)
+
+    job, _ = await service.execute(
+        preview_id=preview["preview_id"],
+        confirmation_token=preview["confirmation_token"],
+        idempotency_key="media-ttl",
+        expected_generation=preview["generation"],
+    )
+    finished = await _wait_job(service, job["job_id"])
+
+    assert finished["state"] == "completed"
+    assert not old_image.exists()
+    assert not old_video.exists()
+    assert new_image.exists()
+    assert old_audio.exists()
+
+    usage = await service.usage()
+    categories = {item["key"]: item for item in usage["categories"]}
+    assert categories["image_assets"]["reclaimable"] is True
+    assert categories["inbound_videos"]["reclaimable"] is True
+    assert categories["workspace_incoming_other"]["protected"] is True
+    assert usage["maintenance"]["inbound_media_hours"] == 48
+
+
+@pytest.mark.asyncio
 async def test_preview_rejects_bad_token_and_generation(tmp_paths):
     runtime = _runtime(tmp_paths)
     service = StorageMaintenanceService(runtime)

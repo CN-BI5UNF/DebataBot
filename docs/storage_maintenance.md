@@ -12,13 +12,20 @@
   工具展示缓存。
 - `<DATA_DIR>/tmp` 下超过 `storage.maintenance.temp_hours` 的普通文件。
 - `<DATA_DIR>/cache` 下超过 `storage.maintenance.derived_cache_days` 的普通文件。
+- `workspace/incoming` 下超过 `storage.retention.inbound_media_hours`
+  （默认 48 小时）的图片和视频文件。
 
 不会清理：
 
 - 原始聊天记录、event_log、archive、滚动摘要与长期记忆。
-- `workspace/incoming` 下的唯一图片/音频/文件副本。
+- `workspace/incoming` 下的音频、普通文件及其他非图片/视频副本。
 - workspace 用户文件、Agent 任务产物、配置备份、运行日志。
 - RAG 向量索引（清理后重新 embedding 可能产生费用）。
+
+注意：入站图片/视频的 TTL 清理不做历史引用检查。删除后历史记录仍保留文字，
+但原媒体字节不可用；模型若仍需要该图片/视频，必须要求用户重传，不能假装
+已经看过。`inbound_media_hours` 可配置为 1–720 小时；本轮没有自动执行删除，
+仍必须走 preview → execute。
 
 危险类别在 API 中会明确返回 `category_not_implemented`，不会因为前端传了
 类别名就静默降级成删除其他内容。本轮也没有实现隔离区恢复；执行前必须看清
@@ -44,6 +51,8 @@ storage:
     history_cache_max_bytes: 33554432
     history_cache_page_size: 256
     history_cache_max_pages: 16
+  retention:
+    inbound_media_hours: 48   # 入站图片/视频的 TTL；1–720 小时
 ```
 
 分页缓存按「总条数 + 起点」失效；append/truncate/replace/clear 会递增 revision
@@ -100,7 +109,9 @@ git diff --check
 ## 已知限制
 
 - 自动磁盘 GC 定时器未启用；`mode` 仍为 `inventory_only`，页面会如实显示。
-- 聊天记录/唯一图片按范围删除、资源引用表/租约、隔离区恢复尚未实现。
+- 聊天记录按范围删除、资源引用表/租约、隔离区恢复尚未实现。入站图片/视频
+  只有按时间 TTL 的清理，没有按来源引用/租约判断；删除后历史媒体字节不可用。
+  音频和普通文件仍默认永久保留。
 - 聊天页全量合并仍使用全量兼容读；RAG 历史 bootstrap 已改为分页流式入队并受
   有界队列背压，但 `archive.rag_records()` 仍一次返回归档列表，留待下一阶段分页。
 - 预算策略 v2 尚未接管运行时阈值；工具循环每次调用的统一 guard 也留待下一阶段。
@@ -109,5 +120,6 @@ git diff --check
   极短的 TOCTOU 替换窗口；管理接口必须保持 WebUI 鉴权。
 - 内存缓存清理是进程内操作；服务重启后这些缓存自然消失，未完成任务会标记
   `interrupted`，不会假装完成。
-- `temp_files` / `derived_cache` 的保留期按文件的 mtime 判断，不把 mtime 冒充
-  “最后访问时间”；受管目录之外的 workspace 文件完全不在扫描范围。
+- `temp_files` / `derived_cache` / 入站图片视频的保留期按文件的 mtime 判断，
+  不把 mtime 冒充“最后访问时间”；受管目录之外的 workspace 用户文件完全不在
+  扫描范围。

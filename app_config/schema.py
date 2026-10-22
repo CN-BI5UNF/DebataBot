@@ -1401,8 +1401,8 @@ class BehaviorConfig(StrictModel):
 class StorageMaintenanceConfig(StrictModel):
     """受管缓存/临时目录的保守维护策略。
 
-    原始聊天、唯一附件、用户文件与备份默认不参与自动清理；本组参数只约束
-    可重建缓存和显式登记过的临时文件。
+    可重建缓存、受管临时文件和用户明确允许 TTL 清理的入站媒体参与清理；
+    原始聊天、workspace 用户文件与备份默认不参与自动清理。
     """
 
     mode: Literal["inventory_only", "safe_only"] = "inventory_only"
@@ -1457,9 +1457,23 @@ class StorageMaintenanceConfig(StrictModel):
         return self
 
 
+class StorageRetentionConfig(StrictModel):
+    """用户确认的入站媒体保留策略。
+
+    入站图片/视频在 workspace/incoming 中按 TTL 变为可清理候选。删除后历史
+    记录仍保留文字，但原图/视频字节不可用；模型若仍需该媒体必须要求重传。
+    """
+
+    inbound_media_hours: int = Field(default=48, ge=1, le=720)
+    """入站图片/视频最短保留小时数；默认 48 小时（1–2 天）。"""
+
+
 class StorageConfig(StrictModel):
     maintenance: StorageMaintenanceConfig = Field(
         default_factory=StorageMaintenanceConfig
+    )
+    retention: StorageRetentionConfig = Field(
+        default_factory=StorageRetentionConfig
     )
 
 
