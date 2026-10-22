@@ -1,6 +1,6 @@
 """上下文预算只读状态。
 
-本轮只展示统一预算快照与当前配置，不切换运行时压缩策略、不触发模型调用。
+返回与运行时硬 guard 同源的统一预算快照。接口本身不调用模型、不改变压缩策略。
 """
 
 from __future__ import annotations
@@ -41,21 +41,31 @@ async def status(request: Request) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"计算上下文预算失败：{type(exc).__name__}") from exc
     actual_max = getattr(chat_cfg, "max_tokens", None)
-    snapshot = build_budget_snapshot(
-        window_requested=requested,
-        model_window=model_window,
-        model_limit_verified=model_window is not None,
-        window_source="configured" if context_cfg.max_context_tokens else "recommended",
-        output_reserve=int(context_cfg.reserve_output_tokens),
-        actual_max_tokens=actual_max if isinstance(actual_max, int) else None,
-        safety_margin_percent=int(context_cfg.safety_margin_percent),
-        safety_margin_min_tokens=int(context_cfg.safety_margin_min_tokens),
-        policy_version=int(context_cfg.budget_policy_version),
-        soft_percent=int(summarize_cfg.trigger_at_context_percent),
-        target_percent=int(summarize_cfg.target_after_context_percent),
-        retry_percent=int(summarize_cfg.retry_target_after_context_percent),
-        urgent_percent=int(summarize_cfg.urgent_at_input_percent),
-    )
+    binding: dict[str, Any] | None = None
+    snapshot_builder = getattr(pipeline, "_active_budget_snapshot", None)
+    binding_builder = getattr(pipeline, "_active_model_binding", None)
+    if callable(snapshot_builder):
+        snapshot = snapshot_builder()
+        if callable(binding_builder):
+            binding_obj = binding_builder()
+            to_dict = getattr(binding_obj, "as_dict", None)
+            binding = to_dict() if callable(to_dict) else None
+    else:
+        snapshot = build_budget_snapshot(
+            window_requested=requested,
+            model_window=model_window,
+            model_limit_verified=model_window is not None,
+            window_source="configured" if context_cfg.max_context_tokens else "recommended",
+            output_reserve=int(context_cfg.reserve_output_tokens),
+            actual_max_tokens=actual_max if isinstance(actual_max, int) else None,
+            safety_margin_percent=int(context_cfg.safety_margin_percent),
+            safety_margin_min_tokens=int(context_cfg.safety_margin_min_tokens),
+            policy_version=int(context_cfg.budget_policy_version),
+            soft_percent=int(summarize_cfg.trigger_at_context_percent),
+            target_percent=int(summarize_cfg.target_after_context_percent),
+            retry_percent=int(summarize_cfg.retry_target_after_context_percent),
+            urgent_percent=int(summarize_cfg.urgent_at_input_percent),
+        )
     fixed_overhead = 0
     working_history_budget = 0
     try:
@@ -97,6 +107,7 @@ async def status(request: Request) -> dict[str, Any]:
             "memory_token_budget": int(context_cfg.memory_token_budget),
         },
         "budget": snapshot.as_dict(),
+        "binding": binding,
         "fixed_overhead_tokens": fixed_overhead,
         "working_history_budget": working_history_budget,
         "legacy_trigger_estimate": legacy_trigger,
@@ -111,7 +122,7 @@ async def status(request: Request) -> dict[str, Any]:
         "notes": [
             "budget 为本地估算，不是供应商账单或硬保证",
             "window_effective = min(工作窗口, 已核实的模型上下文限制)",
-            "本轮 budget_policy_version=2 仅展示净输入预算，不切换运行时阈值",
+            "硬 guard 始终使用净输入预算 B；budget_policy_version=2 目前只改变阈值基准展示，不切换提前压缩策略",
             "provider 鉴权/余额错误不属于上下文超限，不会被本地预算拦住",
         ],
     }

@@ -376,3 +376,11 @@ def test_builtin_presets_tutorial_dirs():
     for pid, _preset in presets.items():
         tutorial = PRESETS_DIR / pid / "tutorial"
         assert tutorial.is_dir(), f"{pid} 缺 tutorial/ 子目录"
+
+
+def test_deepseek_and_openai_declare_reasoning_effort_support():
+    presets = load_all_presets(PRESETS_DIR)
+    assert presets["deepseek"].reasoning_effort_style == "deepseek"
+    assert presets["openai"].reasoning_effort_style == "openai"
+    # 未知/未核实网关默认不透传 reasoning_effort。
+    assert presets["glm"].reasoning_effort_style == "none"

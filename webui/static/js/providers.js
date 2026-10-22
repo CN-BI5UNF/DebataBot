@@ -553,6 +553,25 @@ function agentCard(name, agent, providers, ctx, markRestart, onSaved) {
   });
   const maxInput = h('input', { type: 'number', min: '1', value: agent.max_tokens });
   const reasoning = h('input', { type: 'checkbox', checked: !!agent.reasoning });
+  const reasoningBudget = h('select', {});
+  for (const [value, label] of [['low', '低'], ['medium', '中'], ['high', '高']]) {
+    reasoningBudget.append(h('option', { value }, label));
+  }
+  reasoningBudget.value = agent.reasoning_budget || 'medium';
+  reasoningBudget.disabled = !reasoning.checked;
+  const effortHint = h('div', { class: 'field-help' });
+  function updateEffortHint() {
+    const selected = providers.find((p) => p.id === providerSelect.value);
+    const style = selected?.reasoning_effort_style || '';
+    effortHint.textContent = style === 'openai' || style === 'deepseek'
+      ? '当前供应商会把档位映射为 reasoning_effort；档位越高越慢、越贵。'
+      : '当前供应商未声明 reasoning_effort 支持；档位会保存，但不会向端点发送该字段。';
+  }
+  reasoning.addEventListener('change', () => {
+    reasoningBudget.disabled = !reasoning.checked;
+  });
+  providerSelect.addEventListener('change', updateEffortHint);
+  updateEffortHint();
 
   const commit = async (event) => {
     const button = event.currentTarget;
@@ -565,6 +584,7 @@ function agentCard(name, agent, providers, ctx, markRestart, onSaved) {
         top_p: Number(topPInput.value),
         max_tokens: Number(maxInput.value),
         reasoning: reasoning.checked,
+        reasoning_budget: reasoning.checked ? reasoningBudget.value : null,
       });
       ctx.toast(result.message, 'ok');
       if (markRestart) markRestart();
@@ -586,6 +606,7 @@ function agentCard(name, agent, providers, ctx, markRestart, onSaved) {
       field('最大输出 token', maxInput),
       field('', h('label', { class: 'switch' }, reasoning, '启用思考模式')),
     ),
+    field('思考强度', reasoningBudget, effortHint),
     h('div', { style: { marginTop: '12px' } },
       h('button', { class: 'btn btn-primary', onclick: commit }, '保存')),
   );

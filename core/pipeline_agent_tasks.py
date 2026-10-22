@@ -249,6 +249,7 @@ class PipelineAgentTasksMixin:
                 },
             ]
             timeout_with_existing_output = False
+            active_budget = self._active_budget_snapshot()
             try:
                 result = await asyncio.wait_for(
                     self.chat_agent.run(
@@ -257,6 +258,10 @@ class PipelineAgentTasksMixin:
                         tool_executor=_sub_executor,
                         task_contract=f"后台资料处理任务 {task_id}",
                         max_loops=max_loops,
+                        prompt_budget_tokens=(
+                            active_budget.input_budget if active_budget.valid else 0
+                        ),
+                        token_estimator=self._token_estimator(),
                     ),
                     timeout=timeout_seconds,
                 )
@@ -284,7 +289,7 @@ class PipelineAgentTasksMixin:
                 if result.finish_reason in {"max_loops", "tool_loop_finalized"}
                 else "completed"
             )
-            if result.finish_reason == "api_error":
+            if result.finish_reason in {"api_error", "budget_blocked"}:
                 status = "failed"
             if not output_path.exists():
                 fallback = (result.final_content or "").strip()
@@ -297,7 +302,11 @@ class PipelineAgentTasksMixin:
                         max_loops=max_loops,
                     )
                 elif status == "failed":
-                    fallback = "后台子 Agent 调用失败，未产出可用结果。"
+                    fallback = (
+                        "后台子 Agent 本地预算阻止调用，未产出可用结果。"
+                        if result.finish_reason == "budget_blocked"
+                        else "后台子 Agent 调用失败，未产出可用结果。"
+                    )
                 elif not fallback:
                     fallback = "后台子 Agent 已结束，但没有写出结果内容。"
                 output_path.write_text(fallback, encoding="utf-8")

@@ -21,6 +21,7 @@ from typing import Any
 
 from app_config.schema import AgentConfig, SummarizeConfig
 from providers.base import IProvider, ProviderError, ReasoningConfig
+from utils.token_budget import TokenEstimator
 
 from .base import StatusCallback, UsageRecorder
 
@@ -38,12 +39,16 @@ class SummaryAgent:
         *,
         usage_recorder: UsageRecorder | None = None,
         status_callback: StatusCallback | None = None,
+        prompt_budget_tokens: int | None = None,
     ) -> None:
         self.provider = provider
         self.cfg = cfg
         self.summarize_cfg = summarize_cfg
         self.usage_recorder = usage_recorder
         self.status_callback = status_callback
+        self.prompt_budget_tokens = (
+            int(prompt_budget_tokens) if prompt_budget_tokens is not None else None
+        )
 
     async def summarize_rolling(
         self,
@@ -90,6 +95,27 @@ class SummaryAgent:
             f"<现有滚动摘要>\n{existing_summary_text or '（无）'}\n</现有滚动摘要>\n\n"
             f"<待归档对话>\n{history_text}\n</待归档对话>"
         )
+
+        if self.prompt_budget_tokens is not None:
+            summary_messages = [
+                {
+                    "role": "system",
+                    "content": "你是当前角色的记忆管理系统。负责滚动压缩旧对话。",
+                },
+                {"role": "user", "content": prompt},
+            ]
+            estimated = TokenEstimator(model=self.cfg.model).estimate_prompt(
+                summary_messages,
+                None,
+            )
+            if estimated > self.prompt_budget_tokens:
+                logger.warning(
+                    "滚动摘要输入超预算，拒绝调用 provider：estimated=%s budget=%s",
+                    estimated,
+                    self.prompt_budget_tokens,
+                )
+                self._emit_status("error", "滚动摘要输入超预算")
+                return None
 
         try:
             self._emit_status("thinking", "滚动摘要生成中")

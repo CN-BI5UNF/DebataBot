@@ -324,6 +324,35 @@ class Runtime:
                 raise RuntimeError(
                     f"agents.summary.provider={scfg.provider!r} 不在 providers 中"
                 )
+            # SummaryAgent 使用自己的模型绑定预算，不套主模型窗口。
+            from core.model_binding import build_binding_budget, resolve_agent_binding
+            from core.pipeline_context import _recommended_context_budget
+
+            summary_binding = resolve_agent_binding(self.config, "summary")
+            summary_input_budget: int | None = None
+            if summary_binding is not None:
+                requested = int(
+                    self.config.behavior.context.max_context_tokens
+                    or _recommended_context_budget(
+                        scfg.model,
+                        summary_binding.context_limit,
+                    )
+                )
+                snapshot = build_binding_budget(
+                    summary_binding,
+                    self.config.behavior.context,
+                    self.config.behavior.summarize,
+                    requested_window=requested,
+                    actual_max_tokens=scfg.max_tokens,
+                )
+                summary_input_budget = (
+                    snapshot.input_budget if snapshot.valid else 0
+                )
+                if not snapshot.valid:
+                    logger.warning(
+                        "summary 预算不合法，将阻止摘要调用: %s",
+                        ",".join(snapshot.errors),
+                    )
             # SummaryAgent 签名: (provider, cfg, summarize_cfg)
             self.summary_agent = SummaryAgent(
                 self.providers[scfg.provider],
@@ -331,6 +360,7 @@ class Runtime:
                 self.config.behavior.summarize,
                 usage_recorder=self._record_model_usage,
                 status_callback=self._update_model_activity,
+                prompt_budget_tokens=summary_input_budget,
             )
 
         if self._persona_management_enabled():

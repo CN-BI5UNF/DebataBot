@@ -70,3 +70,48 @@ def test_budget_snapshot_rejects_bool_and_negative_window():
 def test_token_budget_never_fakes_positive_input_space():
     assert TokenBudget(4096, 8192, 256, 256).total_input_budget == 0
     assert TokenBudget(16384, 8192, 256, 256).total_input_budget == 8192
+
+
+def test_effective_model_binding_resolves_preset_context_and_output():
+    from app_config.schema import RootConfig
+    from core.model_binding import build_binding_budget, resolve_agent_binding
+
+    config = RootConfig.model_validate(
+        {
+            "persona": {"name": "x"},
+            "adapters": {"default": {"type": "napcat"}},
+            "providers": {
+                "si": {"preset": "deepseek", "api_key_id": "k"},
+            },
+            "agents": {
+                "chat": {
+                    "provider": "si",
+                    "model": "deepseek-flash",
+                    "max_tokens": 5120,
+                    "reasoning": {"enabled": True, "budget": "high"},
+                },
+                "summary": {
+                    "provider": "si",
+                    "model": "deepseek-flash",
+                    "max_tokens": 1024,
+                },
+            },
+        }
+    )
+    binding = resolve_agent_binding(config, "chat")
+    assert binding is not None
+    assert binding.context_limit == 1_000_000
+    assert binding.context_verified is True
+    assert binding.max_output_tokens == 5120
+    assert binding.reasoning_budget == "high"
+
+    snapshot = build_binding_budget(
+        binding,
+        config.behavior.context,
+        config.behavior.summarize,
+        requested_window=131072,
+    )
+    assert snapshot.valid
+    assert snapshot.output_reserve == 8192
+    assert snapshot.safety_margin == 10486
+    assert snapshot.input_budget == 112394

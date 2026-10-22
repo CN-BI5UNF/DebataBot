@@ -60,7 +60,7 @@ def _make_pipeline(
     pipeline._token_calib_model = "fake-1"
     pipeline.model_context_length = max_context_tokens
     pipeline.chat_agent = SimpleNamespace(
-        cfg=SimpleNamespace(model="fake-1"),
+        cfg=SimpleNamespace(model="fake-1", max_tokens=1024),
         provider=None,
     )
     pipeline.behavior_cfg = SimpleNamespace(
@@ -169,9 +169,10 @@ async def test_first_and_retry_success_both_go_through_finalize(tmp_path):
     async def run_branch(tmp_path, mode: str):
         pipeline = _make_pipeline(
             tmp_path,
-            max_context_tokens=1300,
+            max_context_tokens=2_000,
             reserve_output_tokens=100,
         )
+        pipeline.chat_agent.cfg.max_tokens = 256
         ref = await _ref(tmp_path, pipeline)
         compacted = {"value": False}
         calls: list[str] = []

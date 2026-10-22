@@ -3,6 +3,7 @@ display_name: DeepSeek
 protocol: openai_compat
 base_url: https://api.deepseek.com/v1
 registration_url: https://platform.deepseek.com
+reasoning_effort_style: deepseek
 reasoning_style: thinking_extra_body
 
 models:

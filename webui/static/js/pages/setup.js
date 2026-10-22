@@ -27,7 +27,7 @@ export function render(container, ctx) {
       base_url: '', model: '', api_key: '', reasoning_style: '', timeout_seconds: 120,
       has_key: false,
     },
-    chat: { temperature: 0.6, top_p: 1.0, max_tokens: 16384, reasoning: false },
+    chat: { temperature: 0.6, top_p: 1.0, max_tokens: 16384, reasoning: false, reasoning_budget: 'medium' },
     agents: {},
     features: {},
     behavior: {},
@@ -253,6 +253,21 @@ export function render(container, ctx) {
       renderError();
     }
   }
+
+  async function rerenderStep() {
+    const renderer = STEP_VIEWS[state.current];
+    if (!renderer) return;
+    state.error = '';
+    if (typeof view?.destroy === 'function') {
+      try { view.destroy(); } catch (e) { console.error(e); }
+    }
+    view = renderer(stepHost, ctx, state) || { validate: () => null };
+    renderError();
+  }
+
+  // 向导步骤里的选择卡/开关需要局部重渲染；由这里统一更新 view，
+  // 避免旧的 validate 闭包和 DOM 状态脱节。
+  ctx.rerender = rerenderStep;
 
   backBtn.onclick = goBack;
   skipBtn.onclick = skip;

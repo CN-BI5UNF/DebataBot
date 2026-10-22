@@ -244,6 +244,11 @@ runtime 事件折叠。前端只按 `kind` 渲染，不猜记录之间的关系�
 
 ## 首次配置向导
 
+向导步骤里的选择卡、开关和下拉一旦改变条件渲染，统一调用 `setup.js` 注入的
+`ctx.rerender()`；不要在 `steps.js` 里直接调用未定义的 `render()`。向导在
+“角色”步骤可切换内置人格/生成新人格，并在主模型步骤开启思考模式后选择
+低/中/高思考强度。
+
 向导是多步的，流转规则由后端决定：`POST /api/setup/step` 调
 `webui/wizard/flow.py`（原桌面端原样搬过来的）。前端不判断"下一步去哪"——
 两条路径（推荐 7 步 / 自定义 8 步）加 `PERSONA_CREATE` 分支，写两遍必然漂。
@@ -265,6 +270,10 @@ runtime 事件折叠。前端只按 `kind` 渲染，不猜记录之间的关系�
 
 `secrets` 字段用于写天气 / TTS 这类不走 provider 的密钥——向导阶段 Runtime 还没起来，
 前端没法调 `/api/settings/secrets`。
+
+思考强度保存在 `agents.chat.reasoning.budget`（low/medium/high）；设置页的 Agent
+卡片也可手动修改。DeepSeek/OpenAI 预设会映射为 `reasoning_effort`，其他未声明
+支持的供应商只保存档位、不发送未知字段。
 
 向导里填的角色描述同理也调不了生成器（要真发一次模型请求），但**不能就这么丢掉**：
 它被写进 `<数据目录>/persona_brief.json`，配置完成后「角色 → 新建角色」会读它预填，

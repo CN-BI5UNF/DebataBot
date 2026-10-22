@@ -2,6 +2,28 @@
 
 本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] — 第二阶段 M0–M2：统一预算与硬 guard
+
+### Added
+- 新增 `core/model_binding.py`：解析 EffectiveModelBinding 与统一 `BudgetSnapshot`；主模型/摘要模型的窗口、输出上限和安全余量进入同一套计算。
+- 主调用预检改为使用 `B = W_effective - O - S`；窗口不合法时返回 `invalid_context_budget`，不再发送已知超限请求。
+- AgentRunner 在每轮工具调用前和最终 `tools=None` 收尾前重新估算完整 messages+tools；已知超限返回 `budget_blocked`，provider 调用次数为 0。
+- 子 Agent 任务与摘要 Agent 接入预算 guard；摘要使用自己的输入预算，不套主模型窗口。
+- 设置页 Agent 卡片新增“思考强度” low/medium/high，读取/保存 `agents.*.reasoning.budget`。
+- DeepSeek/OpenAI 预设新增 `reasoning_effort_style`，在开启思考时把档位映射为 `reasoning_effort`；未声明的自定义网关不发送该字段。
+- 首次配置向导改用 `setup.js` 注入的 `ctx.rerender()`，修复路径/人格来源/思考开关/TTS/嵌入/白名单等控件点击不更新选中态和条件字段的问题。
+
+### Changed
+- 工作历史预算改用统一净输入预算 B，扣除安全余量；`max(1, ...)` 不再伪造可用历史空间。
+- `/api/context/status` 与运行时硬 guard 使用同一快照，并返回 binding 信息。
+- 主回复/单次回合在 `reply_lock` 内再次核对当前预算，防止锁外预检后配置下调。
+
+### Known limitations
+- C02 提前压缩状态机、C03 cold catch-up、C04 摘要原子提交、C05 工具循环持久化/局部压缩、C06–C14 仍未实现。
+- 当前硬 guard 只阻止本地已知超限，不做工具循环内自动压缩；等回复锁内的最终重建仍以当前估算为准。
+- 只有 DeepSeek/OpenAI 预设确认映射 reasoning_effort；其他供应商保存档位但不保证实际生效。
+- 主 provider 401 未修复，真实模型自动回复和压缩质量仍无法验收。
+
 ## [Unreleased] — 存储与缓存维护切片
 
 ### Added

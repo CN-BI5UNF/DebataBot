@@ -77,6 +77,7 @@ class OpenAICompatProvider(IProvider):
         timeout: float = 120.0,
         extra_headers: dict[str, str] | None = None,
         reasoning_style: str = "thinking_extra_body",
+        reasoning_effort_style: str = "none",
         known_model_ids: set[str] | None = None,
         reasoning_model_ids: set[str] | None = None,
     ) -> None:
@@ -86,6 +87,7 @@ class OpenAICompatProvider(IProvider):
         self.timeout = timeout
         self.extra_headers = extra_headers or {}
         self.reasoning_style = reasoning_style
+        self.reasoning_effort_style = reasoning_effort_style
         self.known_model_ids = set(known_model_ids or ())
         self.reasoning_model_ids = set(reasoning_model_ids or ())
         """如何向 API 传达 reasoning 配置：
@@ -158,6 +160,9 @@ class OpenAICompatProvider(IProvider):
             kwargs["stream_options"] = {"include_usage": True}
 
         # === 思考配置翻译 ===
+        effort = self._reasoning_effort(reasoning, model=model)
+        if effort is not None:
+            kwargs["reasoning_effort"] = effort
         extra_body = self._build_reasoning_extra_body(reasoning, model=model)
         if extra:
             extra_body.update(extra)
@@ -323,6 +328,28 @@ class OpenAICompatProvider(IProvider):
             return {"enable_thinking": bool(reasoning and reasoning.enabled)}
         # 默认（如 openai_native）不传特殊参数
         return {}
+
+    def _reasoning_effort(
+        self,
+        reasoning: ReasoningConfig | None,
+        *,
+        model: str = "",
+    ) -> str | None:
+        """把 low/medium/high 映射为供应商的 reasoning_effort。
+
+        只对显式声明的预设（当前 DeepSeek/OpenAI）发送；未声明的自定义网关
+        一律不猜，避免因为未知字段被 400。
+        """
+        if self.reasoning_effort_style not in {"openai", "deepseek"}:
+            return None
+        if not reasoning or not reasoning.enabled:
+            return None
+        if not self._model_allows_reasoning_controls(model, reasoning):
+            return None
+        budget = str(reasoning.budget or "").strip().lower()
+        if budget not in {"low", "medium", "high"}:
+            return None
+        return budget
 
     def _should_replay_reasoning_content(
         self, reasoning: ReasoningConfig | None, *, model: str = ""

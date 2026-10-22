@@ -97,10 +97,14 @@ async def test_working_history_budget_uses_context_budget_and_prompt_overhead(
     # 固定开销现在实时来自实际 system prompt + 工具 schema；测试里替换方法，
     # 让断言只验证预算公式本身（不再写已删除的永久缓存字段）。
     monkeypatch.setattr(pipeline, "_fixed_prompt_overhead_tokens", lambda: 5_000)
-    assert pipeline._working_history_budget() == 6_000
+    # W=20000, O=max(2000, chat.max_tokens=1024)=2000,
+    # S=max(1024, ceil(8%*20000))=1600, B=16400；
+    # 再减 memory 3000、summary 4000、固定开销 5000。
+    assert pipeline._working_history_budget() == 4_400
 
     monkeypatch.setattr(pipeline, "_fixed_prompt_overhead_tokens", lambda: 20_000)
-    assert pipeline._working_history_budget() == 1
+    # 不再用 max(1, ...) 伪造可用历史空间。
+    assert pipeline._working_history_budget() == 0
 
 
 @pytest.mark.asyncio
@@ -602,3 +606,24 @@ async def test_fixed_prompt_overhead_tracks_persona_admin_tools_and_calibration(
     pipeline._token_calib_ratio = 0.5
     assert pipeline._fixed_prompt_overhead_tokens() < base
     pipeline._token_calib_ratio = base_ratio
+
+
+@pytest.mark.asyncio
+async def test_invalid_context_budget_blocks_before_provider(build_pipeline):
+    pipeline, provider, _, _, _ = await build_pipeline([])
+    context = pipeline.behavior_cfg.context
+    context.max_context_tokens = 4_096
+    context.reserve_output_tokens = 8_192
+
+    result = await pipeline._prepare_main_prompt_for_model(
+        conversation_id="private:1",
+        phase="invalid_budget",
+        tools_schema=None,
+        rebuild_messages=lambda: __import__("asyncio").sleep(
+            0, result=[{"role": "user", "content": "hi"}]
+        ),
+    )
+
+    assert result.ok is False
+    assert result.failure_code == "invalid_context_budget"
+    assert provider.calls == []

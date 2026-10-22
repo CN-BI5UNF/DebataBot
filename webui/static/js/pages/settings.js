@@ -269,7 +269,7 @@ export async function render(container, ctx) {
         const budget = status.budget || {};
         nodes.push(card('当前预算快照',
           `有效窗口 = min(工作窗口, 模型限制)；净输入预算 = 窗口 - 输出预留 - 安全余量。`
-          + '估算值不是供应商账单。',
+          + '该预算已用于发送前硬 guard；估算值不是供应商账单。',
           table(['项目', '值'], [
             h('tr', {}, h('td', {}, 'Provider / 模型'),
               h('td', {}, `${status.provider || '?'} / ${status.model || '?'}`)),

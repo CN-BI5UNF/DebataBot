@@ -120,12 +120,22 @@ IAdapter.send_text() → 用户收到消息
 
 ## 主上下文与滚动摘要
 
-`HistoryManager` 对真实聊天、运行时上下文和工具结果使用永久全量 append；主路径不再按“最近 N 条”裁剪工作历史。主模型调用前，`MessagePipeline` 会按 `behavior.context.max_context_tokens`（或推荐预算）预检装配后的上下文：
+`HistoryManager` 对真实聊天、运行时上下文和工具结果使用永久全量 append；主路径不再按“最近 N 条”裁剪工作历史。主模型调用前，`MessagePipeline` 通过 `core/model_binding.py` 解析有效模型绑定，并用统一 `BudgetSnapshot` 预检装配后的上下文：
+
+- `W_effective = min(max_context_tokens/推荐值, 已知模型窗口)`
+- `O = max(reserve_output_tokens, AgentConfig.max_tokens)`
+- `S = max(safety_margin_min_tokens, ceil(W_effective * safety_margin_percent / 100))`
+- `B = max(0, W_effective - O - S)`
+
+预检与工具循环、收尾、子 Agent 任务都使用同一个 `B`：
 
 1. 未超预算：直接调用主模型。
 2. 超过预算：触发滚动摘要，把较早的活跃 history 合入 summary，并推进活跃窗口起点。
 3. 首次压缩后仍超预算或压缩失败：按更小的重试目标再次扩大压缩范围。
 4. 仍无法满足预算：显式退出本轮并记录错误，而不是静默裁剪历史。
+5. 每次 provider 调用前（含每轮工具结果、最终 tools=None 收尾）再次估算完整 messages+tools；本地已知超限返回 `budget_blocked`，provider 调用次数为 0。
+
+`messages` 的最终发送仍在 `reply_lock` 内做一次当前预算复核。锁外预检保留用于减少锁占用；锁内复核防止等待期间配置被下调后继续发送已知超限请求。摘要有自己的输入预算（`SummaryAgent.prompt_budget_tokens`），摘要模型窗口与主模型分开计算。
 
 相关配置：
 

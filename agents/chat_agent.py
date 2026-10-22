@@ -70,6 +70,8 @@ class ChatAgent:
         model_view_policy: ModelViewPolicy | None = None,
         image_limits: Any = None,
         provider_limit_bytes: int | None = None,
+        prompt_budget_tokens: int | None = None,
+        token_estimator: Any = None,
     ) -> AgentRunResult:
         """执行一次完整对话循环（直到工具调用收尾）。
 
@@ -95,4 +97,6 @@ class ChatAgent:
             model_view_policy=model_view_policy,
             image_limits=image_limits,
             provider_limit_bytes=provider_limit_bytes,
+            prompt_budget_tokens=prompt_budget_tokens,
+            token_estimator=token_estimator,
         )

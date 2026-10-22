@@ -75,6 +75,9 @@ class ProviderPreset:
     reasoning_style: str = "thinking_extra_body"
     """仅 openai_compat 协议生效"""
 
+    reasoning_effort_style: str = "none"
+    """OpenAI 兼容协议的 reasoning_effort 映射风格；none 表示不透传。"""
+
     tutorial_dir: Path | None = None
     icon: Path | None = None
 
@@ -98,6 +101,9 @@ class ProviderPreset:
             models=[ModelInfo.from_dict(m) for m in data.get("models", [])],
             registration_url=str(data.get("registration_url", "")),
             reasoning_style=str(data.get("reasoning_style", "thinking_extra_body")),
+            reasoning_effort_style=str(
+                data.get("reasoning_effort_style", "none") or "none"
+            ),
             tutorial_dir=tutorial if tutorial.is_dir() else None,
             icon=icon if icon.exists() else None,
         )

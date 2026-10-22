@@ -28,6 +28,10 @@ from utils.image_contracts import (
 )
 from utils.token_budget import TokenBudget, TokenEstimator
 
+from .model_binding import (
+    EffectiveModelBinding,
+    build_binding_budget,
+)
 from .model_view import ModelViewPolicy, ModelViewResult, build_model_view
 from .pipeline_context import _recommended_context_budget
 
@@ -77,6 +81,60 @@ class PipelineWorkingContextMixin:
             memory_token_budget=cfg.memory_token_budget,
             summary_token_budget=cfg.summary_token_budget,
         )
+
+    def _active_model_binding(self) -> EffectiveModelBinding:
+        cfg = self.chat_agent.cfg
+        reasoning = getattr(cfg, "reasoning", None)
+        limit = getattr(self, "model_context_length", None)
+        try:
+            limit = int(limit) if limit else None
+        except (TypeError, ValueError):
+            limit = None
+        return EffectiveModelBinding(
+            role="chat",
+            provider_id=str(getattr(cfg, "provider", "") or ""),
+            model=str(getattr(cfg, "model", "") or ""),
+            protocol="",
+            context_limit=limit,
+            context_source="runtime_model_meta" if limit else "unknown",
+            context_verified=bool(limit),
+            max_output_tokens=max(1, int(getattr(cfg, "max_tokens", 1) or 1)),
+            reasoning_enabled=bool(getattr(reasoning, "enabled", False)),
+            reasoning_budget=getattr(reasoning, "budget", None),
+            reasoning_max_tokens=getattr(reasoning, "max_tokens", None),
+        )
+
+    def _active_budget_snapshot(self):
+        cfg = self.behavior_cfg.context
+        model = getattr(self.chat_agent.cfg, "model", "")
+        requested = int(
+            cfg.max_context_tokens
+            or _recommended_context_budget(model, self.model_context_length)
+        )
+        return build_binding_budget(
+            self._active_model_binding(),
+            cfg,
+            getattr(self.behavior_cfg, "summarize", None),
+            requested_window=requested,
+            actual_max_tokens=int(getattr(self.chat_agent.cfg, "max_tokens", 0) or 0),
+        )
+
+    def _guard_main_prompt_tokens(
+        self,
+        messages: list[dict[str, Any]],
+        tools_schema: list[dict[str, Any]] | None,
+    ) -> str:
+        """在真正发送前用同一快照复核；返回空串表示通过。"""
+        snapshot = self._active_budget_snapshot()
+        if not snapshot.valid:
+            return "invalid_context_budget"
+        usage = self._main_prompt_budget_usage(
+            messages,
+            tools_schema,
+            snapshot.input_budget,
+        )
+        code, _message = self._main_prompt_budget_failure(usage)
+        return code
 
     def _main_prompt_image_limits(self) -> ImageLimits:
         limits = getattr(self, "image_limits", None)
@@ -373,9 +431,12 @@ class PipelineWorkingContextMixin:
         overhead = self._fixed_prompt_overhead_tokens()
         if overhead <= 0:
             overhead = context_cfg.prompt_overhead_estimate_tokens
+        snapshot = self._active_budget_snapshot()
+        if not snapshot.valid:
+            return 0
         return max(
-            1,
-            budget.total_input_budget
+            0,
+            snapshot.input_budget
             - budget.memory_token_budget
             - budget.summary_token_budget
             - overhead,
@@ -731,7 +792,18 @@ class PipelineWorkingContextMixin:
         rebuild_messages: Callable[[], Awaitable[list[dict[str, Any]]]],
     ) -> MainPromptBudgetResult:
         """统一预检：严格校验 → 预算视图 → 压缩重试 → 实体化 → 最终校验。"""
-        budget_tokens = self._context_budget().total_input_budget
+        snapshot = self._active_budget_snapshot()
+        if not snapshot.valid:
+            return await self._failed_budget_result(
+                code="invalid_context_budget",
+                message=f"上下文预算不合法：{','.join(snapshot.errors)}",
+                messages=[],
+                usage=None,
+                conversation_id=conversation_id,
+                phase=phase,
+                attempts=[f"budget:{','.join(snapshot.errors)}"],
+            )
+        budget_tokens = snapshot.input_budget
         estimator = self._token_estimator()
         attempts: list[str] = []
         pre_summary_status = ""

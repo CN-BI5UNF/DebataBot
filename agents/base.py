@@ -17,6 +17,7 @@ RuntimeEventCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
 FinishReason = Literal[
     "no_action",
+    "budget_blocked",
     "finish_after_success",
     "finish_after_send",
     "tool_stop",
@@ -26,6 +27,19 @@ FinishReason = Literal[
     "api_error",
     "no_response",
 ]
+
+
+class AgentPromptBudgetExceeded(RuntimeError):
+    """本地已知的 prompt 预算超限；应在调用 provider 之前抛出。"""
+
+    code = "prompt_token_budget_exceeded"
+
+    def __init__(self, estimated: int, budget: int) -> None:
+        super().__init__(
+            f"prompt token budget exceeded: estimated={estimated} budget={budget}"
+        )
+        self.estimated = int(estimated)
+        self.budget = int(budget)
 
 
 @dataclass(slots=True)

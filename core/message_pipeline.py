@@ -573,6 +573,19 @@ class MessagePipeline(
                 stage_t0,
                 conversation_id=conversation_id,
             )
+            active_budget = self._active_budget_snapshot()
+            if (
+                not active_budget.valid
+                or estimated_prompt_tokens > active_budget.input_budget
+            ):
+                logger.error(
+                    "锁内预算复核阻止发送 conversation_id=%s estimated=%s budget=%s errors=%s",
+                    conversation_id,
+                    estimated_prompt_tokens,
+                    active_budget.input_budget,
+                    ",".join(active_budget.errors),
+                )
+                return False
             self._send_manager.begin_model_turn(conversation_id)
             model_t0 = time.monotonic()
             try:
@@ -596,6 +609,8 @@ class MessagePipeline(
                     ),
                     image_limits=self._main_prompt_image_limits(),
                     provider_limit_bytes=self._provider_request_body_limit_bytes(),
+                    prompt_budget_tokens=active_budget.input_budget,
+                    token_estimator=self._token_estimator(),
                 )
             finally:
                 self._send_manager.end_model_turn(conversation_id)

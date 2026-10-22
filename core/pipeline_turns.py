@@ -253,6 +253,19 @@ class PipelineTurnsMixin:
         messages = budget_result.messages
 
         async def _run_locked() -> None:
+            active_budget = self._active_budget_snapshot()
+            if (
+                not active_budget.valid
+                or budget_result.estimated_tokens > active_budget.input_budget
+            ):
+                logger.error(
+                    "锁内预算复核阻止发送 conversation_id=%s estimated=%s budget=%s errors=%s",
+                    conversation_id,
+                    budget_result.estimated_tokens,
+                    active_budget.input_budget,
+                    ",".join(active_budget.errors),
+                )
+                return
             self._send_manager.begin_model_turn(conversation_id)
             try:
                 result = await self.chat_agent.run(
@@ -279,6 +292,8 @@ class PipelineTurnsMixin:
                     ),
                     image_limits=self._main_prompt_image_limits(),
                     provider_limit_bytes=self._provider_request_body_limit_bytes(),
+                    prompt_budget_tokens=active_budget.input_budget,
+                    token_estimator=self._token_estimator(),
                 )
             finally:
                 self._send_manager.end_model_turn(conversation_id)

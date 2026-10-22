@@ -437,3 +437,75 @@ def test_openai_cache_miss_is_not_reported_as_cache_creation():
     assert usage.cache_creation_tokens == 0
     assert usage.cache_miss_tokens == 40
     assert usage.total_tokens == 120
+
+
+def test_openai_reasoning_effort_maps_only_for_declared_styles():
+    provider = OpenAICompatProvider(
+        "deepseek_test",
+        base_url="https://example.com/v1",
+        api_key="sk-test",
+        reasoning_style="thinking_extra_body",
+        reasoning_effort_style="deepseek",
+    )
+    assert provider._reasoning_effort(
+        ReasoningConfig(enabled=True, budget="high"), model="fake"
+    ) == "high"
+    assert provider._reasoning_effort(
+        ReasoningConfig(enabled=False, budget="high"), model="fake"
+    ) is None
+    assert provider._reasoning_effort(
+        ReasoningConfig(enabled=True, budget=None), model="fake"
+    ) is None
+
+    unsupported = OpenAICompatProvider(
+        "gateway",
+        base_url="https://example.com/v1",
+        api_key="sk-test",
+        reasoning_style="none",
+        reasoning_effort_style="none",
+    )
+    assert unsupported._reasoning_effort(
+        ReasoningConfig(enabled=True, budget="medium"), model="fake"
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_openai_reasoning_effort_is_sent_with_thinking_toggle(monkeypatch):
+    provider = OpenAICompatProvider(
+        "deepseek_test",
+        base_url="https://example.com/v1",
+        api_key="sk-test",
+        reasoning_style="thinking_extra_body",
+        reasoning_effort_style="deepseek",
+    )
+    captured = {}
+
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="ok",
+                        reasoning_content="",
+                        tool_calls=None,
+                    ),
+                    finish_reason="stop",
+                )
+            ],
+            usage=None,
+            model="fake",
+        )
+
+    monkeypatch.setattr(provider._client.chat.completions, "create", fake_create)
+
+    await provider.chat_completion(
+        [{"role": "user", "content": "hi"}],
+        model="fake",
+        reasoning=ReasoningConfig(enabled=True, budget="medium"),
+        stream=False,
+    )
+
+    assert captured["reasoning_effort"] == "medium"
+    assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
+    await provider.aclose()

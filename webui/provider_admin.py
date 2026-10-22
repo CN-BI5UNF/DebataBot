@@ -75,6 +75,7 @@ class ProviderPayload(BaseModel):
     extra_headers: dict[str, str] | None = None
     timeout_seconds: float | None = None
     reasoning_style: str | None = None
+    reasoning_effort_style: str | None = None
 
     model: str | None = Field(
         None, description="仅用于 test / fetch-models 探测，不是 provider 配置字段"
@@ -159,6 +160,9 @@ def list_providers(
                 "extra_headers": dict(getattr(provider, "extra_headers", {}) or {}),
                 "timeout_seconds": getattr(provider, "timeout_seconds", 120.0),
                 "reasoning_style": getattr(provider, "reasoning_style", None) or "",
+                "reasoning_effort_style": (
+                    getattr(provider, "reasoning_effort_style", None) or ""
+                ),
                 "used_by": provider_references(cfg, pid),
                 "health": _health_to_dict(probe),
             }
@@ -324,6 +328,7 @@ def _config_fields(payload: ProviderPayload, *, is_create: bool) -> dict[str, An
         "extra_headers",
         "timeout_seconds",
         "reasoning_style",
+        "reasoning_effort_style",
     )
     provided = payload.model_fields_set if not is_create else None
     out: dict[str, Any] = {}

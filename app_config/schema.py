@@ -283,6 +283,13 @@ class ProviderConfig(StrictModel):
     即不向端点发送任何厂商私有字段——这是能安全接入未知网关的前提。
     """
 
+    reasoning_effort_style: Literal["none", "openai", "deepseek"] | None = None
+    """思考强度参数风格（low/medium/high → reasoning_effort）。
+
+    留空时：有 preset 则取 preset.yaml 的值；无 preset 取 ``none``。
+    只有明确支持 ``reasoning_effort`` 的端点才应打开，避免向未知网关发送未知字段。
+    """
+
     @model_validator(mode="after")
     def validate_provider(self) -> ProviderConfig:
         if not self.preset and (not self.protocol or not self.base_url):

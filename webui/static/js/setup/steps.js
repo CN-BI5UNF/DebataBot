@@ -18,6 +18,12 @@ const PERSONA_SOURCE = [
   ['create', '生成一个新人格', '填几个关键词，让模型帮你写人设'],
 ];
 
+// 向导页面的重渲染由 setup.js 统一注入；以前这里直接调用未定义的 render()，
+// 点击选择卡会抛 ReferenceError，选中态和条件字段都不会更新。
+function rerender(ctx) {
+  if (ctx && typeof ctx.rerender === 'function') ctx.rerender();
+}
+
 // ============================================================
 // 1. 欢迎 + 选路径
 // ============================================================
@@ -43,7 +49,7 @@ export function renderWelcome(host, ctx, state) {
       class: `choice ${state.path === item.id ? 'active' : ''}`,
       onclick: () => {
         state.path = item.id;
-        render(node);
+        rerender(ctx);
       },
     },
       h('div', { class: 'choice-title' }, item.title),
@@ -89,7 +95,7 @@ export function renderMainModelQuick(host, ctx, state) {
       const preset = state.presets.find((p) => p.id === event.target.value);
       if (preset) {
         usePreset(preset);
-        render(host, ctx, state);
+        rerender(ctx);
       }
     },
   });
@@ -161,7 +167,7 @@ export function renderMainModelCustom(host, ctx, state) {
     type: 'checkbox', checked: !!state.chat.reasoning,
     onchange: (e) => {
       state.chat.reasoning = e.target.checked;
-      render(host, ctx, state);
+      rerender(ctx);
     },
   });
 
@@ -224,7 +230,7 @@ export function renderOtherAgents(host, ctx, state) {
     });
     const toggle = h('input', {
       type: 'checkbox', checked: cfg.enabled,
-      onchange: (e) => { cfg.enabled = e.target.checked; render(host, ctx, state); },
+      onchange: (e) => { cfg.enabled = e.target.checked; rerender(ctx); },
     });
     const block = h('div', { class: 'card' },
       h('label', { class: 'switch' }, toggle, h('strong', {}, label)),
@@ -281,7 +287,7 @@ export function renderFeatures(host, ctx, state) {
     const section = f[key] || (f[key] = {});
     const input = h('input', {
       type: 'checkbox', checked: !!section.enabled,
-      onchange: (e) => { section.enabled = e.target.checked; render(host, ctx, state); },
+      onchange: (e) => { section.enabled = e.target.checked; rerender(ctx); },
     });
     return h('div', { style: { marginBottom: '12px' } },
       h('label', { class: 'switch' }, input, h('strong', {}, label)),
@@ -382,7 +388,7 @@ export function renderFeatures(host, ctx, state) {
   nodes.push(toggleRow('tts', '语音合成', '让角色能发语音。edge-tts 免费且不用密钥。'));
   if (f.tts && f.tts.enabled) {
     const type = h('select', {
-      onchange: (e) => { f.tts.type = e.target.value; render(host, ctx, state); },
+      onchange: (e) => { f.tts.type = e.target.value; rerender(ctx); },
     });
     for (const [value, label] of [['api', '云端 API'], ['local', '本地 VoxCPM2']]) {
       type.append(h('option', { value, selected: (f.tts.type || 'api') === value }, label));
@@ -420,7 +426,7 @@ export function renderEmbedding(host, ctx, state) {
   const mode = h('select', {
     onchange: (e) => {
       mem.mode = e.target.value;
-      render(host, ctx, state);
+      rerender(ctx);
     },
   });
   for (const [value, label, desc] of [
@@ -438,7 +444,7 @@ export function renderEmbedding(host, ctx, state) {
   if ((mem.mode || 'file') === 'rag') {
     emb.enabled = true;
     const type = h('select', {
-      onchange: (e) => { emb.type = e.target.value; render(host, ctx, state); },
+      onchange: (e) => { emb.type = e.target.value; rerender(ctx); },
     });
     for (const [value, label] of [['api', '云端 API'], ['local', '本地模型']]) {
       type.append(h('option', { value, selected: (emb.type || 'api') === value }, label));
@@ -522,11 +528,11 @@ export function renderAdapter(host, ctx, state) {
   });
   const manage = h('input', {
     type: 'checkbox', checked: !!a.manage_process,
-    onchange: (e) => { a.manage_process = e.target.checked; render(host, ctx, state); },
+    onchange: (e) => { a.manage_process = e.target.checked; rerender(ctx); },
   });
 
   const wlMode = h('select', {
-    onchange: (e) => { a.whitelist.mode = e.target.value; render(host, ctx, state); },
+    onchange: (e) => { a.whitelist.mode = e.target.value; rerender(ctx); },
   });
   for (const [value, label] of [
     ['open', 'open — 对所有人开放（注意 API 费用）'],
@@ -616,7 +622,7 @@ export function renderPersona(host, ctx, state) {
         class: `choice ${state.persona_source === value ? 'active' : ''}`,
         onclick: () => {
           state.persona_source = value;
-          render(host, ctx, state);
+          rerender(ctx);
         },
       },
         h('div', { class: 'choice-title' }, title),

@@ -3,6 +3,7 @@ display_name: OpenAI
 protocol: openai_compat
 base_url: https://api.openai.com/v1
 registration_url: https://platform.openai.com
+reasoning_effort_style: openai
 reasoning_style: openai_native
 
 models:

@@ -44,9 +44,11 @@ from utils.image_contracts import (
     declared_image_assets,
 )
 from utils.model_records import ModelViewPolicy, project_model_record
+from utils.token_budget import TokenEstimator
 from utils.tool_result_state import no_action_succeeded, tool_result_blocks_completion
 
 from .base import (
+    AgentPromptBudgetExceeded,
     AgentRunResult,
     FinishReason,
     RuntimeEventCallback,
@@ -138,6 +140,8 @@ class AgentRunner:
         model_view_policy: ModelViewPolicy | None = None,
         image_limits: ImageLimits | None = None,
         provider_limit_bytes: int | None = None,
+        prompt_budget_tokens: int | None = None,
+        token_estimator: TokenEstimator | None = None,
     ) -> AgentRunResult:
         """执行多轮工具循环。
 
@@ -149,6 +153,9 @@ class AgentRunner:
                 raw result，投影只影响发给模型的副本。
         """
         policy = model_view_policy
+        budget_estimator = token_estimator or TokenEstimator(
+            model=str(getattr(self.cfg, "model", "") or "")
+        )
         msgs = list(messages)
         records: list[dict[str, Any]] = []
         # 本轮稳定边界只在入口从结构证据取一次；后续工具结果/提醒只能 append。
@@ -274,6 +281,12 @@ class AgentRunner:
                     image_limits,
                     provider_limit_bytes=provider_limit_bytes,
                 )
+                self._guard_prompt_budget(
+                    msgs,
+                    tools,
+                    prompt_budget_tokens,
+                    budget_estimator,
+                )
                 self._emit_status(
                     status_callback,
                     state="thinking",
@@ -292,6 +305,29 @@ class AgentRunner:
                     stream=True,
                     timeout=self.cfg.first_token_timeout_seconds * 4 + 60.0,
                     first_token_timeout=self.cfg.first_token_timeout_seconds,
+                )
+            except AgentPromptBudgetExceeded as e:
+                logger.error(
+                    "AgentRunner 本地预算阻止发送（轮次 %s）：estimated=%s budget=%s",
+                    loop_count,
+                    e.estimated,
+                    e.budget,
+                )
+                self._emit_status(
+                    status_callback,
+                    state="error",
+                    text=f"{status_label}输入超出预算",
+                    model=self.cfg.model,
+                    loop=loop_count,
+                )
+                return AgentRunResult(
+                    final_content="",
+                    records=records,
+                    loop_count=loop_count,
+                    finish_reason="budget_blocked",
+                    reasoning_logs=reasoning_logs,
+                    prompt_tokens=prompt_tokens_total,
+                    first_prompt_tokens=first_prompt_tokens,
                 )
             except ProviderTimeoutError as e:
                 logger.error(
@@ -573,6 +609,8 @@ class AgentRunner:
                 stable_prefix_end=initial_stable_prefix_end,
                 image_limits=image_limits,
                 provider_limit_bytes=provider_limit_bytes,
+                prompt_budget_tokens=prompt_budget_tokens,
+                token_estimator=budget_estimator,
             )
             if final_result is not None:
                 prompt_tokens_total += final_result.usage.prompt_tokens
@@ -744,6 +782,19 @@ class AgentRunner:
         }
 
     @staticmethod
+    def _guard_prompt_budget(
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        budget_tokens: int | None,
+        estimator: TokenEstimator,
+    ) -> None:
+        if budget_tokens is None:
+            return
+        estimated = int(estimator.estimate_prompt(messages, tools))
+        if estimated > int(budget_tokens):
+            raise AgentPromptBudgetExceeded(estimated, int(budget_tokens))
+
+    @staticmethod
     def _guard_outgoing_images(
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
@@ -785,6 +836,8 @@ class AgentRunner:
         stable_prefix_end: int | None = None,
         image_limits: ImageLimits | None = None,
         provider_limit_bytes: int | None = None,
+        prompt_budget_tokens: int | None = None,
+        token_estimator: TokenEstimator | None = None,
     ) -> CompletionResult | None:
         """工具循环最终宽限用尽后做一次无工具收尾。
 
@@ -796,6 +849,12 @@ class AgentRunner:
                 None,
                 image_limits,
                 provider_limit_bytes=provider_limit_bytes,
+            )
+            self._guard_prompt_budget(
+                messages,
+                None,
+                prompt_budget_tokens,
+                token_estimator or TokenEstimator(model=str(self.cfg.model or "")),
             )
             self._emit_status(
                 status_callback,

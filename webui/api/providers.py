@@ -65,6 +65,16 @@ async def list_all(request: Request) -> dict[str, Any]:
     providers = list_providers(
         rt.config, rt.secrets, health=getattr(rt, "provider_health", None)
     )
+    presets_map = _presets(rt)
+    for provider in providers:
+        if provider.get("reasoning_effort_style"):
+            continue
+        preset_id = provider.get("preset") or ""
+        preset = presets_map.get(preset_id)
+        if preset is not None:
+            provider["reasoning_effort_style"] = getattr(
+                preset, "reasoning_effort_style", "none"
+            )
     agents: dict[str, Any] = {}
     for name in ("chat", "proactive", "summary", "persona_gen"):
         agent = getattr(rt.config.agents, name, None)
@@ -80,6 +90,9 @@ async def list_all(request: Request) -> dict[str, Any]:
             "reasoning": bool(getattr(agent.reasoning, "enabled", False))
             if agent.reasoning
             else False,
+            "reasoning_budget": getattr(agent.reasoning, "budget", None)
+            if agent.reasoning
+            else None,
         }
     return {"providers": providers, "agents": agents, "presets": sorted(_presets(rt))}
 
@@ -98,6 +111,9 @@ async def list_presets(request: Request) -> dict[str, Any]:
                 "base_url": preset.base_url,
                 "registration_url": preset.registration_url,
                 "reasoning_style": getattr(preset, "reasoning_style", ""),
+                "reasoning_effort_style": getattr(
+                    preset, "reasoning_effort_style", "none"
+                ),
                 "models": [
                     {
                         "id": m.id,
