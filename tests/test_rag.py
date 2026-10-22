@@ -555,3 +555,28 @@ async def test_rag_memory_load_removes_existing_runtime_context_entries(tmp_path
     assert "运行时任务上下文" not in out
     assert "interrupted" not in out
     await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_rag_bootstrap_stream_uses_bounded_queue(tmp_path: Path):
+    embedding = _FakeEmbedding()
+    store = SqliteVectorStore(tmp_path / "rag.sqlite3")
+    service = RagMemoryService(embedding=embedding, store=store)
+
+    async def records():
+        for index in range(600):
+            yield {
+                "role": "user" if index % 2 == 0 else "assistant",
+                "content": f"流式索引记录 {index} 关键词 cat",
+                "conversation_id": "private:stream",
+            }
+
+    assert service._queue.maxsize == 256
+    service.schedule_bootstrap_stream(records())
+    await asyncio.wait_for(
+        asyncio.gather(*list(service._side_tasks)),
+        timeout=10.0,
+    )
+    await asyncio.wait_for(service._queue.join(), timeout=10.0)
+    assert len(store) == 600
+    await service.shutdown()

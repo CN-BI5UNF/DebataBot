@@ -164,6 +164,27 @@ def clear_chat_page_cache() -> None:
     _chat_page_cache.clear()
 
 
+def chat_page_cache_info() -> dict[str, int]:
+    """对话页合并缓存的可回收规模；只统计条目与近似字节，不返回正文。"""
+    approx_bytes = 0
+    record_count = 0
+    for _history_length, _stamp, records in _chat_page_cache.values():
+        record_count += len(records)
+        try:
+            approx_bytes += len(
+                json.dumps(records, ensure_ascii=False, default=str).encode("utf-8")
+            )
+        except Exception:  # noqa: BLE001
+            approx_bytes += 0
+    return {
+        "entries": len(_chat_page_cache),
+        "records": record_count,
+        "approx_bytes": approx_bytes,
+        "max_entries": 8,
+        "ttl_seconds": int(_CHAT_PAGE_CACHE_TTL_SECONDS),
+    }
+
+
 def _merge_and_tag_chat_page_records(
     *,
     archive_records: list[dict],

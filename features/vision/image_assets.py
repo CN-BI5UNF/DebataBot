@@ -548,6 +548,15 @@ class ImageAssetStore:
             "encodes": self._encode_count,
         }
 
+    async def clear_cache(self) -> dict[str, int]:
+        """只清空内存中的编码副本；磁盘上的唯一图片资产不受影响。"""
+        async with self._cache_lock:
+            entries = len(self._cache)
+            size = self._cache_bytes
+            self._cache.clear()
+            self._cache_bytes = 0
+            return {"entries": entries, "bytes": size}
+
     async def ingest(
         self,
         source: str | Path | bytes,

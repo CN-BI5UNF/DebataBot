@@ -210,11 +210,10 @@ class PipelineSummaryMixin:
         if self.summary_agent is None or self.archive is None or self.rolling_summary is None:
             return SummaryAttemptResult(status="not_configured", reason=reason)
 
-        records = await self.history.records()
-        if not records:
+        total_records = int(await self._history_length())
+        if total_records <= 0:
             return SummaryAttemptResult(status="not_needed", reason="empty_history")
-        active_start = self._active_start_index_for_records(records)
-        active_records = records[active_start:]
+        active_records, active_start = await self._active_history_window()
         if not active_records:
             return SummaryAttemptResult(
                 status="not_needed",
@@ -384,13 +383,15 @@ class PipelineSummaryMixin:
         if self.summary_agent is None or self.archive is None or self.rolling_summary is None:
             return SummaryAttemptResult(status="not_configured", reason=reason)
 
-        records = await self.history.records()
-        active_start = (
-            self._active_start_index_for_records(records)
-            if active_start_index is None
-            else max(0, min(active_start_index, len(records)))
-        )
-        active = active_records if active_records is not None else records[active_start:]
+        if active_records is not None:
+            active = active_records
+            if active_start_index is None:
+                total = int(await self._history_length())
+                active_start = max(0, total - len(active))
+            else:
+                active_start = max(0, int(active_start_index))
+        else:
+            active, active_start = await self._active_history_window()
         if not active:
             return SummaryAttemptResult(
                 status="not_needed",
@@ -715,6 +716,49 @@ class PipelineSummaryMixin:
             return 0
         active_start = max(0, min(self.rolling_summary.active_start_index(), len(records)))
         return self._provider_safe_active_start_index(records, active_start)
+
+    async def _history_length(self) -> int:
+        length = getattr(self.history, "length", None)
+        if callable(length):
+            return int(await length())
+        records = await self.history.records()
+        return len(records)
+
+    async def _active_history_window(self) -> tuple[list[dict[str, Any]], int]:
+        """分页读取活跃历史，避免为了取后缀而加载全部归档记录。
+
+        返回 ``(活跃记录, 活跃起点绝对位置)``。游标修正需要少量向前回看，
+        找不到安全工具组边界时逐步扩大回看窗口。测试/旧 runtime 的
+        SimpleNamespace history 没有分页接口时退回全量读取。
+        """
+        fetcher = getattr(self.history, "fetch_suffix", None)
+        if not callable(fetcher):
+            records = await self.history.records()
+            start = self._active_start_index_for_records(records)
+            return records[start:], start
+        total = int(await self._history_length())
+        if total <= 0:
+            return [], 0
+        cursor = 0
+        if self.rolling_summary is not None:
+            cursor = int(self.rolling_summary.active_start_index())
+        cursor = max(0, min(cursor, total))
+        lookback = 32
+        while True:
+            start = max(0, cursor - lookback)
+            suffix = await self.history.fetch_suffix(start)
+            window = list(getattr(suffix, "records", suffix) or [])
+            actual_start = int(getattr(suffix, "start_index", start))
+            if not window:
+                return [], total
+            local = max(0, min(cursor - actual_start, len(window)))
+            adjusted = self._provider_safe_active_start_index(window, local)
+            if adjusted > 0 or actual_start == 0:
+                return window[adjusted:], actual_start + adjusted
+            if start == 0:
+                return window, 0
+            # 活跃游标落在工具组中间：继续向前取，直到能拿到组起点。
+            lookback = min(max(lookback * 2, lookback + 1), max(cursor, 1))
 
     @staticmethod
     def _image_totals(

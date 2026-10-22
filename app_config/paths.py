@@ -86,6 +86,13 @@ class AppPaths:
         self.LOGS_DIR: Path = self.DATA_DIR / "logs"
         self.EMOJI_DIR: Path = self.DATA_DIR / "emoji"
         self.MODELS_DIR: Path = self.DATA_DIR / "models"
+        # 可重建缓存与受管临时文件；不会自动清理 workspace 里的唯一附件。
+        self.CACHE_DIR: Path = self.DATA_DIR / "cache"
+        self.TMP_DIR: Path = self.DATA_DIR / "tmp"
+        # 实例级维护元数据（清理计划/任务、资源盘点），不保存聊天正文。
+        self.MAINTENANCE_DIR: Path = self.DATA_DIR / "maintenance"
+        self.MAINTENANCE_DB_FILE: Path = self.DATA_DIR / "maintenance.sqlite3"
+        self.MAINTENANCE_TRASH_DIR: Path = self.MAINTENANCE_DIR / "trash"
         # AI 可读写的工作目录（替代旧 uploads/）。
         # 用户发送的文件 / 图片 / 语音会自动落地到这里；
         # AI 可通过 read/write/edit/list/delete/upload_file/run_python 工具操作其中文件。
@@ -157,6 +164,9 @@ class AppPaths:
             self.LOGS_DIR,
             self.EMOJI_DIR,
             self.MODELS_DIR,
+            self.CACHE_DIR,
+            self.TMP_DIR,
+            self.MAINTENANCE_DIR,
             self.WORKSPACE_DIR,
             self.USER_PROVIDER_PRESETS_DIR,
         ):

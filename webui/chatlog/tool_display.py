@@ -231,6 +231,16 @@ def _clear_tool_display_caches() -> None:
         _FORMAT_TOOL_RESULT_CACHE.clear()
 
 
+def tool_display_cache_info() -> dict[str, int]:
+    with _TOOL_DISPLAY_CACHE_LOCK:
+        return {
+            "call_entries": len(_FORMAT_TOOL_CALL_CACHE),
+            "result_entries": len(_FORMAT_TOOL_RESULT_CACHE),
+            "entries": len(_FORMAT_TOOL_CALL_CACHE) + len(_FORMAT_TOOL_RESULT_CACHE),
+            "max_entries": _TOOL_DISPLAY_CACHE_MAX_SIZE * 2,
+        }
+
+
 def _format_commit_send_attempt_call(name: str, args: dict[str, Any]) -> ToolDisplay:
     attempt_id = _value_text(args.get("send_attempt_id") or args.get("attempt_id") or "")
     reviewed_until = args.get("reviewed_until_seq")

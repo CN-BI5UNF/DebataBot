@@ -3,7 +3,7 @@
 // 后端 /api/settings 返回一张声明式字段表（webui/settings_spec.py），
 // 这里据此自动渲染表单，不再手写每个控件。模型（provider / agent）有独立接口。
 
-import { h, fill, card, empty, field } from '../dom.js';
+import { h, fill, card, empty, field, table, formatNumber } from '../dom.js';
 import { endpoints } from '../api.js';
 import { renderModelsPanel } from '../providers.js';
 
@@ -262,6 +262,46 @@ export async function render(container, ctx) {
         section.append(control(spec, (value) => saveField(spec, value)));
       }
       nodes.push(section);
+    }
+    if (key === 'token_budget') {
+      try {
+        const status = await endpoints.contextStatus();
+        const budget = status.budget || {};
+        nodes.push(card('当前预算快照',
+          `有效窗口 = min(工作窗口, 模型限制)；净输入预算 = 窗口 - 输出预留 - 安全余量。`
+          + '估算值不是供应商账单。',
+          table(['项目', '值'], [
+            h('tr', {}, h('td', {}, 'Provider / 模型'),
+              h('td', {}, `${status.provider || '?'} / ${status.model || '?'}`)),
+            h('tr', {}, h('td', {}, '工作窗口 / 模型限制'),
+              h('td', {},
+                `${formatNumber(budget.window_requested || 0)} / `
+                + `${budget.window_model ? formatNumber(budget.window_model) : '未核实'}`)),
+            h('tr', {}, h('td', {}, '输出预留 / 安全余量'),
+              h('td', {},
+                `${formatNumber(budget.output_reserve || 0)} / `
+                + `${formatNumber(budget.safety_margin || 0)}`)),
+            h('tr', {}, h('td', {}, '净输入预算'),
+              h('td', {}, formatNumber(budget.input_budget || 0))),
+            h('tr', {}, h('td', {}, 'soft / target / retry / urgent'),
+              h('td', {},
+                `${formatNumber(budget.soft_trigger || 0)} / `
+                + `${formatNumber(budget.target_after || 0)} / `
+                + `${formatNumber(budget.retry_target || 0)} / `
+                + `${formatNumber(budget.urgent_trigger || 0)}`)),
+            h('tr', {}, h('td', {}, '固定开销 / 活跃历史预算'),
+              h('td', {},
+                `${formatNumber(status.fixed_overhead_tokens || 0)} / `
+                + `${formatNumber(status.working_history_budget || 0)}`)),
+          ]),
+          (budget.errors || []).length
+            ? h('p', { class: 'field-help' },
+              `预算校验失败：${(budget.errors || []).join(', ')}`)
+            : null,
+        ));
+      } catch (e) {
+        nodes.push(card('当前预算快照', '', empty(`读取失败：${e.message}`)));
+      }
     }
     fill(body, ...nodes);
   }

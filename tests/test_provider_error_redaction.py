@@ -6,7 +6,6 @@ import asyncio
 from types import SimpleNamespace
 
 import httpx
-import httpx2
 import pytest
 from anthropic import (
     APIError as AnthropicAPIError,
@@ -62,9 +61,9 @@ def _message() -> str:
 
 
 def _openai_errors() -> list[tuple[type[BaseException], BaseException, type[BaseException]]]:
-    request = httpx2.Request("POST", "https://api.example.invalid/v1/chat")
-    response_auth = httpx2.Response(401, request=request)
-    response_rate = httpx2.Response(429, request=request)
+    request = httpx.Request("POST", "https://api.example.invalid/v1/chat")
+    response_auth = httpx.Response(401, request=request)
+    response_rate = httpx.Response(429, request=request)
     return [
         (
             OpenAIAuthenticationError,

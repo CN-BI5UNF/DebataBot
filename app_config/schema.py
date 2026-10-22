@@ -1108,6 +1108,9 @@ class SummarizeConfig(StrictModel):
     retry_target_after_context_percent: int = Field(default=20, ge=5, le=100)
     """第一次压缩后仍超预算或压缩失败时，重试压缩使用的活跃窗口目标百分比。"""
 
+    urgent_at_input_percent: int = Field(default=85, ge=50, le=100)
+    """输入预算达到此百分比时视为紧急压缩线；仅用于状态展示与统一预算策略。"""
+
     @model_validator(mode="before")
     @classmethod
     def drop_deprecated_working_range_fields(cls, data: object) -> object:
@@ -1277,6 +1280,15 @@ class ContextConfig(StrictModel):
     reserve_output_tokens: int = Field(default=8192, ge=1024)
     """为模型输出保留的 token。"""
 
+    budget_policy_version: Literal[1, 2] = 1
+    """1 = 旧的工作窗口百分比阈值；2 = 净输入预算 full_input_v2（本轮只展示，不切换运行时）。"""
+
+    safety_margin_percent: int = Field(default=8, ge=0, le=50)
+    """统一预算快照的安全余量百分比。"""
+
+    safety_margin_min_tokens: int = Field(default=1024, ge=0)
+    """安全余量的最小 token 数。"""
+
     prompt_overhead_estimate_tokens: int = Field(default=12000, ge=0)
     """系统提示、工具 schema 等非历史内容的预估开销。"""
 
@@ -1382,6 +1394,76 @@ class BehaviorConfig(StrictModel):
 
 
 # ============================================================
+# 存储与缓存维护
+# ============================================================
+
+
+class StorageMaintenanceConfig(StrictModel):
+    """受管缓存/临时目录的保守维护策略。
+
+    原始聊天、唯一附件、用户文件与备份默认不参与自动清理；本组参数只约束
+    可重建缓存和显式登记过的临时文件。
+    """
+
+    mode: Literal["inventory_only", "safe_only"] = "inventory_only"
+    """inventory_only 只盘点不自动删；safe_only 才允许自动回收安全缓存。"""
+
+    interval_seconds: int = Field(default=1800, ge=60, le=86400)
+    """自动维护检查间隔（秒）。"""
+
+    batch_items: int = Field(default=100, ge=1, le=1000)
+    """单个清理批次最多处理的对象数量。"""
+
+    batch_bytes: int = Field(default=32 * 1024 * 1024, ge=1024 * 1024, le=1024**3)
+    """单个清理批次最多处理的字节数。"""
+
+    cache_soft_bytes: int = Field(default=1024**3, ge=0)
+    """可重建缓存软配额；超过后按策略回收到目标水位。"""
+
+    cache_hard_bytes: int = Field(default=1536 * 1024**2, ge=0)
+    """可重建缓存硬配额；超过后必须回收。"""
+
+    target_percent: int = Field(default=70, ge=10, le=95)
+    """配额回收目标：低于硬配额的此百分比。"""
+
+    temp_hours: int = Field(default=24, ge=1, le=8760)
+    """受管临时文件的最短保留小时数。"""
+
+    derived_cache_days: int = Field(default=7, ge=1, le=365)
+    """可重建派生缓存的最短保留天数。"""
+
+    trash_hours: int = Field(default=24, ge=1, le=168)
+    """隔离区保留小时数（磁盘仍占用，不能计为已释放）。"""
+
+    history_cache_max_bytes: int = Field(default=32 * 1024 * 1024, ge=0, le=256 * 1024**2)
+    """history 分页热缓存字节上限。"""
+
+    history_cache_page_size: int = Field(default=256, ge=16, le=2048)
+    """history 分页单页记录数。"""
+
+    history_cache_max_pages: int = Field(default=16, ge=1, le=256)
+    """history 分页缓存最多保留的页数。"""
+
+    min_free_bytes: int = Field(default=1024**3, ge=0)
+    """磁盘可用空间低水位（字节）。"""
+
+    min_free_percent: int = Field(default=10, ge=0, le=50)
+    """磁盘可用空间低水位（分区百分比）。"""
+
+    @model_validator(mode="after")
+    def validate_quotas(self) -> StorageMaintenanceConfig:
+        if self.cache_soft_bytes > self.cache_hard_bytes:
+            raise ValueError("storage.maintenance.cache_soft_bytes 不能大于 cache_hard_bytes")
+        return self
+
+
+class StorageConfig(StrictModel):
+    maintenance: StorageMaintenanceConfig = Field(
+        default_factory=StorageMaintenanceConfig
+    )
+
+
+# ============================================================
 # 根配置
 # ============================================================
 
@@ -1401,6 +1483,7 @@ class RootConfig(StrictModel):
         default_factory=PersonaManagementConfig
     )
     behavior: BehaviorConfig = Field(default_factory=BehaviorConfig)
+    storage: StorageConfig = Field(default_factory=StorageConfig)
 
     @field_validator("version")
     @classmethod

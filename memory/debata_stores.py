@@ -9,8 +9,10 @@ import logging
 import sqlite3
 import threading
 import time
-from collections.abc import Iterable, Mapping
+from collections import OrderedDict
+from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import closing
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -66,68 +68,311 @@ from .event_store import (
 
 logger = logging.getLogger(__name__)
 
+_HISTORY_VALID_SQL = "json_valid(record_json) AND json_type(record_json) = 'object'"
+
+
+@dataclass(slots=True)
+class HistorySuffix:
+    """一段按位置对齐的历史后缀，供分页读与预算估算使用。"""
+
+    records: list[dict]
+    start_index: int
+    total: int
+    approx_bytes: int
+    truncated: bool
+
+    @property
+    def end_index(self) -> int:
+        return self.start_index + len(self.records)
+
+
+def _records_approx_bytes(records: list[dict]) -> int:
+    total = 0
+    for record in records:
+        try:
+            total += len(orjson.dumps(record))
+        except Exception:  # noqa: BLE001 - 统计不应因异常对象失败
+            total += len(str(record))
+    return total
+
+
+def _normalise_slice(start: int, end: int | None, total: int) -> tuple[int, int]:
+    """复刻 Python 列表切片的边界语义。"""
+
+    start = int(start)
+    if start < 0:
+        start = max(0, total + start)
+    start = min(start, total)
+    if end is None:
+        return start, total
+    end = int(end)
+    if end < 0:
+        end = max(0, total + end)
+    return start, min(end, total)
+
+
+def _parse_history_rows(rows: Iterable[Any], persona_id: str) -> list[dict]:
+    records: list[dict] = []
+    for row in rows:
+        try:
+            record = orjson.loads(row["record_json"])
+        except orjson.JSONDecodeError:
+            logger.warning(
+                "跳过损坏的 debata history record persona_id=%s rowid=%s",
+                persona_id,
+                row["id"] if "id" in row.keys() else "?",
+            )
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
 
 class DebataHistoryStore:
     """使用 debata.db 的 history_records 表实现 JsonlStore 等价接口。"""
 
-    def __init__(self, db: DebataDB | str | Path, persona_id: str) -> None:
+    def __init__(
+        self,
+        db: DebataDB | str | Path,
+        persona_id: str,
+        *,
+        page_cache_max_bytes: int = 32 * 1024 * 1024,
+        page_size: int = 256,
+        max_pages: int = 16,
+    ) -> None:
         self._db = db if isinstance(db, DebataDB) else DebataDB(db)
         self.persona_id = str(persona_id).strip()
         if not self.persona_id:
             raise ValueError("persona_id must not be empty")
         self._lock = asyncio.Lock()
+        # 全量兼容缓存只由显式 load()/records() 建立；普通分页与 append 不再
+        # 强制加载整库。
         self._cache: list[dict] | None = None
+        # 进程内权威计数：首次 SQL 计数后由 append/truncate/clear 维护，
+        # 避免每次活跃窗口读取都扫描 json_valid。
+        self._known_count: int | None = None
+        self._revision = 0
+        if isinstance(page_cache_max_bytes, bool) or int(page_cache_max_bytes) < 0:
+            raise ValueError("page_cache_max_bytes must be >= 0")
+        if isinstance(page_size, bool) or int(page_size) < 1:
+            raise ValueError("page_size must be >= 1")
+        if isinstance(max_pages, bool) or int(max_pages) < 1:
+            raise ValueError("max_pages must be >= 1")
+        self.page_cache_max_bytes = int(page_cache_max_bytes)
+        self.page_size = int(page_size)
+        self.max_pages = int(max_pages)
+        self._page_cache: OrderedDict[tuple[int, int, int], list[dict]] = OrderedDict()
+        self._page_cache_bytes = 0
+        # 首次建连时才做 schema 检查/初始化，之后普通查询只配置连接级 PRAGMA。
+        self._schema_ready = False
+        self._schema_lock = threading.Lock()
 
     @property
     def db(self) -> DebataDB:
         return self._db
 
+    @property
+    def revision(self) -> int:
+        return self._revision
+
     async def load(self, force_reload: bool = False) -> list[dict]:
-        """加载当前 persona 的完整历史流，返回缓存列表的浅拷贝。"""
+        """加载当前 persona 的完整历史流，返回缓存列表的浅拷贝。
+
+        这是显式全量兼容入口（导出、管理、旧调用方）。普通消息热路径应使用
+        ``fetch_suffix`` / ``fetch_recent`` / ``iter_records``，避免每次 build
+        prompt 都加载整库。
+        """
 
         async with self._lock:
             if self._cache is None or force_reload:
                 self._cache = await asyncio.to_thread(self._load_sync)
+                self._known_count = len(self._cache)
+                if force_reload:
+                    self._page_cache.clear()
+                    self._page_cache_bytes = 0
             return list(self._cache or [])
 
     async def append(self, record: dict) -> None:
         async with self._lock:
-            await self._ensure_cache_loaded_locked()
             await asyncio.to_thread(self._append_many_sync, [record])
-            self._cache.append(record)  # type: ignore[union-attr]
+            if self._cache is not None:
+                self._cache.append(record)
+            if self._known_count is not None:
+                self._known_count += 1
+            self._mark_mutated_locked()
 
     async def append_many(self, records: list[dict]) -> None:
         if not records:
             return
         async with self._lock:
-            await self._ensure_cache_loaded_locked()
             await asyncio.to_thread(self._append_many_sync, records)
-            self._cache.extend(records)  # type: ignore[union-attr]
+            if self._cache is not None:
+                self._cache.extend(records)
+            if self._known_count is not None:
+                self._known_count += len(records)
+            self._mark_mutated_locked()
 
     async def length(self) -> int:
+        """返回可解析记录总数；首次 SQL 计数后由进程内计数维护。"""
+
         async with self._lock:
-            await self._ensure_cache_loaded_locked()
-            return len(self._cache or [])
+            return await self._length_locked()
 
     async def get_slice(self, start: int = 0, end: int | None = None) -> list[dict]:
+        """按可解析记录位置切片，语义与 Python 列表切片一致。"""
+
         async with self._lock:
-            await self._ensure_cache_loaded_locked()
-            cache = self._cache or []
-            if end is None:
-                return list(cache[start:])
-            return list(cache[start:end])
+            if self._cache is not None:
+                return list(self._cache[start:end])
+            total = await self._length_locked()
+            norm_start, norm_end = _normalise_slice(start, end, total)
+            if norm_end <= norm_start:
+                return []
+            return await asyncio.to_thread(
+                self._get_slice_sync,
+                norm_start,
+                norm_end - norm_start,
+            )
+
+    async def fetch_suffix(self, start: int = 0) -> HistorySuffix:
+        """只读取位置 ``start`` 之后的活跃后缀，不加载归档前缀。"""
+
+        async with self._lock:
+            total = await self._length_locked()
+            start = max(0, min(int(start), total))
+            if start >= total:
+                return HistorySuffix([], total, total, 0, False)
+            key = (total, start, 0)
+            cached = self._page_cache.get(key)
+            if cached is not None:
+                self._page_cache.move_to_end(key)
+                return HistorySuffix(
+                    list(cached), start, total, _records_approx_bytes(cached), False
+                )
+            records = await asyncio.to_thread(
+                self._fetch_suffix_sync,
+                total - start,
+            )
+            # SQLite 行数可能因并发 append 比 total 新；以实际返回长度为准。
+            actual_start = max(0, total - len(records))
+            self._cache_page_locked(key, records)
+            return HistorySuffix(
+                list(records),
+                actual_start,
+                total,
+                _records_approx_bytes(records),
+                False,
+            )
+
+    async def fetch_recent(
+        self,
+        limit: int,
+        *,
+        byte_limit: int | None = None,
+    ) -> HistorySuffix:
+        """读取最近有限条记录，并按可选字节上限从最旧端裁剪。"""
+
+        limit = max(0, int(limit))
+        async with self._lock:
+            total = await self._length_locked()
+            if limit <= 0:
+                return HistorySuffix([], total, total, 0, False)
+            records = await asyncio.to_thread(self._fetch_suffix_sync, limit)
+            truncated = total > len(records)
+            if byte_limit is not None and int(byte_limit) > 0:
+                max_bytes = int(byte_limit)
+                while records and _records_approx_bytes(records) > max_bytes:
+                    records = records[1:]
+                    truncated = True
+            start = total - len(records)
+            return HistorySuffix(
+                records,
+                start,
+                total,
+                _records_approx_bytes(records),
+                truncated,
+            )
+
+    async def iter_records(self, batch_size: int = 256) -> AsyncIterator[dict]:
+        """流式迭代全部可解析记录；数据变化时提前结束，避免错位。"""
+
+        batch_size = max(1, min(int(batch_size), 2048))
+        revision = self._revision
+        offset = 0
+        while True:
+            if revision != self._revision:
+                logger.warning(
+                    "history 在流式迭代期间发生变化，提前结束 persona=%s offset=%s",
+                    self.persona_id,
+                    offset,
+                )
+                return
+            batch = await self.get_slice(offset, offset + batch_size)
+            if not batch:
+                return
+            for record in batch:
+                yield record
+            offset += len(batch)
+
+    async def stats(self) -> dict[str, Any]:
+        """低成本统计；不读取/返回聊天正文。"""
+
+        async with self._lock:
+            if self._cache is not None:
+                count = len(self._cache)
+                approx_bytes = _records_approx_bytes(self._cache)
+                db_stats = await asyncio.to_thread(self._db_stats_sync, count, approx_bytes)
+            else:
+                db_stats = await asyncio.to_thread(
+                    self._db_stats_sync,
+                    self._known_count,
+                    None,
+                )
+                if self._known_count is None:
+                    self._known_count = int(db_stats["record_count"])
+            db_stats.update(self.page_cache_info_locked())
+            db_stats["revision"] = self._revision
+            db_stats["full_cache_loaded"] = self._cache is not None
+            if self._cache is not None:
+                db_stats["full_cache_records"] = len(self._cache)
+                db_stats["full_cache_bytes"] = _records_approx_bytes(self._cache)
+            return db_stats
+
+    def page_cache_info_locked(self) -> dict[str, int]:
+        return {
+            "page_cache_entries": len(self._page_cache),
+            "page_cache_bytes": self._page_cache_bytes,
+            "page_cache_max_bytes": self.page_cache_max_bytes,
+            "page_cache_max_pages": self.max_pages,
+            "page_cache_page_size": self.page_size,
+        }
+
+    async def page_cache_info(self) -> dict[str, int]:
+        async with self._lock:
+            return self.page_cache_info_locked()
+
+    async def clear_page_cache(self) -> dict[str, int]:
+        async with self._lock:
+            entries = len(self._page_cache)
+            size = self._page_cache_bytes
+            self._page_cache.clear()
+            self._page_cache_bytes = 0
+            return {"entries": entries, "bytes": size}
 
     async def truncate_head(self, cut_point: int) -> int:
         """删除当前 persona 最早的 cut_point 条记录，返回剩余长度。"""
 
         async with self._lock:
-            await self._ensure_cache_loaded_locked()
-            cache = self._cache or []
             if cut_point <= 0:
-                return len(cache)
-            remaining = list(cache[cut_point:])
+                return await self._length_locked()
+            if self._cache is not None:
+                remaining = list(self._cache[cut_point:])
+            else:
+                remaining = await asyncio.to_thread(self._get_slice_sync, cut_point, None)
             await asyncio.to_thread(self._replace_all_sync, remaining)
-            self._cache = remaining
+            self._cache = None
+            self._known_count = len(remaining)
+            self._mark_mutated_locked()
             return len(remaining)
 
     async def replace_all(self, records: list[dict]) -> None:
@@ -137,11 +382,27 @@ class DebataHistoryStore:
             cache = list(records)
             await asyncio.to_thread(self._replace_all_sync, cache)
             self._cache = cache
+            self._known_count = len(cache)
+            self._mark_mutated_locked()
 
     async def clear(self) -> None:
         async with self._lock:
             await asyncio.to_thread(self._clear_sync)
             self._cache = []
+            self._known_count = 0
+            self._mark_mutated_locked()
+
+    async def _length_locked(self) -> int:
+        if self._cache is not None:
+            return len(self._cache)
+        if self._known_count is None:
+            self._known_count = await asyncio.to_thread(self._count_sync)
+        return self._known_count
+
+    def _mark_mutated_locked(self) -> None:
+        self._revision += 1
+        self._page_cache.clear()
+        self._page_cache_bytes = 0
 
     async def _ensure_cache_loaded_locked(self) -> None:
         if self._cache is None:
@@ -171,6 +432,150 @@ class DebataHistoryStore:
             if isinstance(record, dict):
                 records.append(record)
         return records
+
+    def _cache_page_locked(
+        self,
+        key: tuple[int, int, int],
+        records: list[dict],
+    ) -> None:
+        if not records or self.page_cache_max_bytes <= 0:
+            return
+        size = _records_approx_bytes(records)
+        if size > self.page_cache_max_bytes:
+            return
+        previous = self._page_cache.pop(key, None)
+        if previous is not None:
+            self._page_cache_bytes -= _records_approx_bytes(previous)
+        while self._page_cache and (
+            len(self._page_cache) >= self.max_pages
+            or self._page_cache_bytes + size > self.page_cache_max_bytes
+        ):
+            _old_key, old_records = self._page_cache.popitem(last=False)
+            self._page_cache_bytes -= _records_approx_bytes(old_records)
+        self._page_cache[key] = records
+        self._page_cache_bytes += size
+
+    def _get_slice_sync(self, offset: int, limit: int | None) -> list[dict]:
+        sql_limit = -1 if limit is None else max(0, int(limit))
+        if limit == 0:
+            return []
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT record_json FROM history_records
+                WHERE persona_id = ? AND {_HISTORY_VALID_SQL}
+                ORDER BY history_index ASC
+                LIMIT ? OFFSET ?
+                """,
+                (self.persona_id, sql_limit, max(0, int(offset))),
+            ).fetchall()
+        return _parse_history_rows(rows, self.persona_id)
+
+    def _fetch_suffix_sync(self, limit: int) -> list[dict]:
+        if limit <= 0:
+            return []
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT record_json FROM history_records
+                WHERE persona_id = ? AND {_HISTORY_VALID_SQL}
+                ORDER BY history_index DESC
+                LIMIT ?
+                """,
+                (self.persona_id, int(limit)),
+            ).fetchall()
+        records = _parse_history_rows(rows, self.persona_id)
+        records.reverse()
+        return records
+
+    def _count_sync(self) -> int:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*) FROM history_records
+                WHERE persona_id = ? AND {_HISTORY_VALID_SQL}
+                """,
+                (self.persona_id,),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def _db_stats_sync(
+        self,
+        cached_count: int | None,
+        cached_bytes: int | None,
+    ) -> dict[str, Any]:
+        with closing(self._connect()) as conn:
+            if cached_count is not None:
+                # 计数已由进程内维护，避免每次状态页都全表 JSON 扫描。
+                row = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS raw_count,
+                        COALESCE(MAX(history_index), -1) AS max_history_index,
+                        COUNT(DISTINCT conversation_id) AS conversation_count
+                    FROM history_records
+                    WHERE persona_id = ?
+                    """,
+                    (self.persona_id,),
+                ).fetchone()
+                valid_count = int(cached_count)
+                record_json_bytes = int(cached_bytes or 0)
+            else:
+                row = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS raw_count,
+                        SUM(CASE WHEN json_valid(record_json)
+                                  AND json_type(record_json) = 'object'
+                                 THEN 1 ELSE 0 END) AS valid_count,
+                        COALESCE(MAX(history_index), -1) AS max_history_index,
+                        COALESCE(SUM(CASE WHEN json_valid(record_json)
+                                           AND json_type(record_json) = 'object'
+                                          THEN LENGTH(record_json) ELSE 0 END), 0)
+                            AS record_json_bytes,
+                        COUNT(DISTINCT conversation_id) AS conversation_count
+                    FROM history_records
+                    WHERE persona_id = ?
+                    """,
+                    (self.persona_id,),
+                ).fetchone()
+                valid_count = int(row["valid_count"] or 0) if row else 0
+                record_json_bytes = int(row["record_json_bytes"] or 0) if row else 0
+            page_count = int(conn.execute("PRAGMA page_count").fetchone()[0])
+            page_size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+            freelist = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+        db_path = Path(self._db.path)
+        wal_path = db_path.with_name(db_path.name + "-wal")
+        shm_path = db_path.with_name(db_path.name + "-shm")
+
+        def _size(path: Path) -> int:
+            try:
+                return int(path.stat().st_size)
+            except OSError:
+                return 0
+
+        return {
+            "persona_id": self.persona_id,
+            "record_count": (
+                int(cached_count) if cached_count is not None else valid_count
+            ),
+            "raw_row_count": int(row["raw_count"] or 0) if row else 0,
+            "invalid_row_count": (
+                int(row["raw_count"] or 0) - valid_count if row else 0
+            ),
+            "max_history_index": (
+                int(row["max_history_index"] or 0) if row else 0
+            ),
+            "record_json_bytes": record_json_bytes,
+            "conversation_count": (
+                int(row["conversation_count"] or 0) if row else 0
+            ),
+            "db_bytes": _size(db_path),
+            "wal_bytes": _size(wal_path),
+            "shm_bytes": _size(shm_path),
+            "db_page_bytes": page_count * page_size,
+            "db_freelist_bytes": freelist * page_size,
+        }
 
     def _append_many_sync(self, records: list[dict]) -> None:
         if not records:
@@ -225,8 +630,19 @@ class DebataHistoryStore:
                 conn.commit()
 
     def _connect(self):
+        # schema 检查/初始化只在首次建连时做一次；之后每次连接只执行
+        # PRAGMA 配置，避免每个分页查询都重复 DDL 与版本写入。
+        if not self._schema_ready:
+            with self._schema_lock:
+                if not self._schema_ready:
+                    bootstrap = DebataDB(
+                        self._db.path,
+                        busy_timeout_ms=self._db.busy_timeout_ms,
+                    )
+                    bootstrap.load()
+                    bootstrap.close()
+                    self._schema_ready = True
         db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
-        db.load()
         return db.connect()
 
     def _insert_records(

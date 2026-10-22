@@ -195,4 +195,17 @@ export const endpoints = {
 
   blacklist: () => api.get('/api/settings/blacklist'),
   saveBlacklist: (payload) => api.put('/api/settings/blacklist', payload),
+
+  storageUsage: () => api.get('/api/storage/usage'),
+  storageCategories: () => api.get('/api/storage/categories'),
+  storagePreview: (payload) => api.post('/api/storage/cleanup/preview', payload),
+  storageExecute: (payload) => api.post('/api/storage/cleanup/execute', payload),
+  storageJobs: (limit = 20) => api.get(`/api/storage/jobs?limit=${limit}`),
+  storageJob: (jobId) => api.get(`/api/storage/jobs/${encodeURIComponent(jobId)}`),
+  storageCancel: (jobId) =>
+    api.post(`/api/storage/jobs/${encodeURIComponent(jobId)}/cancel`, {}),
+  storageRestore: (jobId) =>
+    api.post(`/api/storage/jobs/${encodeURIComponent(jobId)}/restore`, {}),
+
+  contextStatus: () => api.get('/api/context/status'),
 };

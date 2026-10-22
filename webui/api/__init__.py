@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from . import (
     chats,
+    context,
     emoji,
     logs,
     memory,
@@ -28,6 +29,7 @@ from . import (
     personas,
     providers,
     settings,
+    storage,
     system,
 )
 
@@ -44,6 +46,8 @@ ALL_ROUTERS = [
     emoji.router,
     providers.router,
     settings.router,
+    storage.router,
+    context.router,
 ]
 
 __all__ = ["ALL_ROUTERS"]

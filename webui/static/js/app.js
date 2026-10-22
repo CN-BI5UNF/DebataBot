@@ -16,6 +16,7 @@ import * as logs from './pages/logs.js';
 import * as personas from './pages/personas.js';
 import * as models from './pages/models.js';
 import * as emoji from './pages/emoji.js';
+import * as storage from './pages/storage.js';
 import * as settings from './pages/settings.js';
 import * as blacklist from './pages/blacklist.js';
 import * as setup from './pages/setup.js';
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { key: 'personas', title: '角色', icon: 'personas', page: personas },
   { key: 'models', title: '模型管理', icon: 'models', page: models },
   { key: 'emoji', title: '表情包', icon: 'emoji', page: emoji },
+  { key: 'storage', title: '存储与缓存', icon: 'storage', page: storage },
   { key: 'blacklist', title: '黑名单', icon: 'blacklist', page: blacklist },
   { key: 'settings', title: '设置', icon: 'settings', page: settings },
 ];

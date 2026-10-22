@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -111,7 +112,143 @@ class TokenBudget:
 
     @property
     def total_input_budget(self) -> int:
-        return max(1024, self.max_context_tokens - self.reserve_output_tokens)
+        # 窗口装不下输出预留时返回 0，由上层明确报错；不能用 1024 伪造空间。
+        return max(0, self.max_context_tokens - self.reserve_output_tokens)
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetSnapshot:
+    """一次请求预算的统一只读快照。
+
+    只做算术与校验，不读取数据库、不调用模型。``input_budget`` 是扣除实际
+    输出预留和安全余量后的净输入预算；任何一项不合法时 ``errors`` 非空，
+    调用方应拒绝发送而不是把预算钳成一个小正数。
+    """
+
+    window_requested: int
+    window_model: int | None
+    window_effective: int
+    window_source: str
+    model_limit_verified: bool
+    output_reserve: int
+    safety_margin: int
+    input_budget: int
+    policy_version: int
+    threshold_basis: str
+    soft_trigger: int
+    target_after: int
+    retry_target: int
+    urgent_trigger: int
+    errors: tuple[str, ...] = ()
+
+    @property
+    def valid(self) -> bool:
+        return not self.errors
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "window_requested": self.window_requested,
+            "window_model": self.window_model,
+            "window_effective": self.window_effective,
+            "window_source": self.window_source,
+            "model_limit_verified": self.model_limit_verified,
+            "output_reserve": self.output_reserve,
+            "safety_margin": self.safety_margin,
+            "input_budget": self.input_budget,
+            "policy_version": self.policy_version,
+            "threshold_basis": self.threshold_basis,
+            "soft_trigger": self.soft_trigger,
+            "target_after": self.target_after,
+            "retry_target": self.retry_target,
+            "urgent_trigger": self.urgent_trigger,
+            "valid": self.valid,
+            "errors": list(self.errors),
+        }
+
+
+def build_budget_snapshot(
+    *,
+    window_requested: int,
+    model_window: int | None = None,
+    model_limit_verified: bool = False,
+    window_source: str = "configured",
+    output_reserve: int = 8192,
+    actual_max_tokens: int | None = None,
+    safety_margin_percent: int = 8,
+    safety_margin_min_tokens: int = 1024,
+    policy_version: int = 1,
+    soft_percent: int = 50,
+    target_percent: int = 30,
+    retry_percent: int = 20,
+    urgent_percent: int = 85,
+) -> BudgetSnapshot:
+    """构造并校验统一预算快照（纯函数）。"""
+
+    def _int(name: str, value: Any) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer")
+        return value
+
+    errors: list[str] = []
+    requested = _int("window_requested", window_requested)
+    if requested <= 0:
+        errors.append("invalid_window_requested")
+        requested = max(0, requested)
+    model_limit = None
+    if model_window is not None:
+        model_limit = _int("model_window", model_window)
+        if model_limit <= 0:
+            errors.append("invalid_model_window")
+            model_limit = None
+    effective = requested
+    if model_limit is not None and model_limit > 0:
+        effective = min(effective, model_limit)
+    if model_limit is not None and model_limit < requested:
+        window_source = "model_limit"
+    reserve = max(0, _int("output_reserve", output_reserve))
+    if actual_max_tokens is not None:
+        reserve = max(reserve, max(0, _int("actual_max_tokens", actual_max_tokens)))
+    margin_percent = max(0, min(50, _int("safety_margin_percent", safety_margin_percent)))
+    margin_min = max(0, _int("safety_margin_min_tokens", safety_margin_min_tokens))
+    safety = max(margin_min, (effective * margin_percent + 99) // 100)
+    if effective <= 0:
+        errors.append("invalid_effective_window")
+    if reserve <= 0:
+        errors.append("invalid_output_reserve")
+    if reserve >= effective:
+        errors.append("output_reserve_exceeds_window")
+    if reserve + safety >= effective:
+        errors.append("safety_margin_exceeds_window")
+    input_budget = max(0, effective - reserve - safety)
+    if effective > 0 and input_budget <= 0:
+        errors.append("input_budget_not_positive")
+
+    policy = 2 if int(policy_version) == 2 else 1
+    base = input_budget if policy == 2 else max(0, effective)
+    basis = "full_input_v2" if policy == 2 else "legacy_window_v1"
+    soft = base * max(1, min(100, _int("soft_percent", soft_percent))) // 100
+    target = base * max(1, min(100, _int("target_percent", target_percent))) // 100
+    retry = base * max(1, min(100, _int("retry_percent", retry_percent))) // 100
+    urgent = base * max(1, min(100, _int("urgent_percent", urgent_percent))) // 100
+    if not (0 <= retry < target < soft < urgent <= max(1, base)):
+        errors.append("invalid_threshold_order")
+    return BudgetSnapshot(
+        window_requested=requested,
+        window_model=model_limit,
+        window_effective=effective,
+        window_source=window_source,
+        model_limit_verified=bool(model_limit_verified),
+        output_reserve=reserve,
+        safety_margin=safety,
+        input_budget=input_budget,
+        policy_version=policy,
+        threshold_basis=basis,
+        soft_trigger=soft,
+        target_after=target,
+        retry_target=retry,
+        urgent_trigger=urgent,
+        errors=tuple(dict.fromkeys(errors)),
+    )
 
 
 class TokenEstimator:
@@ -352,6 +489,15 @@ def raw_text_cache_info() -> dict[str, int]:
             "maxsize": int(_RAW_TEXT_CACHE_MAXSIZE),
             "currsize": len(_RAW_TEXT_CACHE),
         }
+
+
+def raw_text_cache_approx_bytes() -> int:
+    """raw-token 缓存键值的近似内存占用；不读取任何原文。"""
+    with _RAW_TEXT_CACHE_LOCK:
+        return sum(
+            sys.getsizeof(key) + sys.getsizeof(value)
+            for key, value in _RAW_TEXT_CACHE.items()
+        )
 
 
 def clear_raw_text_cache() -> None:

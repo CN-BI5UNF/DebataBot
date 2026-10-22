@@ -501,6 +501,7 @@ Debata-Refactor/
 - [提供商开发](docs/provider_development.md) — 接新的 LLM
 - [适配器开发](docs/adapter_development.md) — 接新的聊天平台
 - [WebUI 说明](docs/webui.md) — 页面结构、接口一览
+- [存储与缓存维护](docs/storage_maintenance.md) — 分页、盘点、安全清理与预算状态
 - [UI 风格指南](docs/ui_style_guide.md) — 设计原则与配色
 
 ## License 与致谢

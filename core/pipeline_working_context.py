@@ -321,6 +321,10 @@ class PipelineWorkingContextMixin:
         )
 
     async def _active_history_records(self) -> list[dict[str, Any]]:
+        helper = getattr(self, "_active_history_window", None)
+        if callable(helper):
+            active, _start = await helper()
+            return active
         records = await self.history.records()
         active_start = self._active_start_index_for_prompt(records)
         return records[active_start:]

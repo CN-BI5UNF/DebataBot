@@ -2,6 +2,28 @@
 
 本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] — 存储与缓存维护切片
+
+### Added
+- 新增 history 分页读 API：`length` / `fetch_suffix` / `fetch_recent` / `iter_records` / `stats` / `clear_page_cache`，主 prompt 与摘要 compaction 只读活跃后缀；全量 `load()`/`records()` 保留为兼容入口。
+- 新增有界 history 页缓存（默认 32 MiB / 16 页）和进程内权威计数，避免每次活跃窗口读取都全表 JSON 扫描。
+- 新增实例级 `maintenance.sqlite3`：持久化清理预览/任务，只保存运维元数据，不保存聊天正文。
+- 新增 `/api/storage/*` 存储盘点与安全清理 API：preview → execute → job，支持确认令牌、盘点代次、幂等键与取消。
+- 新增 `/api/context/status` 只读预算快照：有效窗口、输出预留、安全余量、净输入预算与阈值。
+- 新增 WebUI「存储与缓存」页面，以及设置页 Token 预算分组的当前预算快照。
+- 新增 `docs/storage_maintenance.md`。
+
+### Changed
+- RAG 历史 bootstrap 改为分页流式入队，索引队列上限 256 批；启动不再通过 `history.records()` 全量加载历史。
+- `TokenBudget.total_input_budget` 在窗口小于输出预留时返回 0，不再用 `max(1024, ...)` 伪造输入空间。
+- `behavior.context` 新增安全余量字段；`behavior.summarize` 新增紧急线百分比；`storage.maintenance` 新增受管缓存/临时目录策略。
+
+### Fixed
+- 修正 `tests/test_provider_error_redaction.py` 导入未声明 `httpx2` 导致全量测试无法收集的问题（当前锁定 anthropic 0.116 使用 httpx）。
+
+### Known limitations
+- 自动磁盘 GC 定时器、聊天/唯一图片按范围删除、资源引用/租约、隔离区恢复、预算策略 v2 运行时切换与工具循环统一 guard 尚未实现。
+
 ## [Unreleased] — token 效率重构
 
 ### Added

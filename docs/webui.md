@@ -57,6 +57,7 @@ WebUI 能读到全部聊天记录、改配置、换 API Key，所以**默认必�
 | 角色 | `webui/api/personas.py` | `ui/dashboard/personas_page.py` |
 | 模型管理 | `webui/api/models.py` | `ui/dashboard/models_page.py` |
 | **表情包** | `webui/api/emoji.py` | `ui/dashboard/emoji_section.py`（WebUI 独立成页） |
+| **存储与缓存** | `webui/api/storage.py` | 无（WebUI 新增；见 `docs/storage_maintenance.md`） |
 | **黑名单** | `webui/api/settings.py` | 无（WebUI 新增） |
 | 设置 | `webui/api/settings.py` | `ui/dashboard/settings_page.py` |
 

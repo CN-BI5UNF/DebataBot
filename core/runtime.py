@@ -234,10 +234,19 @@ class Runtime:
         event_store = DebataEventStore(runtime_db_path, self.persona.name)
         self.event_store = EventJournal(event_store)
         await self.event_store.start()
+        storage_cfg = getattr(getattr(self.config, "storage", None), "maintenance", None)
         self.history = HistoryManager(
             mem_dir / "history.jsonl",
             event_store=self.event_store,
-            store=DebataHistoryStore(runtime_db_path, self.persona.name),
+            store=DebataHistoryStore(
+                runtime_db_path,
+                self.persona.name,
+                page_cache_max_bytes=int(
+                    getattr(storage_cfg, "history_cache_max_bytes", 32 * 1024 * 1024)
+                ),
+                page_size=int(getattr(storage_cfg, "history_cache_page_size", 256)),
+                max_pages=int(getattr(storage_cfg, "history_cache_max_pages", 16)),
+            ),
         )
         important_path = mem_dir / "important.json"
         important_store = DebataImportantStore(runtime_db_path, self.persona.name)
@@ -253,7 +262,8 @@ class Runtime:
             store=DebataArchiveStore(runtime_db_path, self.persona.name),
         )
         self.rolling_summary = DebataRollingSummaryStore(runtime_db_path, self.persona.name)
-        await self.history.load()
+        # 历史不再在启动时整库加载进内存；普通读取走分页缓存，显式
+        # load()/records() 仍保留给导出、聊天页与 RAG 兼容路径。
         await self.important.load()
         await self.archive.load()
         await self.rolling_summary.load()
@@ -762,6 +772,9 @@ class Runtime:
             await _close("wakeup_scheduler", self.wakeup_scheduler.cancel_all)
         if self.pipeline is not None:
             await _close("pipeline", self.pipeline.shutdown)
+        storage_service = getattr(self, "_storage_maintenance_service", None)
+        if storage_service is not None:
+            await _close("storage_maintenance", storage_service.shutdown)
         if self.subconscious_agent is not None:
             await _close("subconscious_agent", self.subconscious_agent.stop)
         if self.persona_agent is not None:
@@ -1145,8 +1158,8 @@ class Runtime:
                 await self.rag_memory.load()
                 self.history.on_append(self.rag_memory.enqueue_records)
                 archive_records = await self.archive.rag_records()
-                history_records = await self.history.records()
-                self.rag_memory.schedule_bootstrap([*archive_records, *history_records])
+                self.rag_memory.schedule_bootstrap(archive_records)
+                self.rag_memory.schedule_bootstrap_stream(self.history.iter_records())
                 self._fire_warmup("embedding", self.embedding_service)
                 logger.info(
                     f"RAG 已就位（本地 embedding）：quality={ecfg.local_quality}, "
@@ -1200,8 +1213,8 @@ class Runtime:
                 await self.rag_memory.load()
                 self.history.on_append(self.rag_memory.enqueue_records)
                 archive_records = await self.archive.rag_records()
-                history_records = await self.history.records()
-                self.rag_memory.schedule_bootstrap([*archive_records, *history_records])
+                self.rag_memory.schedule_bootstrap(archive_records)
+                self.rag_memory.schedule_bootstrap_stream(self.history.iter_records())
                 logger.info(
                     f"RAG 已就位：provider={ecfg.provider}, model={ecfg.api_model}, "
                     f"索引条目={len(self.rag_store)}"

@@ -14,7 +14,7 @@ import logging
 import re
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import AsyncIterable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -244,7 +244,8 @@ class RagMemoryService:
         self.top_k = max(1, top_k)
         self.max_text_chars = max(200, max_text_chars)
         self.batch_size = max(1, batch_size)
-        self._queue: asyncio.Queue[list[dict[str, Any]]] = asyncio.Queue()
+        # 有界队列：批量 bootstrap 不能无限制复制整段历史到内存。
+        self._queue: asyncio.Queue[list[dict[str, Any]]] = asyncio.Queue(maxsize=256)
         self._worker_task: asyncio.Task | None = None
         self._side_tasks: set[asyncio.Task] = set()
         self._closed = False
@@ -289,16 +290,45 @@ class RagMemoryService:
         if self._closed or not records:
             return
         self.start()
-        self._queue.put_nowait([dict(record) for record in records if isinstance(record, dict)])
+        await self._queue.put(
+            [dict(record) for record in records if isinstance(record, dict)]
+        )
 
     def schedule_bootstrap(self, records: list[dict]) -> None:
         if not records or self._closed:
             return
         self.start()
-        task = asyncio.create_task(
-            self.enqueue_records(records),
-            name="rag-memory-bootstrap",
-        )
+
+        async def _run() -> None:
+            for start in range(0, len(records), 256):
+                if self._closed:
+                    return
+                await self.enqueue_records(records[start:start + 256])
+
+        task = asyncio.create_task(_run(), name="rag-memory-bootstrap")
+        self._side_tasks.add(task)
+        task.add_done_callback(self._side_tasks.discard)
+
+    def schedule_bootstrap_stream(self, records: AsyncIterable[dict]) -> None:
+        """按页消费历史并受有界队列背压，不先物化全量 list。"""
+        if self._closed:
+            return
+        self.start()
+
+        async def _run() -> None:
+            batch: list[dict[str, Any]] = []
+            async for record in records:
+                if self._closed:
+                    return
+                if isinstance(record, dict):
+                    batch.append(record)
+                if len(batch) >= 256:
+                    await self.enqueue_records(batch)
+                    batch = []
+            if batch:
+                await self.enqueue_records(batch)
+
+        task = asyncio.create_task(_run(), name="rag-memory-bootstrap-stream")
         self._side_tasks.add(task)
         task.add_done_callback(self._side_tasks.discard)
 

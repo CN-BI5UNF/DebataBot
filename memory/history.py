@@ -18,11 +18,23 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .store import EventAppenderLike, JsonlStore, JsonlStoreLike
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _LegacyHistorySuffix:
+    """文件后端的分页兼容返回。"""
+
+    records: list[dict]
+    start_index: int
+    total: int
+    truncated: bool = False
 
 
 def _on_notify_done(task: asyncio.Task) -> None:
@@ -290,6 +302,62 @@ class HistoryManager:
 
     async def get_slice(self, start: int = 0, end: int | None = None) -> list[dict]:
         return await self._store.get_slice(start, end)
+
+    async def fetch_suffix(self, start: int = 0) -> Any:
+        """只读取位置 ``start`` 以后的历史后缀。
+
+        文件后端没有分页实现时退回全量读取，行为保持等价。
+        """
+        fetcher = getattr(self._store, "fetch_suffix", None)
+        if callable(fetcher):
+            return await fetcher(start)
+        records = await self.records()
+        start = max(0, min(int(start), len(records)))
+        return _LegacyHistorySuffix(
+            records=list(records[start:]),
+            start_index=start,
+            total=len(records),
+            truncated=False,
+        )
+
+    async def fetch_recent(self, limit: int) -> Any:
+        fetcher = getattr(self._store, "fetch_recent", None)
+        if callable(fetcher):
+            return await fetcher(limit)
+        records = await self.records()
+        selected = records[-max(0, int(limit)):] if limit else []
+        start = len(records) - len(selected)
+        return _LegacyHistorySuffix(
+            records=list(selected),
+            start_index=start,
+            total=len(records),
+            truncated=len(selected) < len(records),
+        )
+
+    async def iter_records(self, batch_size: int = 256):
+        """流式迭代历史；文件后端退回整表读取。"""
+        iterator = getattr(self._store, "iter_records", None)
+        if callable(iterator):
+            async for record in iterator(batch_size=batch_size):
+                yield record
+            return
+        for record in await self.records():
+            yield record
+
+    async def stats(self) -> dict[str, Any]:
+        stats = getattr(self._store, "stats", None)
+        if callable(stats):
+            return await stats()
+        return {
+            "record_count": await self._store.length(),
+            "backend": type(self._store).__name__,
+        }
+
+    async def clear_page_cache(self) -> dict[str, int]:
+        clearer = getattr(self._store, "clear_page_cache", None)
+        if callable(clearer):
+            return await clearer()
+        return {"entries": 0, "bytes": 0}
 
     async def truncate_head(self, cut_point: int) -> int:
         """删除最早的 cut_point 条记录。返回剩余长度。"""
