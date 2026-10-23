@@ -211,6 +211,7 @@ export const endpoints = {
   contextCompact: () => api.post('/api/context/compact', {}),
 
   updateStatus: () => api.get('/api/update/status'),
-  updateCheck: () => api.post('/api/update/check', {}),
+  // 后端允许把检查超时配到 300 秒，前端不能先用 15 秒把请求 abort。
+  updateCheck: () => api.post('/api/update/check', {}, { timeoutMs: 330000 }),
   updateApply: (payload) => api.post('/api/update/apply', payload),
 };

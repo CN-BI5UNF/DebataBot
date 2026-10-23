@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -198,3 +200,25 @@ async def test_apply_creates_local_target_when_only_remote_tracking_exists(tmp_p
     assert applied["new_commit"] == checked["target_commit"]
     assert _git(work, "branch", "--show-current").strip() == "refactor/main"
     assert (data / "user.txt").read_text(encoding="utf-8") == "do-not-touch\n"
+
+
+@pytest.mark.asyncio
+async def test_git_timeout_kills_helpers_holding_pipes(tmp_path, monkeypatch):
+    """git 超时要杀掉整个进程组，不能被子进程管道拖住。"""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake_git = bindir / "git"
+    fake_git.write_text("#!/bin/sh\nsleep 10 &\nwait\n", encoding="utf-8")
+    fake_git.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    service = UpdateService(repo, tmp_path / "data", allow_local_remote=True)
+
+    started = time.monotonic()
+    with pytest.raises(UpdateError) as exc:
+        await service._git("fetch", "ignored", timeout=0.5)
+    elapsed = time.monotonic() - started
+
+    assert exc.value.code == "git_timeout"
+    assert elapsed < 5.0, f"超时清理耗时 {elapsed:.1f}s，子进程可能仍在持有管道"

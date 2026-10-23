@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import secrets
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -413,6 +414,9 @@ class UpdateService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                # git 会派生 git-remote-https 等子进程；只 kill 父进程时子进程
+                # 仍持有管道，communicate() 可能永久挂住并卡死更新锁。
+                start_new_session=True,
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -420,9 +424,18 @@ class UpdateService:
                     timeout=float(timeout or self.timeout_seconds),
                 )
             except asyncio.TimeoutError:
-                proc.kill()
-                await proc.communicate()
-                raise UpdateError("git_timeout", "git 操作超时") from None
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                try:
+                    await asyncio.wait_for(proc.communicate(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning("git 超时后仍有子进程占用管道，放弃等待")
+                raise UpdateError(
+                    "git_timeout",
+                    f"git 操作超时（{int(timeout or self.timeout_seconds)} 秒）",
+                ) from None
         except FileNotFoundError:
             raise UpdateError("git_missing", "系统未安装 git") from None
         if proc.returncode != 0:

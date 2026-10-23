@@ -35,6 +35,8 @@ def test_reasoning_intensity_is_exposed_in_agent_settings():
     assert "if (!model) return ['low', 'medium', 'high']" in api_js
     assert "reasoning_budget: state.chat.reasoning_budget || null" in api_js
 
+    api_js_source = (ROOT / "webui/static/js/api.js").read_text(encoding="utf-8")
+    assert "timeoutMs: 330000" in api_js_source
     assert "effortOptionsFor" in providers_js
     assert "FALLBACK_EFFORT_OPTIONS = ['low', 'medium', 'high']" in providers_js
     assert "modelInput.addEventListener('input', refreshEffortOptions)" in providers_js
