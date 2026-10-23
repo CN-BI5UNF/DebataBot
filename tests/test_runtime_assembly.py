@@ -1630,3 +1630,45 @@ def _backup_count(backup_dir):
     if not backup_dir.exists():
         return 0
     return len(list(backup_dir.glob("*.db")))
+
+
+@pytest.mark.asyncio
+async def test_runtime_uses_preset_image_token_reserve_in_auto_profile(assembled_project):
+    """DeepSeek 官方每图 384 token；auto 档应覆盖全局 1024，而不是继续拍脑袋。"""
+    import shutil
+    from pathlib import Path
+
+    project_root, paths = assembled_project
+    source = Path(__file__).resolve().parents[1] / "providers" / "presets" / "deepseek"
+    target = paths.PROVIDER_PRESETS_DIR / "deepseek"
+    shutil.copytree(source, target)
+    with open(paths.CONFIG_FILE, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    data["providers"]["fake_main"] = {
+        "preset": "deepseek",
+        "protocol": "openai_compat",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key_id": None,
+        "timeout_seconds": 120.0,
+    }
+    for agent in data["agents"].values():
+        if agent.get("provider") == "fake_main":
+            agent["model"] = "deepseek-flash"
+    data["agents"]["chat"]["model"] = "deepseek-flash"
+    data.setdefault("features", {})["vision"] = {
+        "enabled": False,
+        "main_model_images": "on",
+        "image_budget_profile": "auto",
+        "image_token_reserve": 1024,
+    }
+    with open(paths.CONFIG_FILE, "w", encoding="utf-8") as f:
+        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+
+    rt = Runtime(project_root=project_root)
+    try:
+        await rt.start()
+        assert rt.pipeline.image_token_reserve == 384
+        assert rt.pipeline.image_budget_source == "provider_preset"
+        assert rt.pipeline._image_budget_profile.per_image_tokens == 384
+    finally:
+        await rt.shutdown()

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -94,6 +95,13 @@ async def status(request: Request) -> dict[str, Any]:
         )
         - fixed_overhead,
     )
+    compaction: dict[str, Any] | None = None
+    compaction_builder = getattr(pipeline, "compaction_status", None)
+    if callable(compaction_builder):
+        try:
+            compaction = compaction_builder()
+        except Exception:  # noqa: BLE001
+            logger.debug("上下文状态：压缩状态读取失败", exc_info=True)
     return {
         "provider": getattr(chat_cfg, "provider", ""),
         "model": getattr(chat_cfg, "model", ""),
@@ -111,6 +119,7 @@ async def status(request: Request) -> dict[str, Any]:
         "fixed_overhead_tokens": fixed_overhead,
         "working_history_budget": working_history_budget,
         "legacy_trigger_estimate": legacy_trigger,
+        "compaction": compaction,
         "history": {
             "record_count": int(history_stats.get("record_count") or 0),
             "active_start_index": active_start,
@@ -124,8 +133,66 @@ async def status(request: Request) -> dict[str, Any]:
             "window_effective = min(工作窗口, 已核实的模型上下文限制)",
             "硬 guard 始终使用净输入预算 B；budget_policy_version=2 目前只改变阈值基准展示，不切换提前压缩策略",
             "provider 鉴权/余额错误不属于上下文超限，不会被本地预算拦住",
+            "C02 压缩状态机包含软触发/预测、冷却、最少新增 token 与失败退避；状态随进程重启重置",
         ],
     }
+
+
+@router.post("/compact")
+async def compact(request: Request) -> dict[str, Any]:
+    """手动触发一次压缩；本次请求等待摘要完成，不伪造删除结果。"""
+    rt = require_runtime(request)
+    pipeline = getattr(rt, "pipeline", None)
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail="消息管道尚未就绪")
+    task = getattr(pipeline, "_summary_task", None)
+    if task is not None:
+        try:
+            if not task.done():
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "compaction_busy", "message": "后台压缩正在进行"},
+                )
+        except AttributeError:
+            pass
+    lock_factory = getattr(pipeline, "_summary_compaction_lock", None)
+    if callable(lock_factory):
+        try:
+            if lock_factory().locked():
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "compaction_busy", "message": "压缩锁被占用"},
+                )
+        except HTTPException:
+            raise
+        except Exception:  # noqa: BLE001
+            logger.debug("手动压缩：锁状态读取失败", exc_info=True)
+    runner = getattr(pipeline, "compact_manual", None)
+    if not callable(runner):
+        fallback = getattr(pipeline, "_maybe_summarize", None)
+        if callable(fallback):
+            async def runner() -> Any:
+                return await fallback(force=True, reason="manual")
+        else:
+            raise HTTPException(status_code=503, detail="当前管道不支持手动压缩")
+    try:
+        result = await runner()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("手动压缩失败")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "compaction_failed", "message": type(exc).__name__},
+        ) from exc
+    if getattr(result, "reason", "") == "compaction_busy":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "compaction_busy", "message": "压缩正在进行"},
+        )
+    payload = asdict(result) if is_dataclass(result) else {"status": str(result)}
+    payload["success"] = bool(getattr(result, "success", False))
+    status_builder = getattr(pipeline, "compaction_status", None)
+    status = status_builder() if callable(status_builder) else None
+    return {"ok": payload["success"], "result": payload, "compaction": status}
 
 
 __all__ = ["router"]

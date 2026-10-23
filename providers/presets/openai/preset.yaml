@@ -5,27 +5,33 @@ base_url: https://api.openai.com/v1
 registration_url: https://platform.openai.com
 reasoning_effort_style: openai
 reasoning_style: openai_native
+reasoning_effort_options: [low, medium, high, xhigh]
+image_detail_supported: true
 
 models:
   - id: gpt-5.5
     display_name: GPT-5.5（推荐 · 最新旗舰 · 1M 上下文）
     capabilities: [chat, tool_call, reasoning, vision]
     context_length: 1050000
+    reasoning_effort_options: [low, medium, high, xhigh]
 
   - id: gpt-5.4
     display_name: GPT-5.4（推荐 · 性价比 · 1M 上下文）
     capabilities: [chat, tool_call, reasoning, vision]
     context_length: 1050000
+    reasoning_effort_options: [low, medium, high, xhigh]
 
   - id: gpt-5.4-mini
     display_name: GPT-5.4 Mini（日常生产首选）
     capabilities: [chat, tool_call, reasoning, vision]
     context_length: 400000
+    reasoning_effort_options: [low, medium, high, xhigh]
 
   - id: gpt-5.4-nano
     display_name: GPT-5.4 Nano（最便宜）
     capabilities: [chat, tool_call, reasoning, vision]
     context_length: 400000
+    reasoning_effort_options: [low, medium, high, xhigh]
 
   - id: gpt-4o
     display_name: GPT-4o
@@ -41,11 +47,13 @@ models:
     display_name: o3（深度推理）
     capabilities: [chat, reasoning]
     context_length: 200000
+    reasoning_effort_options: [low, medium, high]
 
   - id: o3-mini
     display_name: o3-mini（经济推理）
     capabilities: [chat, tool_call, reasoning]
     context_length: 200000
+    reasoning_effort_options: [low, medium, high]
 
   # 以下为已退役/历史模型，仅用于兼容旧配置
   - id: gpt-5

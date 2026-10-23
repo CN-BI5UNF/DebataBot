@@ -242,6 +242,97 @@ export async function render(container, ctx) {
   // 分页切换
   // ============================================================
 
+  async function appendUpdatePanel(nodes) {
+    let status = null;
+    try {
+      status = await endpoints.updateStatus();
+    } catch (e) {
+      nodes.push(card('更新', '', empty(`读取更新状态失败：${e.message}`)));
+      return;
+    }
+    const statusLine = h('div', { class: 'field-help' });
+    const resultHost = h('div', {});
+    const checkBtn = h('button', { class: 'btn btn-primary' }, '检查更新');
+    checkBtn.addEventListener('click', async () => {
+      checkBtn.disabled = true;
+      statusLine.textContent = '正在连接 GitHub / 镜像…';
+      try {
+        const checked = await endpoints.updateCheck();
+        resultHost.replaceChildren(renderUpdateResult(checked));
+        statusLine.textContent = checked.can_apply
+          ? '发现可应用更新，请阅读警告后确认。'
+          : `当前不自动应用：${checked.reason || '无可用更新'}`;
+      } catch (e) {
+        statusLine.textContent = `检查失败：${e.message}`;
+        resultHost.replaceChildren();
+      } finally {
+        checkBtn.disabled = false;
+      }
+    });
+    const short = (value) => (value ? String(value).slice(0, 10) : '—');
+    const rows = [
+      h('tr', {}, h('td', {}, '当前分支'), h('td', {}, status.current_branch)),
+      h('tr', {}, h('td', {}, '当前提交'), h('td', { class: 'mono' }, short(status.current_commit))),
+      h('tr', {}, h('td', {}, '更新目标'), h('td', {}, status.target_ref)),
+      h('tr', {}, h('td', {}, '生效远程'), h('td', { class: 'mono' }, status.effective_remote || status.mirror_error)),
+      h('tr', {}, h('td', {}, '工作树'), h('td', {}, status.worktree_dirty
+        ? `有 ${status.dirty_file_count} 个未提交文件，自动更新会被拒绝`
+        : '干净')),
+      h('tr', {}, h('td', {}, '数据目录'), h('td', { class: 'mono' }, status.data_dir)),
+    ];
+    nodes.push(card('代码更新',
+      `固定从 ${status.target_ref} 快进；只更新源码，不覆盖用户数据。`,
+      table(['项目', '值'], rows),
+      h('p', { class: 'field-help' },
+        '应用更新会切换工作树到 refactor/main、备份当前提交并重启服务；'
+        + '依赖文件变化时会拒绝自动应用。镜像站会提供将执行的代码，请只使用可信 https 镜像。'),
+      h('div', { class: 'row' }, h('div', { class: 'spacer' }), checkBtn),
+      statusLine,
+      resultHost,
+    ));
+  }
+
+  function renderUpdateResult(checked) {
+    const commits = (checked.commits || []).map((line) => h('li', {}, line));
+    const warnings = (checked.warnings || []).map((line) =>
+      h('p', { class: 'field-help' }, line));
+    const deps = checked.dependency_changes?.length
+      ? h('p', { class: 'field-help' },
+        `依赖文件变化（需手动安装，禁止自动应用）：${checked.dependency_changes.join(', ')}`)
+      : null;
+    let applyBtn = null;
+    if (checked.can_apply) {
+      applyBtn = h('button', { class: 'btn btn-danger' }, '应用更新并重启');
+      applyBtn.addEventListener('click', async () => {
+        const branchNote = checked.current_branch !== checked.target_branch
+          ? `\n\n当前工作树会从 ${checked.current_branch} 切换到 ${checked.target_branch}。`
+          : '';
+        if (!confirm(`确认把代码快进到 ${checked.target_commit_short} 并重启 Debata？`
+          + branchNote + '\n\n用户数据目录不会被覆盖。')) return;
+        applyBtn.disabled = true;
+        try {
+          const applied = await endpoints.updateApply({
+            confirmation_token: checked.confirmation_token,
+            target_sha: checked.target_commit,
+            confirm_branch_switch: true,
+          });
+          resultHost.replaceChildren(h('p', {}, applied.message || '更新完成'));
+        } catch (e) {
+          applyBtn.disabled = false;
+          resultHost.append(h('p', { class: 'field-help' }, `应用失败：${e.message}`));
+        }
+      });
+    }
+    return h('div', {},
+      h('p', {}, `目标提交：${checked.target_commit_short || '—'}`),
+      commits.length ? h('div', {}, h('div', {}, '待应用提交：'), h('ul', {}, ...commits)) : null,
+      deps,
+      ...warnings,
+      applyBtn ? h('div', { class: 'row' },
+        h('div', { class: 'spacer' }), applyBtn) : null,
+    );
+  }
+
   async function show(key) {
     activeKey = key;
     for (const btn of nav.querySelectorAll('button')) {
@@ -263,10 +354,32 @@ export async function render(container, ctx) {
       }
       nodes.push(section);
     }
+    if (key === 'update') {
+      await appendUpdatePanel(nodes);
+    }
     if (key === 'token_budget') {
       try {
         const status = await endpoints.contextStatus();
         const budget = status.budget || {};
+        const compaction = status.compaction || {};
+        const manualStatus = h('p', { class: 'field-help' });
+        const compactBtn = h('button', { class: 'btn' }, '立即压缩活跃历史');
+        compactBtn.addEventListener('click', async () => {
+          if (!confirm('确认立即压缩当前活跃历史？原文会归档，活跃窗口起点前移。')) return;
+          compactBtn.disabled = true;
+          manualStatus.textContent = '正在调用摘要模型，请稍候…';
+          try {
+            const payload = await endpoints.contextCompact();
+            const result = payload.result || {};
+            manualStatus.textContent = payload.ok
+              ? `压缩完成：归档 ${result.archived_count || 0} 条，活跃 ${result.active_records || 0} 条。`
+              : `未压缩：${result.reason || result.status || '无可用结果'}`;
+          } catch (e) {
+            manualStatus.textContent = `压缩失败：${e.message}`;
+          } finally {
+            compactBtn.disabled = false;
+          }
+        });
         nodes.push(card('当前预算快照',
           `有效窗口 = min(工作窗口, 模型限制)；净输入预算 = 窗口 - 输出预留 - 安全余量。`
           + '该预算已用于发送前硬 guard；估算值不是供应商账单。',
@@ -293,11 +406,29 @@ export async function render(container, ctx) {
               h('td', {},
                 `${formatNumber(status.fixed_overhead_tokens || 0)} / `
                 + `${formatNumber(status.working_history_budget || 0)}`)),
+            h('tr', {}, h('td', {}, '压缩状态'),
+              h('td', {},
+                `${compaction.last_action || 'idle'}`
+                + (compaction.last_skip_reason
+                  ? `（跳过：${compaction.last_skip_reason}）` : '')
+                + (compaction.backoff_seconds_remaining
+                  ? ` · 退避剩余 ${compaction.backoff_seconds_remaining}s` : ''))),
+            h('tr', {}, h('td', {}, '增长预测 / 冷却 / 最少新增'),
+              h('td', {},
+                `${compaction.growth_ewma ?? '—'} / `
+                + `${formatNumber(compaction.cooldown_seconds || 0)}s / `
+                + `${formatNumber(compaction.min_new_tokens || 0)}`)),
           ]),
           (budget.errors || []).length
             ? h('p', { class: 'field-help' },
               `预算校验失败：${(budget.errors || []).join(', ')}`)
             : null,
+          h('div', { class: 'row' },
+            h('span', { class: 'field-help' },
+              '手动压缩会等待摘要完成；后台压缩进行中时返回“忙碌”，不会重复调用模型。'),
+            h('div', { class: 'spacer' }),
+            compactBtn),
+          manualStatus,
         ));
       } catch (e) {
         nodes.push(card('当前预算快照', '', empty(`读取失败：${e.message}`)));

@@ -3,6 +3,8 @@ display_name: 智谱清言 GLM
 protocol: openai_compat
 base_url: https://open.bigmodel.cn/api/paas/v4
 registration_url: https://open.bigmodel.cn
+# GLM 视觉文档使用 image_url.url；不发送未声明的 detail。
+image_detail_supported: false
 reasoning_style: thinking_extra_body
 
 models:

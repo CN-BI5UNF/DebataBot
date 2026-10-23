@@ -148,6 +148,28 @@ IAdapter.send_text() → 用户收到消息
 
 压缩触发/目标按“**模型可见视图 token + 固定 system/tools 开销**”计算，而不是原始活跃历史；默认 `50/30/20`（触发/目标/重试）。模型视图见下一节。
 
+C02 在真实阈值前加了一层轻量状态机（`core/compaction.py`）：
+
+- 软触发：视图 token 达到触发线；增长预测开启时，用活跃 token 的 EWMA
+  加冷启动增长预算，提前在阈值下方触发。
+- 成功压缩后记录压缩后 token 与活跃条数；冷却期内或新增可压缩 token 少于
+  `min_new_tokens` 时不再调用摘要模型。
+- 摘要失败按 30s 起指数退避（上限 15 分钟）；手动压缩和图片数量/字节压力
+  可越过退避，真实预算超限仍走直接压缩兜底，不依赖本状态机。
+- 同一进程内用压缩锁 single-flight；后台任务、预算预检和手动按钮不会并发
+  重复摘要。`compact_manual()` 在锁占用时立即返回 `compaction_busy`。
+- 状态随进程重启重置，不做持久化 checkpoint 的伪实现；`background_enabled`
+  只关闭回合结束后的后台排队，不关闭主回复前预算预检和手动压缩。
+
+新增配置：`behavior.summarize.background_enabled`、`forecast_enabled`、
+`cold_growth_tokens`、`cooldown_seconds`、`min_new_tokens`。手动接口为
+`POST /api/context/compact`，状态在 `GET /api/context/status` 的 `compaction` 字段。
+
+图片能力元数据也来自 preset：`image_token_reserve` 覆盖 auto 预算的每图预留
+（DeepSeek 官方文档为 384 token），`image_detail_supported=false` 时在
+OpenAI 兼容协议中移除 `image_url.detail`。OpenAI/OpenRouter 保留 detail，
+Anthropic 走原生图块，其余预设保守不发送未声明的 detail。
+
 ---
 
 ## 模型视图（运行时噪声裁剪）

@@ -2,6 +2,28 @@
 
 本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] — 在线更新、思考档位与 C02 压缩状态机
+
+### Added
+- 新增设置 →「更新」：固定检查 `CN-BI5UNF/Debata-Refactor` 的 `refactor/main`，检查/确认后 fast-forward、创建 `refs/backups/update/*`、写 `update_history.jsonl` 并重启服务。
+- 更新镜像支持完整 https 仓库 URL、`{url}` 占位或 https 前缀；拒绝 http、账号密码、本机/.local/内网 IP 和指向其它仓库的地址。
+- 更新器拒绝脏工作树、数据目录位于代码树内、目标分叉/变化和依赖文件变化；只更新源码，不读取或覆盖用户数据目录。
+- 新增 C02 压缩状态机（`core/compaction.py`）：增长 EWMA/冷启动预测、成功冷却、最少新增 token、失败指数退避与进程内 single-flight。
+- `/api/context/status` 新增 `compaction` 状态；新增 `POST /api/context/compact` 手动压缩和 Token 预算页按钮。
+- 新增 `behavior.summarize` 配置：`background_enabled`、`forecast_enabled`、`cold_growth_tokens`、`cooldown_seconds`、`min_new_tokens`。
+- 模型预设新增思考档位与图像元数据：DeepSeek `low/high/max` + 每图 384 token + 不发送 `detail`；OpenAI 按模型提供 `low/medium/high/xhigh` 或 `low/medium/high`；Anthropic 增加 `xhigh/max` 预算档；OpenAI/OpenRouter 保留 `detail`，其它预设保守省略。
+- 自定义模型（不在预设模型清单内）思考档位固定回退 `low/medium/high`；设置页切换提供商/模型会即时刷新档位。
+- 修复首次配置向导“选择人格”等条件控件点击不重绘的问题（注入 `ctx.rerender()`）。
+
+### Changed
+- Anthropic thinking budget 会按 `max_tokens` 收敛到 `max_tokens - 1024`；`max_tokens <= 1024` 时本次不启用思考，避免必然 400。
+- DeepSeek 图像 auto 预算使用预设的每图 384 token，而不是全局猜测值。
+
+### Known limitations
+- C02 状态随进程重启重置；C03 冷启动追赶、C04 摘要 CAS 原子提交、C05 工具循环内局部压缩仍待实现。
+- 自动更新只做 fast-forward，不自动安装依赖、不运行迁移；依赖文件变化会拒绝应用。
+- 预设思考档位依据 2026-10 官方文档；中转站/自定义模型是否实际支持仍取决于上游。
+
 ## [Unreleased] — 第二阶段 M0–M2：统一预算与硬 guard
 
 ### Added

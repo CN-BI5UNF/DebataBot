@@ -48,6 +48,9 @@ class ModelInfo:
     display_name: str = ""
     capabilities: list[str] = field(default_factory=list)
     context_length: int = 0
+    reasoning_effort_options: list[str] = field(default_factory=list)
+    image_token_reserve: int = 0
+    image_detail_supported: bool = True
 
     @classmethod
     def from_dict(cls, data: dict) -> ModelInfo:
@@ -56,6 +59,13 @@ class ModelInfo:
             display_name=str(data.get("display_name", data.get("id", ""))),
             capabilities=list(data.get("capabilities", []) or []),
             context_length=int(data.get("context_length", 0) or 0),
+            reasoning_effort_options=[
+                str(v).lower()
+                for v in (data.get("reasoning_effort_options", []) or [])
+                if str(v).strip()
+            ],
+            image_token_reserve=int(data.get("image_token_reserve", 0) or 0),
+            image_detail_supported=bool(data.get("image_detail_supported", True)),
         )
 
 
@@ -77,6 +87,15 @@ class ProviderPreset:
 
     reasoning_effort_style: str = "none"
     """OpenAI 兼容协议的 reasoning_effort 映射风格；none 表示不透传。"""
+
+    reasoning_effort_options: list[str] = field(default_factory=list)
+    """该预设可用思考强度；模型级配置优先。空表示前端回退 low/medium/high。"""
+
+    image_token_reserve: int = 0
+    """预设的每图 token 预留；0 表示使用全局配置。模型级配置优先。"""
+
+    image_detail_supported: bool = True
+    """是否向 image_url 发送 detail 字段；DeepSeek 当前文档未声明该字段。"""
 
     tutorial_dir: Path | None = None
     icon: Path | None = None
@@ -104,6 +123,13 @@ class ProviderPreset:
             reasoning_effort_style=str(
                 data.get("reasoning_effort_style", "none") or "none"
             ),
+            reasoning_effort_options=[
+                str(v).lower()
+                for v in (data.get("reasoning_effort_options", []) or [])
+                if str(v).strip()
+            ],
+            image_token_reserve=int(data.get("image_token_reserve", 0) or 0),
+            image_detail_supported=bool(data.get("image_detail_supported", True)),
             tutorial_dir=tutorial if tutorial.is_dir() else None,
             icon=icon if icon.exists() else None,
         )

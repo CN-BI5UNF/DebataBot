@@ -138,6 +138,9 @@ def build_provider(
             kwargs["reasoning_effort_style"] = preset.reasoning_effort_style
         else:
             kwargs["reasoning_effort_style"] = "none"
+        kwargs["image_detail_supported"] = (
+            preset.image_detail_supported if preset is not None else True
+        )
         kwargs["known_model_ids"] = {m.id for m in preset.models} if preset else set()
         kwargs["reasoning_model_ids"] = (
             {m.id for m in preset.models if "reasoning" in m.capabilities}

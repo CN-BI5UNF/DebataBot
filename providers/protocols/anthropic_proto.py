@@ -48,9 +48,12 @@ logger = logging.getLogger(__name__)
 
 
 _BUDGET_MAP = {
+    "minimal": 1024,
     "low": 2000,
     "medium": 6000,
     "high": 16000,
+    "xhigh": 24000,
+    "max": 32000,
 }
 
 _ANTHROPIC_IMAGE_MEDIA_TYPES = frozenset(
@@ -130,7 +133,18 @@ class AnthropicProvider(IProvider):
                 budget = _BUDGET_MAP.get(reasoning.budget, 4000)
             if budget is None:
                 budget = 4000
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            # Anthropic 要求 1024 <= budget < max_tokens；用户把强度调到 max
+            # 或 max_tokens 很小时不能发出必然 400 的请求。
+            max_tokens = int(kwargs.get("max_tokens") or 0)
+            if 0 < max_tokens <= 1024:
+                logger.warning(
+                    "max_tokens=%s 无法满足 Anthropic thinking 最小预算，本次不启用思考",
+                    max_tokens,
+                )
+            else:
+                if max_tokens > 0:
+                    budget = max(1024, min(int(budget), max_tokens - 1024))
+                kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
 
         if extra:
             kwargs.update(extra)

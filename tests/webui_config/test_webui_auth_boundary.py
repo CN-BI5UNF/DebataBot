@@ -49,6 +49,10 @@ def test_root_and_static_are_public():
         "/api/storage/cleanup/execute",
         "/api/storage/jobs/job-1",
         "/api/context/status",
+        "/api/context/compact",
+        "/api/update/status",
+        "/api/update/check",
+        "/api/update/apply",
     ],
 )
 def test_sensitive_paths_require_token(path):

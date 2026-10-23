@@ -45,6 +45,12 @@ OpenAI / Anthropic Claude / DeepSeek / 智谱 GLM / 通义千问 / 火山方舟 
 
 每个 provider 可以单独指定**思考参数风格**（`thinking_extra_body` / `qwen_enable_thinking` / `openai_native` / `none`）.接不认识的中转站时选 `none`, 就不会把厂商私有字段发过去被网关拒绝.
 
+开启思考模式后可选思考强度：预设内模型按官方文档提供档位（DeepSeek `low/high/max`、GPT-5.5 `low/medium/high/xhigh`、Anthropic 预算档等），自定义模型只提供低/中/高.图像输入按预设能力发送：DeepSeek 每图 384 token 预留且不发送未声明的 `detail`，OpenAI/OpenRouter 保留 `detail`，其余预设保守省略.
+
+### 9. 在线更新
+
+设置 →「更新」可以从固定 `refactor/main` 快进 Debata 源码，支持完整 https 仓库 URL 或镜像前缀.更新只操作代码工作树，不覆盖数据目录；脏工作树、分叉或依赖文件变化会拒绝自动应用，应用前会创建备份 ref 并重启服务.
+
 ### 7. 安全
 
 API 密钥用 AES-256-GCM + RSA-2048 加密, 存系统 keyring, 不需要记密码.配置文件即时保存, 大部分改动不需要重启.

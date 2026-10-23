@@ -247,7 +247,8 @@ runtime 事件折叠。前端只按 `kind` 渲染，不猜记录之间的关系�
 向导步骤里的选择卡、开关和下拉一旦改变条件渲染，统一调用 `setup.js` 注入的
 `ctx.rerender()`；不要在 `steps.js` 里直接调用未定义的 `render()`。向导在
 “角色”步骤可切换内置人格/生成新人格，并在主模型步骤开启思考模式后选择
-低/中/高思考强度。
+思考强度。预设内模型使用该模型文档声明的档位（例如 DeepSeek `low/high/max`、
+GPT-5.5 `low/medium/high/xhigh`）；预设外自定义模型只提供低/中/高三档。
 
 向导是多步的，流转规则由后端决定：`POST /api/setup/step` 调
 `webui/wizard/flow.py`（原桌面端原样搬过来的）。前端不判断"下一步去哪"——
@@ -271,9 +272,21 @@ runtime 事件折叠。前端只按 `kind` 渲染，不猜记录之间的关系�
 `secrets` 字段用于写天气 / TTS 这类不走 provider 的密钥——向导阶段 Runtime 还没起来，
 前端没法调 `/api/settings/secrets`。
 
-思考强度保存在 `agents.chat.reasoning.budget`（low/medium/high）；设置页的 Agent
-卡片也可手动修改。DeepSeek/OpenAI 预设会映射为 `reasoning_effort`，其他未声明
-支持的供应商只保存档位、不发送未知字段。
+思考强度保存在 `agents.chat.reasoning.budget`；设置页的 Agent 卡片会在切换
+提供商/模型时刷新可选档位。DeepSeek/OpenAI 预设会映射为 `reasoning_effort`，
+Anthropic 映射为 thinking budget；其他未声明支持的供应商只保存档位、不发送未知字段。
+预设内的模型使用 `preset.yaml` 的 `reasoning_effort_options`（模型级优先），
+不在预设模型清单里的自定义模型固定回退 `low/medium/high`。
+
+设置 →「Token 预算」还会显示 C02 压缩状态（最近动作、跳过原因、退避剩余、
+增长 EWMA），并提供「立即压缩活跃历史」。手动压缩会等待摘要完成；后台压缩
+进行中返回忙碌，不会排队重复调用摘要模型。
+
+设置 →「更新」显示当前分支/提交、固定目标 `refactor/main`、生效远程与数据目录。
+镜像可留空、填完整 https 仓库 URL，或填 `https://ghproxy…/` 这类前缀；更新器
+只接受同一 `CN-BI5UNF/Debata-Refactor` 仓库，拒绝 http、账号密码、本机/内网
+地址。应用前必须检查并确认，采用 fast-forward，创建备份 ref，只切代码工作树，
+不读取或覆盖用户数据目录；依赖文件变化时拒绝自动应用。
 
 向导里填的角色描述同理也调不了生成器（要真发一次模型请求），但**不能就这么丢掉**：
 它被写进 `<数据目录>/persona_brief.json`，配置完成后「角色 → 新建角色」会读它预填，

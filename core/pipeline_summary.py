@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,6 +26,7 @@ from utils.image_contracts import (
 )
 from utils.token_budget import TokenEstimator
 
+from .compaction import CompactionPlanner
 from .model_view import build_model_view, runtime_kind
 from .pipeline_history import _record_timestamp
 from .state import PendingMessageItem, ProtectedInput
@@ -54,9 +56,48 @@ class SummaryAttemptResult:
 
 
 class PipelineSummaryMixin:
+    def _compaction_planner(self) -> CompactionPlanner:
+        planner = getattr(self, "_compaction_planner_obj", None)
+        if planner is None:
+            planner = CompactionPlanner()
+            self._compaction_planner_obj = planner
+        return planner
+
+    def _record_compaction_outcome(self, result: SummaryAttemptResult) -> None:
+        planner = self._compaction_planner()
+        now = time.monotonic()
+        if result.success:
+            planner.mark_success(
+                now=now,
+                active_tokens_before=(
+                    result.active_tokens or result.view_active_tokens or 0
+                ),
+                active_records_before=result.active_records,
+                archived_count=result.archived_count,
+                target_after_tokens=result.target_after_tokens,
+            )
+        elif result.status == "failed":
+            planner.mark_failure(now=now, reason=result.reason or "failed")
+        elif result.status == "not_needed":
+            planner.mark_skipped(result.reason or "not_needed")
+
+    def compaction_status(self) -> dict[str, Any]:
+        planner = self._compaction_planner()
+        cfg = getattr(getattr(self, "behavior_cfg", None), "summarize", None)
+        return {
+            **planner.as_dict(),
+            "background_enabled": bool(getattr(cfg, "background_enabled", True)),
+            "forecast_enabled": bool(getattr(cfg, "forecast_enabled", True)),
+            "cooldown_seconds": int(getattr(cfg, "cooldown_seconds", 60)),
+            "min_new_tokens": int(getattr(cfg, "min_new_tokens", 2048)),
+            "cold_growth_tokens": int(getattr(cfg, "cold_growth_tokens", 2048)),
+        }
+
     def _schedule_summarize(self) -> None:
         """后台触发 compaction，避免在回复热路径同步调用总结模型。"""
         if self.summary_agent is None or self.archive is None or self.rolling_summary is None:
+            return
+        if not bool(getattr(self.behavior_cfg.summarize, "background_enabled", True)):
             return
         if self._summary_task is not None and not self._summary_task.done():
             return
@@ -80,11 +121,13 @@ class PipelineSummaryMixin:
     ) -> SummaryAttemptResult:
         """按阈值压缩活跃 history：归档原文，只移动活跃窗口起点。"""
         async with self._summary_compaction_lock():
-            return await self._maybe_summarize_unlocked(
+            result = await self._maybe_summarize_unlocked(
                 force=force,
                 target_after_tokens=target_after_tokens,
                 reason=reason,
             )
+        self._record_compaction_outcome(result)
+        return result
 
     def _summary_compaction_lock(self) -> asyncio.Lock:
         lock = getattr(self, "_summary_compaction_lock_obj", None)
@@ -92,6 +135,20 @@ class PipelineSummaryMixin:
             lock = asyncio.Lock()
             self._summary_compaction_lock_obj = lock
         return lock
+
+    async def compact_manual(self) -> SummaryAttemptResult:
+        """手动压缩：锁被占用时立即返回 busy，不排队重复调用摘要模型。"""
+        lock = self._summary_compaction_lock()
+        if lock.locked():
+            return SummaryAttemptResult(status="not_needed", reason="compaction_busy")
+        async with lock:
+            result = await self._maybe_summarize_unlocked(
+                force=True,
+                target_after_tokens=None,
+                reason="manual",
+            )
+        self._record_compaction_outcome(result)
+        return result
 
     def _register_protected_input(
         self,
@@ -268,11 +325,25 @@ class PipelineSummaryMixin:
                 / 100
             ) - self._fixed_prompt_overhead_tokens()
             trigger = max(1, trigger)
-        token_triggered = view_tokens >= trigger
-        if not force and not token_triggered and not image_triggered:
+        planner = self._compaction_planner()
+        planner.observe(view_tokens)
+        decision = planner.decide(
+            active_tokens=view_tokens,
+            active_records=len(active_records),
+            trigger_tokens=trigger,
+            now=time.monotonic(),
+            cooldown_seconds=int(getattr(summarize_cfg, "cooldown_seconds", 60)),
+            min_new_tokens=int(getattr(summarize_cfg, "min_new_tokens", 2048)),
+            cold_growth_tokens=int(getattr(summarize_cfg, "cold_growth_tokens", 2048)),
+            forecast_enabled=bool(getattr(summarize_cfg, "forecast_enabled", True)),
+            force=force,
+            media_pressure=image_triggered,
+        )
+        if not decision.should_run:
+            planner.mark_skipped(decision.reason)
             return SummaryAttemptResult(
                 status="not_needed",
-                reason="below_trigger",
+                reason=decision.reason,
                 active_start_before=active_start,
                 active_start_after=active_start,
                 active_records=len(active_records),
@@ -327,13 +398,16 @@ class PipelineSummaryMixin:
             )
 
         logger.info(
-            "活跃历史触发滚动摘要 compaction reason=%s view_tokens=%s raw_tokens=%s "
-            "trigger=%s images=%s image_bytes=%s image_triggered=%s "
-            "records=%s view_records=%s",
+            "活跃历史触发滚动摘要 compaction reason=%s decision=%s view_tokens=%s "
+            "raw_tokens=%s trigger=%s predicted=%s new_tokens=%s images=%s "
+            "image_bytes=%s image_triggered=%s records=%s view_records=%s",
             reason,
+            decision.reason,
             view_tokens,
             raw_tokens,
             trigger,
+            decision.predicted_tokens,
+            decision.new_tokens,
             image_count,
             image_bytes,
             image_triggered,
@@ -361,7 +435,7 @@ class PipelineSummaryMixin:
         estimator: TokenEstimator | None = None,
     ) -> SummaryAttemptResult:
         async with self._summary_compaction_lock():
-            return await self._compact_active_history_unlocked(
+            result = await self._compact_active_history_unlocked(
                 target_after_tokens=target_after_tokens,
                 reason=reason,
                 active_records=active_records,
@@ -369,6 +443,8 @@ class PipelineSummaryMixin:
                 active_tokens=active_tokens,
                 estimator=estimator,
             )
+        self._record_compaction_outcome(result)
+        return result
 
     async def _compact_active_history_unlocked(
         self,

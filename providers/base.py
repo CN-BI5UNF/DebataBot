@@ -146,8 +146,8 @@ class ReasoningConfig:
     """跨提供商的思考配置（每家 SDK 翻译时映射）。"""
 
     enabled: bool = False
-    budget: Literal["low", "medium", "high"] | None = None
-    """语义化预算等级"""
+    budget: Literal["minimal", "low", "medium", "high", "xhigh", "max"] | None = None
+    """语义化思考强度等级；供应商可用范围由预设元数据约束。"""
 
     max_tokens: int | None = None
     """显式 thinking budget（Anthropic/Gemini）。budget 字段未指定时此项生效。"""

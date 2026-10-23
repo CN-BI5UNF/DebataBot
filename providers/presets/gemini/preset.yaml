@@ -3,6 +3,8 @@ display_name: Google Gemini
 protocol: openai_compat
 base_url: https://generativelanguage.googleapis.com/v1beta/openai
 registration_url: https://aistudio.google.com/apikey
+# Google OpenAI 兼容示例只使用 image_url.url；不发送未声明的 detail。
+image_detail_supported: false
 reasoning_style: openai_native
 
 models:

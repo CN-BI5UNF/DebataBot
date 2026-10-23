@@ -783,3 +783,136 @@ async def test_rag_mode_inbound_keyword_text_does_not_auto_save_important_memory
     await _drain_pipeline(pipeline)
 
     assert not any("长期活动" in item.get("content", "") for item in important.items())
+
+
+@pytest.mark.asyncio
+async def test_forecast_compaction_runs_below_hard_trigger(build_pipeline):
+    class FakeSummaryAgent:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def summarize_rolling(
+            self,
+            history_slice,
+            existing_summary_text,
+            existing_important_text,
+        ):
+            self.calls += 1
+            return {"summary_text": f"预测压缩 {len(history_slice)} 条", "new_important": []}
+
+    pipeline, _, _, history, _ = await build_pipeline([])
+    agent = FakeSummaryAgent()
+    pipeline.summary_agent = agent
+    for idx in range(6):
+        await history.add_user_message(
+            f"预测压缩旧消息 {idx} " + ("增长测试内容 " * 40),
+            conversation_id="private:123",
+        )
+    estimator = pipeline._token_estimator()
+    active = await pipeline._select_working_history("private:123")
+    active_tokens = estimator.estimate_messages(active)
+    summarize = pipeline.behavior_cfg.summarize
+    summarize.trigger_at_tokens = active_tokens + 1
+    summarize.target_after_tokens = max(1, active_tokens // 2)
+    summarize.forecast_enabled = True
+    summarize.cold_growth_tokens = 100_000
+    summarize.cooldown_seconds = 0
+    summarize.min_new_tokens = 256
+
+    result = await pipeline._maybe_summarize()
+
+    assert result.success is True
+    assert agent.calls == 1
+    assert pipeline.compaction_status()["last_action"] == "cooldown"
+
+
+@pytest.mark.asyncio
+async def test_success_cooldown_prevents_duplicate_summary_call(build_pipeline):
+    class FakeSummaryAgent:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def summarize_rolling(
+            self,
+            history_slice,
+            existing_summary_text,
+            existing_important_text,
+        ):
+            self.calls += 1
+            return {"summary_text": f"冷却压缩 {len(history_slice)} 条", "new_important": []}
+
+    pipeline, _, _, history, _ = await build_pipeline([])
+    agent = FakeSummaryAgent()
+    pipeline.summary_agent = agent
+    for idx in range(8):
+        await history.add_user_message(
+            f"冷却测试旧消息 {idx} " + ("压缩内容 " * 60),
+            conversation_id="private:123",
+        )
+    estimator = pipeline._token_estimator()
+    active = await pipeline._select_working_history("private:123")
+    active_tokens = estimator.estimate_messages(active)
+    summarize = pipeline.behavior_cfg.summarize
+    summarize.trigger_at_tokens = 50
+    summarize.target_after_tokens = active_tokens - 1
+    summarize.cooldown_seconds = 60
+    summarize.min_new_tokens = 100_000
+
+    first = await pipeline._maybe_summarize(force=True, reason="first")
+    second = await pipeline._maybe_summarize(reason="scheduled")
+
+    assert first.success is True
+    assert agent.calls == 1
+    assert second.status == "not_needed"
+    assert second.reason == "cooldown"
+    assert agent.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failure_backoff_blocks_automatic_retry(build_pipeline):
+    class FailingSummaryAgent:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def summarize_rolling(
+            self,
+            history_slice,
+            existing_summary_text,
+            existing_important_text,
+        ):
+            self.calls += 1
+            raise RuntimeError("summary provider down")
+
+    pipeline, _, _, history, _ = await build_pipeline([])
+    agent = FailingSummaryAgent()
+    pipeline.summary_agent = agent
+    for idx in range(6):
+        await history.add_user_message(
+            f"退避测试旧消息 {idx} " + ("压缩内容 " * 40),
+            conversation_id="private:123",
+        )
+    summarize = pipeline.behavior_cfg.summarize
+    summarize.trigger_at_tokens = 50
+    summarize.target_after_tokens = 20
+
+    first = await pipeline._maybe_summarize(force=True, reason="first")
+    second = await pipeline._maybe_summarize(reason="scheduled")
+
+    assert first.status == "failed"
+    assert first.reason == "summary_agent_error"
+    assert agent.calls == 1
+    assert second.status == "not_needed"
+    assert second.reason == "backoff"
+    assert pipeline.compaction_status()["failure_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_background_compaction_can_be_disabled(build_pipeline):
+    pipeline, _, _, history, _ = await build_pipeline([])
+    pipeline.summary_agent = object()
+    pipeline.behavior_cfg.summarize.background_enabled = False
+    await history.add_user_message("后台关闭测试", conversation_id="private:123")
+
+    pipeline._schedule_summarize()
+
+    assert pipeline._summary_task is None

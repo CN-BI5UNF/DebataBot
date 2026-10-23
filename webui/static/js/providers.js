@@ -30,6 +30,15 @@ const REASONING_STYLES = [
 ];
 
 const CUSTOM = '__custom__';
+const EFFORT_LABELS = {
+  minimal: '最小',
+  low: '低',
+  medium: '中',
+  high: '高',
+  xhigh: '极高',
+  max: '最大',
+};
+const FALLBACK_EFFORT_OPTIONS = ['low', 'medium', 'high'];
 
 // ============================================================
 // 设置页「模型」分页
@@ -37,8 +46,14 @@ const CUSTOM = '__custom__';
 
 export async function renderModelsPanel(host, ctx, { markRestart } = {}) {
   let data;
+  let presets = [];
   try {
-    data = await endpoints.providers();
+    const [providerData, presetData] = await Promise.all([
+      endpoints.providers(),
+      endpoints.providerPresets().catch(() => ({ presets: [] })),
+    ]);
+    data = providerData;
+    presets = presetData.presets || [];
   } catch (e) {
     fill(host, empty('模型配置没能读出来', { subtitle: e.message, iconName: 'models' }));
     return;
@@ -57,7 +72,7 @@ export async function renderModelsPanel(host, ctx, { markRestart } = {}) {
   );
 
   const agentCards = Object.entries(data.agents || {}).map(([name, agent]) =>
-    agentCard(name, agent, data.providers || [], ctx, markRestart, reload),
+    agentCard(name, agent, data.providers || [], ctx, markRestart, reload, presets),
   );
 
   fill(host, providerCard, h('div', { class: 'grid grid-2' }, ...agentCards));
@@ -525,7 +540,7 @@ async function openProviderDialog(existing, onDone) {
 // Agent 卡片
 // ============================================================
 
-function agentCard(name, agent, providers, ctx, markRestart, onSaved) {
+function agentCard(name, agent, providers, ctx, markRestart, onSaved, presets = []) {
   const title = AGENT_LABEL[name] || name;
   if (!agent) {
     return card(title, '未启用',
@@ -554,10 +569,38 @@ function agentCard(name, agent, providers, ctx, markRestart, onSaved) {
   const maxInput = h('input', { type: 'number', min: '1', value: agent.max_tokens });
   const reasoning = h('input', { type: 'checkbox', checked: !!agent.reasoning });
   const reasoningBudget = h('select', {});
-  for (const [value, label] of [['low', '低'], ['medium', '中'], ['high', '高']]) {
-    reasoningBudget.append(h('option', { value }, label));
+
+  function effortOptionsFor(providerId, modelId) {
+    const provider = providers.find((p) => p.id === providerId);
+    const preset = presets.find((p) => p.id === provider?.preset);
+    const model = (preset?.models || []).find((m) => m.id === modelId);
+    if (!model) return [...FALLBACK_EFFORT_OPTIONS];
+    return model.reasoning_effort_options?.length
+      ? [...model.reasoning_effort_options]
+      : preset?.reasoning_effort_options?.length
+        ? [...preset.reasoning_effort_options]
+        : [...FALLBACK_EFFORT_OPTIONS];
   }
-  reasoningBudget.value = agent.reasoning_budget || 'medium';
+
+  function refreshEffortOptions() {
+    const options = effortOptionsFor(providerSelect.value, modelInput.value.trim());
+    const desired = reasoningBudget.value || agent.reasoning_budget;
+    reasoningBudget.replaceChildren(...options.map((value) =>
+      h('option', { value }, EFFORT_LABELS[value] || value)));
+    reasoningBudget.value = options.includes(desired)
+      ? desired
+      : (options.includes('medium') ? 'medium' : options[0]);
+    reasoningBudget.disabled = !reasoning.checked;
+  }
+
+  const initialOptions = agent.reasoning_effort_options?.length
+    ? [...agent.reasoning_effort_options]
+    : effortOptionsFor(agent.provider, agent.model);
+  reasoningBudget.replaceChildren(...initialOptions.map((value) =>
+    h('option', { value }, EFFORT_LABELS[value] || value)));
+  reasoningBudget.value = initialOptions.includes(agent.reasoning_budget)
+    ? agent.reasoning_budget
+    : (initialOptions.includes('medium') ? 'medium' : initialOptions[0]);
   reasoningBudget.disabled = !reasoning.checked;
   const effortHint = h('div', { class: 'field-help' });
   function updateEffortHint() {
@@ -570,7 +613,11 @@ function agentCard(name, agent, providers, ctx, markRestart, onSaved) {
   reasoning.addEventListener('change', () => {
     reasoningBudget.disabled = !reasoning.checked;
   });
-  providerSelect.addEventListener('change', updateEffortHint);
+  providerSelect.addEventListener('change', () => {
+    updateEffortHint();
+    refreshEffortOptions();
+  });
+  modelInput.addEventListener('input', refreshEffortOptions);
   updateEffortHint();
 
   const commit = async (event) => {

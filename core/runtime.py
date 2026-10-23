@@ -476,10 +476,25 @@ class Runtime:
         vision_cfg = self.config.features.vision
         from utils.image_budget import resolve_image_budget_profile
 
+        image_token_reserve = int(vision_cfg.image_token_reserve)
+        image_budget_source = "config"
+        if str(vision_cfg.image_budget_profile) == "auto":
+            preset_meta = self._preset_model_meta(chat_cfg.provider, chat_cfg.model)
+            if preset_meta is not None:
+                model = preset_meta[1]
+                preset = preset_meta[0]
+                meta_reserve = int(
+                    getattr(model, "image_token_reserve", 0)
+                    or getattr(preset, "image_token_reserve", 0)
+                    or 0
+                )
+                if meta_reserve > 0:
+                    image_token_reserve = meta_reserve
+                    image_budget_source = "provider_preset"
         image_budget_profile = resolve_image_budget_profile(
             enabled=main_model_images_enabled,
             profile=vision_cfg.image_budget_profile,
-            reserve_tokens=vision_cfg.image_token_reserve,
+            reserve_tokens=image_token_reserve,
         )
         pipeline_kwargs = {
             "adapter": self.adapter,
@@ -505,7 +520,7 @@ class Runtime:
             "main_model_images_enabled": main_model_images_enabled,
             "image_limits": vision_cfg.image_limits.to_image_limits(),
             "image_budget_profile": image_budget_profile,
-            "image_token_reserve": vision_cfg.image_token_reserve,
+            "image_token_reserve": image_token_reserve,
             "web_search": self.web_search,
             "weather": self.weather,
             "asr": self.asr,
@@ -525,6 +540,7 @@ class Runtime:
             self._accepted_kwargs(MessagePipeline, persona_pipeline_kwargs)
         )
         self.pipeline = MessagePipeline(**pipeline_kwargs)
+        self.pipeline.image_budget_source = image_budget_source
         for name, value in persona_pipeline_kwargs.items():
             if not hasattr(self.pipeline, name):
                 setattr(self.pipeline, name, value)
@@ -713,6 +729,32 @@ class Runtime:
         self._vision_provider = provider
         self.vision = service
         logger.info("VisionService 已启用：provider=%s, model=%s", vcfg.provider, vcfg.model)
+
+    def _preset_model_meta(self, provider_id: str, model_id: str):
+        """返回 (ProviderPreset, ModelInfo)；找不到返回 None。"""
+        try:
+            provider_cfg = self.config.providers.get(provider_id)
+            preset_id = (
+                provider_cfg.preset.lower()
+                if provider_cfg and provider_cfg.preset
+                else ""
+            )
+            preset = (
+                self.provider_registry.presets.get(preset_id) if preset_id else None
+            )
+            if preset is None:
+                return None
+            for model in preset.models:
+                if model.id == model_id:
+                    return preset, model
+        except Exception:
+            logger.debug(
+                "读取 preset 模型元数据失败：provider=%s model=%s",
+                provider_id,
+                model_id,
+                exc_info=True,
+            )
+        return None
 
     def _model_context_length(self, provider_id: str, model_id: str) -> int | None:
         """从 provider preset 中读取模型上下文硬上限，找不到则返回 None。"""

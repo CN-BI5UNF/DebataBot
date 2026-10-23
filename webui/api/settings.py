@@ -244,6 +244,21 @@ async def patch_agent(
             detail=f"没有 {payload.provider} 这个提供商，先在「添加提供商」里建好",
         )
 
+    if payload.reasoning_budget is not None:
+        from webui.api.providers import _reasoning_effort_options
+
+        chosen_provider = payload.provider or agent.provider
+        chosen_model = payload.model or agent.model
+        options = _reasoning_effort_options(rt, chosen_provider, chosen_model)
+        if payload.reasoning_budget not in options:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"当前模型不支持思考强度 {payload.reasoning_budget}；"
+                    f"可用: {', '.join(options)}"
+                ),
+            )
+
     def mutate(draft: Any) -> None:
         target = getattr(draft.agents, agent_name)
         if payload.provider is not None:

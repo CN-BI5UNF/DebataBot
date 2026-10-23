@@ -307,7 +307,7 @@ class ProviderConfig(StrictModel):
 
 class ReasoningConfig(StrictModel):
     enabled: bool = False
-    budget: Literal["low", "medium", "high"] | None = None
+    budget: Literal["minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     max_tokens: int | None = None
 
 
@@ -1118,6 +1118,21 @@ class SummarizeConfig(StrictModel):
     urgent_at_input_percent: int = Field(default=85, ge=50, le=100)
     """输入预算达到此百分比时视为紧急压缩线；仅用于状态展示与统一预算策略。"""
 
+    background_enabled: bool = True
+    """回合结束后是否允许后台排队提前压缩；手动/紧急压缩不受此开关影响。"""
+
+    forecast_enabled: bool = True
+    """是否使用近期增长预测提前触发；默认开启，冷却和真实硬 guard仍生效。"""
+
+    cooldown_seconds: int = Field(default=60, ge=0, le=3600)
+    """成功压缩后的冷却时间；有足量新增可压缩 token 时可越过。"""
+
+    min_new_tokens: int = Field(default=2048, ge=256, le=100000)
+    """自动压缩至少需要的新增可压缩 token；防止在同一段历史上反复调用。"""
+
+    cold_growth_tokens: int = Field(default=2048, ge=0, le=100000)
+    """冷启动时的预测增长 token；只影响提前触发，不替代真实预算 guard。"""
+
     @model_validator(mode="before")
     @classmethod
     def drop_deprecated_working_range_fields(cls, data: object) -> object:
@@ -1484,6 +1499,16 @@ class StorageConfig(StrictModel):
     )
 
 
+class UpdateConfig(StrictModel):
+    """代码更新器设置；用户数据目录不在更新范围内。"""
+
+    mirror: str = ""
+    """GitHub 镜像/加速源：完整 https 仓库 URL 或前缀；空表示官方地址。"""
+
+    check_timeout_seconds: int = Field(default=60, ge=10, le=300)
+    """检查/拉取更新的超时秒数。"""
+
+
 # ============================================================
 # 根配置
 # ============================================================
@@ -1505,6 +1530,7 @@ class RootConfig(StrictModel):
     )
     behavior: BehaviorConfig = Field(default_factory=BehaviorConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    update: UpdateConfig = Field(default_factory=UpdateConfig)
 
     @field_validator("version")
     @classmethod

@@ -24,6 +24,24 @@ function rerender(ctx) {
   if (ctx && typeof ctx.rerender === 'function') ctx.rerender();
 }
 
+const EFFORT_LABELS = {
+  minimal: '最小',
+  low: '低',
+  medium: '中',
+  high: '高',
+  xhigh: '极高',
+  max: '最大',
+};
+
+function reasoningOptionsForState(state) {
+  const preset = (state.presets || []).find((p) => p.id === state.provider.preset);
+  const model = (preset?.models || []).find((m) => m.id === state.provider.model);
+  if (!model) return ['low', 'medium', 'high'];
+  if (model.reasoning_effort_options?.length) return model.reasoning_effort_options;
+  if (preset?.reasoning_effort_options?.length) return preset.reasoning_effort_options;
+  return ['low', 'medium', 'high'];
+}
+
 // ============================================================
 // 1. 欢迎 + 选路径
 // ============================================================
@@ -181,12 +199,21 @@ export function renderMainModelCustom(host, ctx, state) {
     const budget = h('select', {
       onchange: (e) => { state.chat.reasoning_budget = e.target.value; },
     });
-    for (const [value, label] of [['low', '低'], ['medium', '中'], ['high', '高']]) {
+    const options = reasoningOptionsForState(state);
+    if (!options.includes(state.chat.reasoning_budget)) {
+      state.chat.reasoning_budget = options.includes('medium')
+        ? 'medium'
+        : options[0];
+    }
+    for (const value of options) {
       budget.append(h('option', {
         value, selected: state.chat.reasoning_budget === value,
-      }, label));
+      }, EFFORT_LABELS[value] || value));
     }
-    nodes.push(field('思考预算', budget, '越高越慢越贵，复杂任务再调高'));
+    const hint = options.includes('max')
+      ? '档位来自当前预设模型文档；越高越慢越贵'
+      : '越高越慢越贵，复杂任务再调高';
+    nodes.push(field('思考强度', budget, hint));
   }
 
   nodes.push(

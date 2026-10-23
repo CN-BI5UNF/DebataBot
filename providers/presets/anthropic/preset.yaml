@@ -4,6 +4,9 @@ protocol: anthropic
 base_url: https://api.anthropic.com
 registration_url: https://console.anthropic.com
 
+reasoning_effort_options: [low, medium, high, xhigh, max]
+image_detail_supported: false
+
 models:
   - id: claude-opus-4-8
     display_name: Claude Opus 4.8

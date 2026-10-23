@@ -5,6 +5,10 @@ base_url: https://api.deepseek.com/v1
 registration_url: https://platform.deepseek.com
 reasoning_effort_style: deepseek
 reasoning_style: thinking_extra_body
+reasoning_effort_options: [low, high, max]
+image_token_reserve: 384
+image_detail_supported: false
+# 官方视觉文档只展示 image_url.url；每图按 384 token 预算预留。
 
 models:
   - id: deepseek-flash

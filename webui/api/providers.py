@@ -58,6 +58,31 @@ async def _save(request: Request) -> None:
 # ============================================================
 
 
+def _reasoning_effort_options(
+    rt: Any,
+    provider_id: str,
+    model_id: str,
+) -> list[str]:
+    """预设模型用官方声明值；自定义/未声明模型回退低中高三档。"""
+    fallback = ["low", "medium", "high"]
+    provider_cfg = (rt.config.providers or {}).get(provider_id)
+    preset_id = str(getattr(provider_cfg, "preset", "") or "").lower()
+    preset = _presets(rt).get(preset_id) if preset_id else None
+    if preset is None:
+        return fallback
+    for model in preset.models:
+        if model.id == model_id:
+            options = list(getattr(model, "reasoning_effort_options", []) or [])
+            if options:
+                return options
+            preset_options = list(
+                getattr(preset, "reasoning_effort_options", []) or []
+            )
+            return preset_options or fallback
+    # 预设提供商下自行填写的模型不在官方清单内，按自定义模型处理。
+    return fallback
+
+
 @router.get("")
 async def list_all(request: Request) -> dict[str, Any]:
     """列出全部 provider 与各 Agent 的当前绑定。"""
@@ -93,6 +118,9 @@ async def list_all(request: Request) -> dict[str, Any]:
             "reasoning_budget": getattr(agent.reasoning, "budget", None)
             if agent.reasoning
             else None,
+            "reasoning_effort_options": _reasoning_effort_options(
+                rt, agent.provider, agent.model
+            ),
         }
     return {"providers": providers, "agents": agents, "presets": sorted(_presets(rt))}
 
@@ -120,6 +148,13 @@ async def list_presets(request: Request) -> dict[str, Any]:
                         "display_name": m.display_name,
                         "capabilities": list(m.capabilities),
                         "context_length": m.context_length,
+                        "reasoning_effort_options": (
+                            list(getattr(m, "reasoning_effort_options", []) or [])
+                            or list(
+                                getattr(preset, "reasoning_effort_options", []) or []
+                            )
+                            or ["low", "medium", "high"]
+                        ),
                     }
                     for m in preset.models
                 ],

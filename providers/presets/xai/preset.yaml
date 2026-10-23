@@ -3,6 +3,8 @@ display_name: xAI Grok
 protocol: openai_compat
 base_url: https://api.x.ai/v1
 registration_url: https://x.ai/api
+# xAI 图像输入使用 input_image/image_url；Chat 兼容层未声明 detail。
+image_detail_supported: false
 reasoning_style: none
 
 models:

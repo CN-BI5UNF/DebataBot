@@ -31,6 +31,7 @@ from . import (
     settings,
     storage,
     system,
+    update,
 )
 
 # 注册顺序即 OpenAPI 里的分组顺序
@@ -48,6 +49,7 @@ ALL_ROUTERS = [
     settings.router,
     storage.router,
     context.router,
+    update.router,
 ]
 
 __all__ = ["ALL_ROUTERS"]

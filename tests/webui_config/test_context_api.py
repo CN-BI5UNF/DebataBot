@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from app_config.schema import BehaviorConfig
 from utils.token_budget import TokenBudget
@@ -105,3 +106,82 @@ async def test_context_status_reports_invalid_budget_instead_of_fake_space():
     assert budget["input_budget"] == 0
     assert "output_reserve_exceeds_window" in budget["errors"]
     assert budget["window_model"] is None
+
+
+@pytest.mark.asyncio
+async def test_context_status_includes_compaction_state():
+    behavior = BehaviorConfig()
+    pipeline = SimpleNamespace(
+        behavior_cfg=behavior,
+        chat_agent=SimpleNamespace(
+            cfg=SimpleNamespace(provider="p", model="m", max_tokens=5120)
+        ),
+        model_context_length=None,
+        _context_budget=lambda: TokenBudget(131072, 8192, 4096, 4096),
+        _fixed_prompt_overhead_tokens=lambda: 12000,
+        _working_history_budget=lambda: 30000,
+        compaction_status=lambda: {
+            "last_action": "cooldown",
+            "last_skip_reason": "",
+            "background_enabled": True,
+        },
+    )
+    rt = SimpleNamespace(
+        pipeline=pipeline,
+        history=_History(),
+        rolling_summary=_Rolling(),
+    )
+
+    data = await status(_request(rt))
+
+    assert data["compaction"]["last_action"] == "cooldown"
+    assert any("C02" in note for note in data["notes"])
+
+
+@pytest.mark.asyncio
+async def test_manual_compact_returns_real_result_without_faking_archive():
+    from core.pipeline_summary import SummaryAttemptResult
+    from webui.api.context import compact
+
+    calls = []
+
+    async def runner():
+        calls.append(True)
+        return SummaryAttemptResult(
+            status="success",
+            reason="manual",
+            archived_count=3,
+            active_records=4,
+            active_tokens=900,
+            target_after_tokens=500,
+        )
+
+    pipeline = SimpleNamespace(
+        compact_manual=runner,
+        compaction_status=lambda: {"last_action": "cooldown"},
+    )
+    rt = SimpleNamespace(pipeline=pipeline, history=_History(), rolling_summary=_Rolling())
+
+    data = await compact(_request(rt))
+
+    assert calls == [True]
+    assert data["ok"] is True
+    assert data["result"]["archived_count"] == 3
+    assert data["compaction"]["last_action"] == "cooldown"
+
+
+@pytest.mark.asyncio
+async def test_manual_compact_rejects_when_background_job_running():
+    from webui.api.context import compact
+
+    class RunningTask:
+        def done(self):
+            return False
+
+    pipeline = SimpleNamespace(_summary_task=RunningTask())
+    rt = SimpleNamespace(pipeline=pipeline, history=_History(), rolling_summary=_Rolling())
+
+    with pytest.raises(HTTPException) as exc:
+        await compact(_request(rt))
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "compaction_busy"

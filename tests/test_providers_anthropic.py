@@ -13,6 +13,7 @@ from providers.base import (
     CompletionResult,
     ProviderError,
     ProviderUnsupportedError,
+    ReasoningConfig,
 )
 from providers.protocols.anthropic_proto import AnthropicProvider
 
@@ -532,3 +533,45 @@ def test_anthropic_stream_usage_handles_missing_and_zero_cache_fields():
     assert result.usage.cached_tokens == 0
     assert result.usage.cache_creation_tokens == 0
     assert result.usage.total_tokens == 35
+
+
+@pytest.mark.asyncio
+async def test_thinking_budget_clamped_below_max_tokens(monkeypatch):
+    provider = AnthropicProvider("test", api_key="sk-test")
+    captured = {}
+
+    async def fake_call(kwargs):
+        captured.update(kwargs)
+        return CompletionResult(content="ok", model=kwargs["model"])
+
+    monkeypatch.setattr(provider, "_nonstream_call", fake_call)
+    await provider.chat_completion(
+        [{"role": "user", "content": "hi"}],
+        model="claude-opus-4-8",
+        max_tokens=5120,
+        reasoning=ReasoningConfig(enabled=True, budget="max"),
+        stream=False,
+    )
+    assert captured["thinking"]["budget_tokens"] == 4096
+    await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_thinking_disabled_when_max_tokens_cannot_fit_budget(monkeypatch):
+    provider = AnthropicProvider("test", api_key="sk-test")
+    captured = {}
+
+    async def fake_call(kwargs):
+        captured.update(kwargs)
+        return CompletionResult(content="ok", model=kwargs["model"])
+
+    monkeypatch.setattr(provider, "_nonstream_call", fake_call)
+    await provider.chat_completion(
+        [{"role": "user", "content": "hi"}],
+        model="claude-opus-4-8",
+        max_tokens=512,
+        reasoning=ReasoningConfig(enabled=True, budget="high"),
+        stream=False,
+    )
+    assert "thinking" not in captured
+    await provider.aclose()

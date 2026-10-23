@@ -509,3 +509,71 @@ async def test_openai_reasoning_effort_is_sent_with_thinking_toggle(monkeypatch)
     assert captured["reasoning_effort"] == "medium"
     assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
     await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_strips_image_detail_when_provider_does_not_support(monkeypatch):
+    provider = OpenAICompatProvider(
+        "deepseek_vision",
+        base_url="https://example.com/v1",
+        api_key="sk-test",
+        reasoning_style="thinking_extra_body",
+        image_detail_supported=False,
+    )
+    captured = {}
+
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="ok", reasoning_content="", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=None,
+            model="fake",
+        )
+
+    monkeypatch.setattr(provider._client.chat.completions, "create", fake_create)
+
+    original = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "看图"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/jpeg;base64,AAAA",
+                        "detail": "auto",
+                    },
+                },
+            ],
+        }
+    ]
+    await provider.chat_completion(
+        original,
+        model="deepseek-flash",
+        stream=False,
+    )
+
+    image = captured["messages"][0]["content"][1]["image_url"]
+    assert "detail" not in image
+    assert original[0]["content"][1]["image_url"]["detail"] == "auto"
+    await provider.aclose()
+
+
+def test_openai_reasoning_effort_accepts_extended_levels():
+    provider = OpenAICompatProvider(
+        "deepseek_test",
+        base_url="https://example.com/v1",
+        api_key="sk-test",
+        reasoning_effort_style="deepseek",
+    )
+    assert provider._reasoning_effort(
+        ReasoningConfig(enabled=True, budget="max"), model="fake"
+    ) == "max"
+    assert provider._reasoning_effort(
+        ReasoningConfig(enabled=True, budget="minimal"), model="fake"
+    ) == "minimal"

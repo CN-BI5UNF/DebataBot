@@ -208,4 +208,9 @@ export const endpoints = {
     api.post(`/api/storage/jobs/${encodeURIComponent(jobId)}/restore`, {}),
 
   contextStatus: () => api.get('/api/context/status'),
+  contextCompact: () => api.post('/api/context/compact', {}),
+
+  updateStatus: () => api.get('/api/update/status'),
+  updateCheck: () => api.post('/api/update/check', {}),
+  updateApply: (payload) => api.post('/api/update/apply', payload),
 };

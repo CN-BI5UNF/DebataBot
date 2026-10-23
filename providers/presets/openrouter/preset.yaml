@@ -3,6 +3,7 @@ display_name: OpenRouter
 protocol: openai_compat
 base_url: https://openrouter.ai/api/v1
 registration_url: https://openrouter.ai
+image_detail_supported: true
 reasoning_style: openai_native
 
 models:

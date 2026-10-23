@@ -3,6 +3,8 @@ display_name: 小米 MiMo
 protocol: openai_compat
 base_url: https://api.xiaomimimo.com/v1
 registration_url: https://platform.xiaomimimo.com
+# MiMo 全模态文档使用 OpenAI 兼容 image_url；detail 未声明。
+image_detail_supported: false
 # MiMo 的思考开关走 extra_body={"thinking": {"type": "enabled"|"disabled"}}，
 # 与 DeepSeek/GLM 同款（官方 OpenAI 兼容示例里就是 `extra_body={"thinking": {"type": "disabled"}}`）。
 reasoning_style: thinking_extra_body

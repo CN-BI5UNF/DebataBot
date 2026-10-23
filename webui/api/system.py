@@ -142,12 +142,27 @@ async def setup_options(request: Request) -> dict[str, Any]:
                     "base_url": getattr(preset, "base_url", ""),
                     "registration_url": getattr(preset, "registration_url", ""),
                     "reasoning_style": getattr(preset, "reasoning_style", ""),
+                    "reasoning_effort_options": list(
+                        getattr(preset, "reasoning_effort_options", []) or []
+                    ),
                     "models": [
                         {
                             "id": m.id,
                             "display_name": getattr(m, "display_name", m.id),
                             "capabilities": list(getattr(m, "capabilities", []) or []),
                             "context_length": getattr(m, "context_length", 0),
+                            "reasoning_effort_options": (
+                                list(
+                                    getattr(m, "reasoning_effort_options", []) or []
+                                )
+                                or list(
+                                    getattr(
+                                        preset, "reasoning_effort_options", []
+                                    )
+                                    or []
+                                )
+                                or ["low", "medium", "high"]
+                            ),
                         }
                         for m in (preset.models or [])
                     ],

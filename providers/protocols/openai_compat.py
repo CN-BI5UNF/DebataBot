@@ -78,6 +78,7 @@ class OpenAICompatProvider(IProvider):
         extra_headers: dict[str, str] | None = None,
         reasoning_style: str = "thinking_extra_body",
         reasoning_effort_style: str = "none",
+        image_detail_supported: bool = True,
         known_model_ids: set[str] | None = None,
         reasoning_model_ids: set[str] | None = None,
     ) -> None:
@@ -88,6 +89,7 @@ class OpenAICompatProvider(IProvider):
         self.extra_headers = extra_headers or {}
         self.reasoning_style = reasoning_style
         self.reasoning_effort_style = reasoning_effort_style
+        self.image_detail_supported = bool(image_detail_supported)
         self.known_model_ids = set(known_model_ids or ())
         self.reasoning_model_ids = set(reasoning_model_ids or ())
         """如何向 API 传达 reasoning 配置：
@@ -140,6 +142,8 @@ class OpenAICompatProvider(IProvider):
             messages,
             preserve_reasoning_content=replay_reasoning_content,
         )
+        if not self.image_detail_supported:
+            self._strip_image_detail(messages_norm)
         if reasoning_enabled and replay_reasoning_content:
             self._ensure_assistant_reasoning_content(messages_norm)
 
@@ -347,7 +351,7 @@ class OpenAICompatProvider(IProvider):
         if not self._model_allows_reasoning_controls(model, reasoning):
             return None
         budget = str(reasoning.budget or "").strip().lower()
-        if budget not in {"low", "medium", "high"}:
+        if budget not in {"minimal", "low", "medium", "high", "xhigh", "max"}:
             return None
         return budget
 
@@ -372,6 +376,30 @@ class OpenAICompatProvider(IProvider):
         # 未知模型不默认发送关闭参数，避免普通 OpenAI-compatible 服务报未知字段；
         # 但用户显式开启 reasoning 时仍允许透传给新增的思考模型。
         return bool(reasoning and reasoning.enabled)
+
+    @staticmethod
+    def _strip_image_detail(messages: list[dict[str, Any]]) -> None:
+        """供应商未声明 detail 支持时，删掉该字段而不是硬塞。
+
+        ``normalize_messages`` 只复制消息外壳，content 列表和 image_url 字典仍与
+        调用方共享；这里生成副本，避免改写本轮请求的原始图片块。
+        """
+        for message in messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            rebuilt: list[Any] = []
+            for block in content:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "image_url"
+                    and isinstance(block.get("image_url"), dict)
+                ):
+                    value = dict(block["image_url"])
+                    value.pop("detail", None)
+                    block = {**block, "image_url": value}
+                rebuilt.append(block)
+            message["content"] = rebuilt
 
     @staticmethod
     def _ensure_assistant_reasoning_content(

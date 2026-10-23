@@ -3,6 +3,8 @@ display_name: SiliconFlow（硅基流动）
 protocol: openai_compat
 base_url: https://api.siliconflow.cn/v1
 registration_url: https://siliconflow.cn
+# SiliconFlow 兼容端点未声明 detail，保守关闭。
+image_detail_supported: false
 reasoning_style: thinking_extra_body
 
 models:

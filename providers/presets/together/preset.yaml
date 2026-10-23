@@ -3,6 +3,8 @@ display_name: Together AI
 protocol: openai_compat
 base_url: https://api.together.xyz/v1
 registration_url: https://api.together.xyz
+# Together 视觉示例只使用 image_url.url；detail 未声明。
+image_detail_supported: false
 reasoning_style: none
 
 models:
