@@ -424,7 +424,7 @@ images: 4 ingest / 80 read / 4 encode
 ## 项目结构
 
 ```text
-Debata-Refactor/
+DebataBot/
 ├── adapters/               渠道适配器（NapCat 等）
 ├── providers/              LLM 协议、预设与能力矩阵
 ├── agents/                 主聊天 / 主动思考 / 总结 / 人格管理 / 社交

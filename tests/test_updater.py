@@ -492,3 +492,59 @@ async def test_version_and_available_snapshots_are_offline(tmp_path):
     assert snapshot["release"] is None
     assert snapshot["interval_days"] == 9
     assert snapshot["current_commit"] == version["commit"]
+
+
+@pytest.mark.asyncio
+async def test_auto_badge_only_for_forward_releases(tmp_path):
+    work, data, remote = _seed_release_repo(tmp_path)
+    # 在当前 base 之上做一条本地提交，使它与最新 Release 不在同一条历史线上。
+    (work / "local.txt").write_text("local\n", encoding="utf-8")
+    _git(work, "add", ".")
+    _git(work, "commit", "-m", "local work")
+    service = UpdateService(
+        work,
+        data,
+        mirror=f"file://{remote}",
+        allow_local_remote=True,
+    )
+    checked = await service.check()
+    assert checked["target_relation"] == "diverged"
+    assert checked["available"] is False
+    assert checked["available_release"] is None
+    # 手动版本列表仍可以看到并切换，只是不主动弹绿标。
+    assert checked["can_apply"] is True
+
+
+@pytest.mark.asyncio
+async def test_apply_switches_back_when_local_branch_already_at_target(tmp_path):
+    work, data, remote = _seed_release_repo(tmp_path)
+    service = UpdateService(
+        work,
+        data,
+        mirror=f"file://{remote}",
+        allow_local_remote=True,
+    )
+    latest = await service.check()
+    await service.apply(
+        confirmation_token=latest["confirmation_token"],
+        target_sha=latest["target_commit"],
+        confirm_branch_switch=True,
+    )
+    # 本地 refactor/main 已在目标；切到 feature 分支后再选同一版本应当能切回来。
+    _git(work, "switch", "-c", "feature/after-release")
+    (work / "feature.txt").write_text("feature\n", encoding="utf-8")
+    _git(work, "add", ".")
+    _git(work, "commit", "-m", "feature after release")
+
+    checked = await service.check(target_tag="snapshot-20261023")
+    assert checked["is_rollback"] is True
+    applied = await service.apply(
+        confirmation_token=checked["confirmation_token"],
+        target_sha=checked["target_commit"],
+        confirm_branch_switch=True,
+        confirm_rollback=True,
+    )
+    assert applied["backup_branch_ref"] is None
+    assert _git(work, "branch", "--show-current").strip() == "refactor/main"
+    assert not (work / "feature.txt").exists()
+    assert _git(work, "rev-parse", "feature/after-release").strip()

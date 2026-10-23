@@ -328,12 +328,14 @@ export async function render(container, ctx) {
         h('div', { class: 'spacer' }),
         refreshBtn),
       releaseHost));
-    try {
-      releaseList = await renderReleaseList(releaseHost, ctx, { showNotifyToggle: true });
-      refreshBtn.addEventListener('click', () => releaseList.refresh());
-    } catch (e) {
-      fill(releaseHost, empty(`读取版本列表失败：${e.message}`));
-    }
+    // 版本列表需要联网；不要 await，否则整个“更新”分页会被 git fetch 卡住。
+    // renderReleaseList 会先同步写入“正在读取版本列表…”，页面可以立即显示。
+    refreshBtn.addEventListener('click', () => {
+      if (releaseList) releaseList.refresh();
+    });
+    renderReleaseList(releaseHost, ctx, { showNotifyToggle: true })
+      .then((handle) => { releaseList = handle; })
+      .catch((e) => fill(releaseHost, empty(`读取版本列表失败：${e.message}`)));
   }
 
   function renderMirrorCard(status, ctx, onSaved) {

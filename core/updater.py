@@ -627,7 +627,9 @@ class UpdateService:
             if (
                 target_tag is None
                 and selected is not None
-                and relation in {"newer", "diverged"}
+                # 自动提醒只针对可向前推进的 Release；另一条历史/回退版本
+                # 仍可从版本列表手动选择，但不主动弹绿标。
+                and relation == "newer"
             ):
                 available_release = {
                     "tag": selected["tag"],
@@ -709,9 +711,9 @@ class UpdateService:
                     f"应用更新需要切换到 {UPDATE_LOCAL_BRANCH}",
                 )
             local_main = await self._rev_parse(f"refs/heads/{UPDATE_LOCAL_BRANCH}")
-            if local_main is not None and local_main == target_sha:
-                raise UpdateError("up_to_date", "目标提交已经是当前分支")
             old_head = (await self._git("rev-parse", "HEAD")).strip()
+            if old_head == target_sha:
+                raise UpdateError("up_to_date", "当前工作树已经在该提交")
             dep_text = await self._git(
                 "diff",
                 "--name-only",
@@ -734,9 +736,14 @@ class UpdateService:
             )
             await self._git("update-ref", backup_ref, old_head)
             # 当前不在稳定分支时，本地 refactor/main 的 tip 也可能与 HEAD 不同。
-            # 切换前把它一并备份，避免 -C 移动分支时丢掉未检出的提交。
+            # 切换前把它一并备份，避免 -C 移动分支时丢掉未检出的提交；如果 tip
+            # 已经等于目标，则不会移动它，不需要额外备份。
             backup_branch_ref = None
-            if local_main is not None and local_main != old_head:
+            if (
+                local_main is not None
+                and local_main != old_head
+                and local_main != target_sha
+            ):
                 backup_branch_ref = backup_ref + "-branch"
                 await self._git("update-ref", backup_branch_ref, local_main)
             # 使用 -C 可以直接把本地稳定分支移动到任意 release（含回退），
