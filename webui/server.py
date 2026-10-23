@@ -98,6 +98,7 @@ def create_app(host: RuntimeHost, auth: TokenAuth) -> FastAPI:
 
     _install_config_error_handler(app)
     _install_auth_middleware(app, auth)
+    _install_static_cache_headers(app)
     _install_routes(app)
     return app
 
@@ -138,6 +139,24 @@ def _install_auth_middleware(app: FastAPI, auth: TokenAuth) -> None:
             status_code=401,
             content={"detail": "未授权：请在页面上输入访问令牌", "auth_required": True},
         )
+
+
+def _install_static_cache_headers(app: FastAPI) -> None:
+    """静态前端没有构建哈希，必须让浏览器每次重新验证。
+
+    Starlette 的 StaticFiles 只发 ETag/Last-Modified，不发 Cache-Control；
+    浏览器可能用启发式缓存长期保留旧 app.css。用户升级 WebUI 后就会遇到
+    “类名切了但样式没变”的假故障（例如更新日志无法收起）。no-cache 仍然
+    允许 304 复用，不会重复下载未变化的文件。
+    """
+
+    @app.middleware("http")
+    async def static_cache(request: Request, call_next):  # type: ignore[no-untyped-def]
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 
 
 def _install_routes(app: FastAPI) -> None:

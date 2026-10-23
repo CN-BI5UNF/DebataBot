@@ -69,11 +69,17 @@ function notesBlock(release) {
   }, placeholder);
   const box = h('div', { class: 'release-notes-box' }, notes);
   if (long) {
+    // 同时写内联样式：WebUI 没有构建哈希，浏览器若缓存了旧 app.css，
+    // 只切换 class 会“看起来没反应”。内联样式保证折叠/展开功能本身始终生效。
+    notes.style.maxHeight = '5.2em';
+    notes.style.overflow = 'hidden';
     const toggle = h('button', { class: 'btn btn-sm release-notes-toggle' },
       h('span', {}, '展开'),
       icon('chevron-down', { size: 14 }));
     toggle.addEventListener('click', () => {
       const collapsed = notes.classList.toggle('collapsed');
+      notes.style.maxHeight = collapsed ? '5.2em' : 'none';
+      notes.style.overflow = collapsed ? 'hidden' : 'visible';
       fill(toggle,
         h('span', {}, collapsed ? '展开' : '收起'),
         icon(collapsed ? 'chevron-down' : 'chevron-up', { size: 14 }));

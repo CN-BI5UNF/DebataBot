@@ -52,6 +52,9 @@ def test_release_notes_can_collapse_and_expand():
     assert "展开" in source
     assert "收起" in source
     assert "release-notes.collapsed" in css
+    # 旧 CSS 缓存不能阻止折叠功能本身：JS 同时写内联 max-height。
+    assert "notes.style.maxHeight" in source
+    assert "notes.style.overflow" in source
     # 每个版本卡片都要有日志和操作按钮。
     assert "notesBlock(release)" in source
     assert "更新到此版本" in source
