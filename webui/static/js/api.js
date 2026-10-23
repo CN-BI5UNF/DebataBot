@@ -83,8 +83,8 @@ async function request(method, path, body, options = {}) {
 
 export const api = {
   get: (path, options) => request('GET', path, undefined, options),
-  post: (path, body) => request('POST', path, body),
-  patch: (path, body) => request('PATCH', path, body),
+  post: (path, body, options) => request('POST', path, body, options),
+  patch: (path, body, options) => request('PATCH', path, body, options),
   put: (path, body) => request('PUT', path, body),
   del: (path) => request('DELETE', path),
   raw: (path) => request('GET', path, undefined, { raw: true }),
@@ -211,7 +211,14 @@ export const endpoints = {
   contextCompact: () => api.post('/api/context/compact', {}),
 
   updateStatus: () => api.get('/api/update/status'),
+  updateVersion: () => api.get('/api/update/version'),
+  updateAvailable: () => api.get('/api/update/available'),
+  updateReleases: (force = false) =>
+    api.get(`/api/update/releases${force ? '?force=true' : ''}`, { timeoutMs: 330000 }),
   // 后端允许把检查超时配到 300 秒，前端不能先用 15 秒把请求 abort。
-  updateCheck: () => api.post('/api/update/check', {}, { timeoutMs: 330000 }),
-  updateApply: (payload) => api.post('/api/update/apply', payload),
+  updateCheck: (payload = {}) =>
+    api.post('/api/update/check', payload, { timeoutMs: 330000 }),
+  updateApply: (payload) =>
+    api.post('/api/update/apply', payload, { timeoutMs: 330000 }),
+  updatePreferences: (payload) => api.patch('/api/update/preferences', payload),
 };

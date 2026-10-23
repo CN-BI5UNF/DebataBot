@@ -35,6 +35,7 @@ from .auth import (
 from .events import EventHub
 from .logbuffer import install_log_buffer
 from .runtime_host import RuntimeHost
+from .update_watch import run_update_watchdog
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +60,18 @@ def create_app(host: RuntimeHost, auth: TokenAuth) -> FastAPI:
         # Runtime 启动可能要几秒（探测密钥、拉起插件），放后台跑，
         # 让 HTTP 服务先起来，前端能立刻显示「启动中」。
         boot_task = asyncio.create_task(_boot(host, hub), name="webui-boot-runtime")
+        # 版本自动检查与 HTTP 请求解耦；只读 update_state.json，到期才联网。
+        update_task = asyncio.create_task(
+            run_update_watchdog(host), name="webui-update-watchdog"
+        )
         try:
             yield
         finally:
+            update_task.cancel()
+            try:
+                await update_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
             boot_task.cancel()
             try:
                 await boot_task

@@ -255,6 +255,7 @@ function showLogin() {
   qs('#login-gate').classList.remove('hidden');
   qs('#shell').classList.add('hidden');
   qs('#setup-gate').classList.add('hidden');
+  qs('#version-mark').classList.add('hidden');
   qs('#login-token').focus();
 
   qs('#login-form').onsubmit = async (event) => {
@@ -275,6 +276,7 @@ function showSetup() {
   qs('#login-gate').classList.add('hidden');
   qs('#shell').classList.add('hidden');
   qs('#setup-gate').classList.remove('hidden');
+  qs('#version-mark').classList.add('hidden');
   setup.render(qs('#setup-body'), {
     toast,
     onDone: async () => {
@@ -312,6 +314,7 @@ async function enterApp() {
 
   buildNav();
   applyStatus(status);
+  loadVersionMark();
 
   if (status.last_error) {
     toast(`Runtime 启动失败：${status.last_error}`, 'error');
@@ -321,6 +324,22 @@ async function enterApp() {
   }
 
   await navigate(currentRouteKey(), { force: true });
+}
+
+async function loadVersionMark() {
+  const el = qs('#version-mark');
+  if (!el) return;
+  let info = null;
+  try {
+    info = await endpoints.updateVersion();
+  } catch {
+    // 版本接口失败不影响控制台；保留占位但不显示错误的版本号。
+  }
+  el.textContent = (info && info.version_label) || '开发版';
+  el.title = info && info.commit_short
+    ? `开发版 · 源码 ${info.commit_short}`
+    : '开发版';
+  el.classList.remove('hidden');
 }
 
 function wireChrome() {

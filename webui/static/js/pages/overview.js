@@ -3,8 +3,11 @@
 
 import { h, fill, card, statCard, formatNumber, formatDuration, statusClass } from '../dom.js';
 import { endpoints } from '../api.js';
+import { icon } from '../icons.js';
+import { openUpdateDialog } from '../releases.js';
 
 const REFRESH_MS = 2000;
+const UPDATE_REFRESH_MS = 60000;
 const RANGES = [['today', '今天'], ['7d', '7 天'], ['30d', '30 天'], ['all', '全部']];
 
 const ACTIVITY_TEXT = {
@@ -23,6 +26,7 @@ export async function render(container, ctx) {
   const providerCard = h('div', { class: 'card' });
   const adapterCard = h('div', { class: 'card' });
   const usageCard = h('div', { class: 'card' });
+  const updateHost = h('div', { class: 'update-orb-host' });
 
   const rangeBar = h('div', { class: 'row' },
     ...RANGES.map(([value, label]) =>
@@ -46,21 +50,24 @@ export async function render(container, ctx) {
         h('h1', { class: 'page-title' }, '总览'),
         h('p', { class: 'page-desc' }, '运行状态、模型健康与用量。数据每 2 秒自动刷新。'),
       ),
-      h('button', {
-        class: 'btn',
-        onclick: async (event) => {
-          event.currentTarget.disabled = true;
-          try {
-            await endpoints.restart();
-            ctx.toast('Runtime 已重启', 'ok');
-          } catch (e) {
-            ctx.toast(e.message, 'error');
-          } finally {
-            event.currentTarget.disabled = false;
-            refresh();
-          }
-        },
-      }, '重启 Runtime'),
+      h('div', { class: 'row' },
+        updateHost,
+        h('button', {
+          class: 'btn',
+          onclick: async (event) => {
+            event.currentTarget.disabled = true;
+            try {
+              await endpoints.restart();
+              ctx.toast('Runtime 已重启', 'ok');
+            } catch (e) {
+              ctx.toast(e.message, 'error');
+            } finally {
+              event.currentTarget.disabled = false;
+              refresh();
+            }
+          },
+        }, '重启 Runtime'),
+      ),
     ),
 
     h('div', { class: 'grid grid-2' }, activityCard, adapterCard),
@@ -200,6 +207,29 @@ export async function render(container, ctx) {
     );
   }
 
+  async function refreshUpdate() {
+    if (disposed) return;
+    try {
+      const info = await endpoints.updateAvailable();
+      if (disposed) return;
+      if (info.available && info.release) {
+        const label = info.release.name || info.release.tag || '新版本';
+        fill(updateHost, h('button', {
+          class: 'update-orb',
+          type: 'button',
+          title: `发现新版本：${label}`,
+          'aria-label': `发现新版本：${label}`,
+          onclick: () => openUpdateDialog(ctx, { onClosed: refreshUpdate }),
+        }, icon('arrow-up', { size: 14 })));
+      } else {
+        fill(updateHost);
+      }
+    } catch {
+      // 自动检查失败或 Runtime 未就绪时不显示绿标，但不要把总览页弄红。
+      if (!disposed) fill(updateHost);
+    }
+  }
+
   async function refresh() {
     if (disposed) return;
     try {
@@ -219,8 +249,9 @@ export async function render(container, ctx) {
     }
   }
 
-  await refresh();
+  await Promise.all([refresh(), refreshUpdate()]);
   timer = setInterval(refresh, REFRESH_MS);
+  const updateTimer = setInterval(refreshUpdate, UPDATE_REFRESH_MS);
 
   // Runtime 状态变化时立刻刷新一次，不用等下一个轮询周期。
   const unsubscribe = ctx.onEvent((event) => {
@@ -231,6 +262,7 @@ export async function render(container, ctx) {
     destroy() {
       disposed = true;
       clearInterval(timer);
+      clearInterval(updateTimer);
       unsubscribe();
     },
   };

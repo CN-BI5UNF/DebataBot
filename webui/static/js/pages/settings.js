@@ -6,6 +6,7 @@
 import { h, fill, card, empty, field, table, formatNumber } from '../dom.js';
 import { endpoints } from '../api.js';
 import { renderModelsPanel } from '../providers.js';
+import { renderReleaseList, formatDateTime } from '../releases.js';
 
 export async function render(container, ctx) {
   let payload;
@@ -250,8 +251,10 @@ export async function render(container, ctx) {
       nodes.push(card('更新', '', empty(`读取更新状态失败：${e.message}`)));
       return;
     }
+    const notification = status.notification || {};
     const statusLine = h('div', { class: 'field-help' });
     const resultHost = h('div', {});
+    let releaseList = null;
     const checkBtn = h('button', { class: 'btn btn-primary' }, '检查更新');
     checkBtn.addEventListener('click', async () => {
       checkBtn.disabled = true;
@@ -259,9 +262,15 @@ export async function render(container, ctx) {
       try {
         const checked = await endpoints.updateCheck();
         resultHost.replaceChildren(renderUpdateResult(checked));
-        statusLine.textContent = checked.can_apply
-          ? '发现可应用更新，请阅读警告后确认。'
-          : `当前不自动应用：${checked.reason || '无可用更新'}`;
+        if (checked.available) {
+          statusLine.textContent = `发现新版本：${checked.available_release?.name
+            || checked.available_release?.tag || checked.target_label}`;
+        } else if (checked.can_apply) {
+          statusLine.textContent = `可以切换到 ${checked.target_label}`;
+        } else {
+          statusLine.textContent = '当前没有可应用的新版本。';
+        }
+        if (releaseList) releaseList.refresh();
       } catch (e) {
         statusLine.textContent = `检查失败：${e.message}`;
         resultHost.replaceChildren();
@@ -270,26 +279,125 @@ export async function render(container, ctx) {
       }
     });
     const short = (value) => (value ? String(value).slice(0, 10) : '—');
+    const lastCheck = notification.last_check_at
+      ? formatDateTime(notification.last_check_at) : '尚未检查';
+    const nextCheck = notification.next_check_at
+      ? formatDateTime(notification.next_check_at) : '待定';
     const rows = [
+      h('tr', {}, h('td', {}, '当前版本'),
+        h('td', {}, `${notification.version_label || status.version_label || '开发版'}`
+          + ` · ${short(status.current_commit)}`)),
       h('tr', {}, h('td', {}, '当前分支'), h('td', {}, status.current_branch)),
-      h('tr', {}, h('td', {}, '当前提交'), h('td', { class: 'mono' }, short(status.current_commit))),
-      h('tr', {}, h('td', {}, '更新目标'), h('td', {}, status.target_ref)),
-      h('tr', {}, h('td', {}, '生效远程'), h('td', { class: 'mono' }, status.effective_remote || status.mirror_error)),
+      h('tr', {}, h('td', {}, '更新仓库'), h('td', { class: 'mono' }, status.repo)),
+      h('tr', {}, h('td', {}, '更新目标'), h('td', { class: 'mono' }, status.target_ref)),
+      h('tr', {}, h('td', {}, '自动检查'),
+        h('td', {}, `每 ${status.check_interval_days || notification.interval_days || 9} 天`
+          + ` · 上次 ${lastCheck} · 下次 ${nextCheck}`)),
+      h('tr', {}, h('td', {}, '生效远程'),
+        h('td', { class: 'mono' }, status.effective_remote || status.mirror_error || '—')),
       h('tr', {}, h('td', {}, '工作树'), h('td', {}, status.worktree_dirty
         ? `有 ${status.dirty_file_count} 个未提交文件，自动更新会被拒绝`
         : '干净')),
       h('tr', {}, h('td', {}, '数据目录'), h('td', { class: 'mono' }, status.data_dir)),
     ];
-    nodes.push(card('代码更新',
-      `固定从 ${status.target_ref} 快进；只更新源码，不覆盖用户数据。`,
+    if (notification.last_error) {
+      rows.push(h('tr', {}, h('td', {}, '上次检查错误'),
+        h('td', { class: 'field-help' }, notification.last_error)));
+    }
+    nodes.push(card('版本与更新',
+      `版本来自 ${status.repo} 的 GitHub Releases/tag；只更新源码，不覆盖用户数据。`,
       table(['项目', '值'], rows),
       h('p', { class: 'field-help' },
-        '应用更新会切换工作树到 refactor/main、备份当前提交并重启服务；'
-        + '依赖文件变化时会拒绝自动应用。镜像站会提供将执行的代码，请只使用可信 https 镜像。'),
+        '应用版本会备份当前提交并重启服务；依赖文件变化时会拒绝自动应用。'
+        + '镜像站会提供将执行的代码，请只使用可信 https 镜像。'),
       h('div', { class: 'row' }, h('div', { class: 'spacer' }), checkBtn),
       statusLine,
       resultHost,
     ));
+
+    nodes.push(renderMirrorCard(status, ctx, () => {
+      if (releaseList) releaseList.refresh();
+    }));
+
+    const releaseHost = h('div', {});
+    const refreshBtn = h('button', { class: 'btn btn-sm' }, '刷新版本列表');
+    nodes.push(card('版本列表',
+      '每个版本都可以展开/收起更新日志；更新与回退都会先备份当前提交。',
+      h('div', { class: 'row' },
+        h('span', { class: 'field-help' }, '勾选“接收更新提醒”可控制总览页绿色标志。'),
+        h('div', { class: 'spacer' }),
+        refreshBtn),
+      releaseHost));
+    try {
+      releaseList = await renderReleaseList(releaseHost, ctx, { showNotifyToggle: true });
+      refreshBtn.addEventListener('click', () => releaseList.refresh());
+    } catch (e) {
+      fill(releaseHost, empty(`读取版本列表失败：${e.message}`));
+    }
+  }
+
+  function renderMirrorCard(status, ctx, onSaved) {
+    const presets = (status.mirror_presets || []).filter((item) => item && item.id);
+    const current = status.mirror || '';
+    const matched = presets.find((item) => (item.value || '') === current);
+    const initial = matched ? matched.id : 'custom';
+    const select = h('select', {});
+    for (const preset of presets) {
+      select.append(h('option', {
+        value: preset.id,
+        selected: preset.id === initial,
+      }, preset.label));
+    }
+    select.append(h('option', { value: 'custom', selected: initial === 'custom' }, '自定义…'));
+    const custom = h('input', {
+      value: current,
+      placeholder: 'https://your-mirror.example/CN-BI5UNF/DebataBot.git',
+      disabled: initial !== 'custom',
+    });
+    const note = h('p', { class: 'field-help' });
+    const saveStatus = h('p', { class: 'field-help' });
+    function sync() {
+      const preset = presets.find((item) => item.id === select.value);
+      custom.disabled = select.value !== 'custom';
+      if (preset) {
+        custom.value = preset.value || '';
+        note.textContent = preset.note || '';
+      } else {
+        note.textContent = '填写完整 https 仓库 URL 或 https://…/ 前缀；只接受同一 DebataBot 仓库，'
+          + '不接受账号密码、file:// 或内网地址。';
+      }
+    }
+    select.addEventListener('change', sync);
+    sync();
+    const saveBtn = h('button', { class: 'btn btn-primary' }, '保存镜像');
+    saveBtn.addEventListener('click', async () => {
+      const preset = presets.find((item) => item.id === select.value);
+      const value = select.value === 'custom'
+        ? custom.value.trim()
+        : (preset?.value || '');
+      saveBtn.disabled = true;
+      try {
+        await endpoints.patchSetting('update.mirror', value);
+        status.mirror = value;
+        saveStatus.textContent = value
+          ? `已保存：${value}`
+          : '已保存：使用 GitHub 官方直连';
+        ctx.toast('镜像设置已保存', 'ok');
+        if (onSaved) onSaved();
+      } catch (e) {
+        saveStatus.textContent = `保存失败：${e.message}`;
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+    return card('更新镜像',
+      '预设几个常用源，也可以在下方填写自定义镜像。第三方源会看到代码请求，只使用你信任的源。',
+      field('预设镜像', select, ''),
+      field('自定义镜像站', custom, ''),
+      note,
+      h('div', { class: 'row' }, h('div', { class: 'spacer' }), saveBtn),
+      saveStatus,
+    );
   }
 
   function renderUpdateResult(checked) {
@@ -300,36 +408,12 @@ export async function render(container, ctx) {
       ? h('p', { class: 'field-help' },
         `依赖文件变化（需手动安装，禁止自动应用）：${checked.dependency_changes.join(', ')}`)
       : null;
-    let applyBtn = null;
-    if (checked.can_apply) {
-      applyBtn = h('button', { class: 'btn btn-danger' }, '应用更新并重启');
-      applyBtn.addEventListener('click', async () => {
-        const branchNote = checked.current_branch !== checked.target_branch
-          ? `\n\n当前工作树会从 ${checked.current_branch} 切换到 ${checked.target_branch}。`
-          : '';
-        if (!confirm(`确认把代码快进到 ${checked.target_commit_short} 并重启 Debata？`
-          + branchNote + '\n\n用户数据目录不会被覆盖。')) return;
-        applyBtn.disabled = true;
-        try {
-          const applied = await endpoints.updateApply({
-            confirmation_token: checked.confirmation_token,
-            target_sha: checked.target_commit,
-            confirm_branch_switch: true,
-          });
-          resultHost.replaceChildren(h('p', {}, applied.message || '更新完成'));
-        } catch (e) {
-          applyBtn.disabled = false;
-          resultHost.append(h('p', { class: 'field-help' }, `应用失败：${e.message}`));
-        }
-      });
-    }
     return h('div', {},
-      h('p', {}, `目标提交：${checked.target_commit_short || '—'}`),
-      commits.length ? h('div', {}, h('div', {}, '待应用提交：'), h('ul', {}, ...commits)) : null,
+      h('p', {}, `目标：${checked.target_name || checked.target_label || '—'}`
+        + `（${checked.target_commit_short || '—'}）`),
+      commits.length ? h('div', {}, h('div', {}, '目标提交：'), h('ul', {}, ...commits)) : null,
       deps,
       ...warnings,
-      applyBtn ? h('div', { class: 'row' },
-        h('div', { class: 'spacer' }), applyBtn) : null,
     );
   }
 
@@ -345,11 +429,16 @@ export async function render(container, ctx) {
     if (!group) return fill(body, empty('未知分页'));
 
     const nodes = [h('p', { class: 'card-sub' }, group.desc || '')];
-    if (!group.fields.length) {
-      nodes.push(empty('这个分页没有可视化字段，请直接编辑 config.yaml'));
+    const visibleFields = group.fields.filter((spec) => !spec.hidden);
+    if (!visibleFields.length) {
+      if (group.fields.length) {
+        nodes.push(empty('这个分页的选项在下方专用面板中设置'));
+      } else {
+        nodes.push(empty('这个分页没有可视化字段，请直接编辑 config.yaml'));
+      }
     } else {
       const section = h('div', { class: 'card' });
-      for (const spec of group.fields) {
+      for (const spec of visibleFields) {
         section.append(control(spec, (value) => saveField(spec, value)));
       }
       nodes.push(section);

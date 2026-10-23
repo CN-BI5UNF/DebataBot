@@ -833,3 +833,68 @@ html[data-theme="dark"] .modal-backdrop { background: rgba(0, 0, 0, .6); }
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* ================= 更新 / Releases ================= */
+
+.version-mark {
+  position: fixed; right: 12px; bottom: 6px; z-index: 5;
+  color: var(--text-disabled);
+  font-size: 11px; line-height: 1; letter-spacing: .04em;
+  opacity: .75; pointer-events: none; user-select: none;
+}
+
+.update-orb-host { display: inline-flex; align-items: center; }
+
+/* 总览页的更新提示：绿色圆形 + 向上箭头；只有发现新版本时才渲染。 */
+.update-orb {
+  width: 28px; height: 28px; padding: 0;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  cursor: pointer; opacity: .85;
+  transition: opacity var(--transition-fast) ease-out,
+              background var(--transition-fast) ease-out;
+}
+.update-orb:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--success) 22%, transparent);
+}
+.update-orb:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.release-summary { margin-bottom: 4px; }
+.release-summary-line { margin: 0 0 4px; font-size: var(--fs-body); }
+.release-notify { margin-top: 8px; }
+.release-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.release-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  background: var(--bg-primary);
+}
+.release-head { display: flex; flex-direction: column; gap: 4px; }
+.release-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.release-title { font-size: var(--fs-body); font-weight: 600; }
+.release-meta {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  color: var(--text-secondary); font-size: var(--fs-small);
+}
+.release-notes {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-secondary);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.release-notes.collapsed { max-height: 5.2em; overflow: hidden; position: relative; }
+.release-notes.collapsed::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.8em;
+  background: linear-gradient(to bottom, transparent, var(--bg-primary));
+}
+.release-notes-toggle { margin-top: 6px; }
+.release-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.release-message { min-height: 1.2em; margin-top: 8px; }
+.release-message.ok { color: var(--success); }
+.release-message.bad { color: var(--error); }

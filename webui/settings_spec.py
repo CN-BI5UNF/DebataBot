@@ -485,15 +485,20 @@ SETTINGS_GROUPS: list[Section] = [
     {
         "key": "update",
         "title": "更新",
-        "desc": "从 GitHub 的 refactor/main 检查并应用代码更新。只更新 Debata 源码，不读取或覆盖用户数据目录。",
+        "desc": "从 GitHub Releases/tag 选择更新或回退版本。只更新 Debata 源码，不读取或覆盖用户数据目录。",
         "fields": [
+            # 镜像用更新面板里的“预设 + 自定义”控件；保留声明是为了让
+            # PATCH /api/settings 仍能校验 update.mirror，但不在通用表单重复渲染。
             {"path": "update.mirror", "label": "GitHub 镜像/加速源",
-             "type": "str", "default": "", "needs_restart": False,
-             "help": "留空使用官方 GitHub；可填完整 https 仓库 URL 或 https://ghproxy…/ 前缀。"
-                     "只接受同一 Debata-Refactor 仓库，不接受账号密码、file:// 或内网地址。"},
+             "type": "str", "default": "", "needs_restart": False, "hidden": True,
+             "help": "留空使用官方 GitHub；可填完整 https 仓库 URL 或 https://ghproxy…/ 前缀。"},
             {"path": "update.check_timeout_seconds", "label": "检查超时（秒）",
              "type": "int", "default": 60, "min": 10, "max": 300,
              "needs_restart": False},
+            {"path": "update.check_interval_days", "label": "自动检查间隔（天）",
+             "type": "int", "default": 9, "min": 1, "max": 365,
+             "needs_restart": False,
+             "help": "后台每隔这么多天检查一次 Releases；失败后 6 小时重试。默认 9 天。"},
         ],
     },
     {

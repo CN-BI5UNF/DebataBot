@@ -2,6 +2,31 @@
 
 本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] — Releases 版本管理、更新与回退
+
+### Added
+- 新增私有发布仓库 `CN-BI5UNF/DebataBot`；版本以 GitHub Releases/tag 为目录，每个 tag 对应 `releases/<tag>.md` 更新日志。
+- 设置 →「更新」新增版本列表：可展开/收起每个版本的更新日志，选择更新、回退或切换版本；应用前确认，旧 HEAD 备份到 `refs/backups/update/*`。
+- 更新器改为按 Release/tag 解析目标提交，支持任意历史版本切换；依赖文件变化、脏工作树、数据目录位于代码树内仍会拒绝。
+- 后台每 9 天检查一次 Releases（可在设置中调整），状态持久化到数据目录 `update_state.json`（0600）；失败后 6 小时重试。
+- 总览页发现新版本时显示不显眼的绿色圆形上箭头；没有新版本或已关闭提醒时不显示。
+- 从总览绿标进入后关闭窗口会询问“之后是否不再提示更新”；勾选“之后不再提示”并点“是”后不再显示绿标，可在设置 → 更新重新开启。
+- 更新镜像新增常用预设（GitHub 官方、gh-proxy.com、ghfast.top、ghproxy.net）和自定义镜像输入；继续拒绝 http、账号密码、内网地址与非 DebataBot 仓库。
+- WebUI 右下角新增浅灰色版本占位，目前显示“开发版”，不发布正式版本号。
+- 新增 `/api/update/version`、`/api/update/available`、`/api/update/releases`、`/api/update/preferences`；`/api/update/check` 支持 `target_tag`，`/api/update/apply` 支持 `confirm_rollback`。
+- 修复前端更新检查/应用请求被 15 秒默认超时提前 abort 的问题（现在使用 330 秒，与后端 300 秒上限匹配）。
+
+### Changed
+- 更新源从 `CN-BI5UNF/Debata-Refactor` 切换为 `CN-BI5UNF/DebataBot`；发布仓库目前私有，后续可公开。
+- 版本目录读取远端 tag，不依赖 GitHub API；私有仓库通过本机 git 凭据认证。
+- 自动检查与 HTTP 请求解耦，只读缓存状态；手动检查会重置下一次到期时间。
+
+### Known limitations
+- 本次未实现 C03–C14（cold catch-up、摘要 CAS、工具循环 checkpoint、删除/恢复、聊天分页、RAG 有界、配置事务、迁移回滚等）。
+- 更新日志来自仓库内 `releases/<tag>.md`，不从 GitHub Release body 动态读取；发布时需保持两者同步。
+- 回退只切换源码，不自动安装依赖、不执行数据库迁移；依赖变化仍会拒绝自动应用。
+- 私有仓库的镜像加速通常不可用，需使用官方直连与本机 git 凭据。
+
 ## [Unreleased] — 在线更新、思考档位与 C02 压缩状态机
 
 ### Added

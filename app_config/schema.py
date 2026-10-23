@@ -1508,6 +1508,9 @@ class UpdateConfig(StrictModel):
     check_timeout_seconds: int = Field(default=60, ge=10, le=300)
     """检查/拉取更新的超时秒数。"""
 
+    check_interval_days: int = Field(default=9, ge=1, le=365)
+    """后台自动检查更新的间隔（天）；失败后 6 小时重试。"""
+
 
 # ============================================================
 # 根配置
