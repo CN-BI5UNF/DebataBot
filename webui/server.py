@@ -263,6 +263,12 @@ def run_webui(
     paths = runtime_host.build_paths()
     _ensure_logging(project_root, paths)
 
+    # 在加载 Runtime 前记录本进程实际看到的源码身份。之后即使磁盘上的
+    # 静态资源/源码被更新，这个快照也不会冒充成“已加载版本”。
+    from core.build_identity import capture_build_identity
+
+    capture_build_identity(project_root)
+
     # 必须早于任何 httpx 客户端构造（客户端要等 lifespan 里 host.start() 才建）：
     # NO_PROXY 里的 [::1] 会让 AsyncOpenAI 一构造就抛 InvalidURL，provider 建不出来，
     # Runtime 就停在启动失败。放在 _ensure_logging 之后，清理动作才有日志可看。

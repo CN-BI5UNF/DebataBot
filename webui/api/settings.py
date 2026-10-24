@@ -19,7 +19,7 @@ from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from app_config import user_error_text
-from webui.config_edit import apply_validated
+from webui.config_edit import apply_validated, validate_config
 from webui.settings_spec import SETTINGS_GROUPS, field_map
 
 from . import providers as providers_api
@@ -122,6 +122,108 @@ async def patch_setting(
     }
 
 
+class VisionSettingPatch(BaseModel):
+    """视觉设置批量保存。
+
+    ``None`` 表示不修改；可空字段传空字符串表示清空。把校验和落盘收敛到
+    一次请求，避免多次 PATCH 产生半配置、多份 config 备份和中间 ``enabled``
+    状态。
+    """
+
+    main_model_images: Literal["auto", "on", "off"] | None = None
+    enabled: bool | None = None
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_key_id: str | None = None
+    image_token_reserve: int | None = None
+    max_images_per_request: int | None = None
+    api_key: str | None = Field(default=None, max_length=4096)
+
+
+def _apply_vision_patch(draft: Any, payload: VisionSettingPatch) -> None:
+    vision = draft.features.vision
+    if payload.main_model_images is not None:
+        vision.main_model_images = payload.main_model_images
+    if payload.enabled is not None:
+        vision.enabled = payload.enabled
+    if payload.provider is not None:
+        vision.provider = payload.provider.strip() or None
+    if payload.model is not None:
+        vision.model = payload.model.strip()
+    if payload.base_url is not None:
+        vision.base_url = payload.base_url.strip() or None
+    if payload.api_key_id is not None:
+        vision.api_key_id = payload.api_key_id.strip() or None
+    api_key = (payload.api_key or "").strip()
+    if api_key:
+        # 独立视觉密钥固定写入专用 ID，不覆盖主 provider 的密钥。
+        vision.api_key_id = "vision_key"
+    if payload.image_token_reserve is not None:
+        vision.image_token_reserve = payload.image_token_reserve
+    if payload.max_images_per_request is not None:
+        vision.image_limits.max_images_per_request = (
+            payload.max_images_per_request
+        )
+
+
+@router.patch("/vision")
+async def patch_vision_settings(
+    request: Request, payload: Annotated[VisionSettingPatch, Body()]
+) -> dict[str, Any]:
+    """一次校验、一次落盘的视觉设置保存。"""
+    rt = require_runtime(request)
+    host = request.app.state.host
+    draft = rt.config.model_copy(deep=True)
+    _apply_vision_patch(draft, payload)
+    try:
+        validate_config(draft)
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=400, detail=f"视觉设置不合法：{user_error_text(e)}"
+        ) from e
+
+    api_key = (payload.api_key or "").strip()
+    if api_key:
+        try:
+            await asyncio.to_thread(rt.secrets.set, "vision_key", api_key)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("写入视觉密钥失败")
+            raise HTTPException(
+                status_code=500, detail=f"写入视觉密钥失败：{e}"
+            ) from e
+
+    apply_validated(
+        rt.config, lambda cfg: _apply_vision_patch(cfg, payload)
+    )
+    await asyncio.to_thread(host.save_config)
+    vision = rt.config.features.vision
+    logger.info(
+        "视觉设置已更新 enabled=%s provider=%s model=%s",
+        vision.enabled,
+        vision.provider,
+        vision.model,
+    )
+    return {
+        "ok": True,
+        "needs_restart": True,
+        "api_key_saved": bool(api_key),
+        "value": {
+            "main_model_images": vision.main_model_images,
+            "enabled": vision.enabled,
+            "provider": vision.provider or "",
+            "model": vision.model,
+            "base_url": vision.base_url or "",
+            "api_key_id": vision.api_key_id or "",
+            "image_token_reserve": vision.image_token_reserve,
+            "max_images_per_request": (
+                vision.image_limits.max_images_per_request
+            ),
+        },
+        "message": "视觉设置已保存；重启 Runtime 后生效",
+    }
+
+
 def _coerce(value: Any, spec: dict[str, Any]) -> Any:
     kind = spec.get("type")
     if kind == "bool":
@@ -221,7 +323,10 @@ class ProviderPatch(BaseModel):
     top_p: float | None = None
     max_tokens: int | None = None
     reasoning: bool | None = None
-    reasoning_budget: Literal["low", "medium", "high"] | None = None
+    reasoning_budget: Literal[
+        "minimal", "low", "medium", "high", "xhigh", "max"
+    ] | None = None
+    reasoning_budget_reset: bool = False
     first_token_timeout_seconds: float | None = None
 
 
@@ -244,7 +349,22 @@ async def patch_agent(
             detail=f"没有 {payload.provider} 这个提供商，先在「添加提供商」里建好",
         )
 
-    if payload.reasoning_budget is not None:
+    # 兼容既有客户端：JSON null 仍表示“不改”。恢复供应商 auto 必须显式
+    # 发送 reasoning_budget_reset=true，避免关闭 reasoning 时误清空档位。
+    if payload.reasoning_budget_reset and payload.reasoning_budget is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="reasoning_budget 与 reasoning_budget_reset 不能同时设置",
+        )
+    budget_supplied = (
+        payload.reasoning_budget_reset or payload.reasoning_budget is not None
+    )
+    # reasoning:null 是旧客户端的 no-change，不是关闭；只有显式 true/false 才改开关。
+    reasoning_supplied = (
+        "reasoning" in payload.model_fields_set and payload.reasoning is not None
+    )
+
+    if payload.reasoning_budget is not None and not payload.reasoning_budget_reset:
         from webui.api.providers import _reasoning_effort_options
 
         chosen_provider = payload.provider or agent.provider
@@ -273,15 +393,19 @@ async def patch_agent(
             target.max_tokens = int(payload.max_tokens)
         if payload.first_token_timeout_seconds is not None:
             target.first_token_timeout_seconds = float(payload.first_token_timeout_seconds)
-        if payload.reasoning is not None or payload.reasoning_budget is not None:
+        if reasoning_supplied or budget_supplied:
             if target.reasoning is None:
                 from app_config.schema import ReasoningConfig
 
                 target.reasoning = ReasoningConfig(enabled=bool(payload.reasoning))
-            elif payload.reasoning is not None:
-                target.reasoning.enabled = payload.reasoning
-            if payload.reasoning_budget is not None:
-                target.reasoning.budget = payload.reasoning_budget
+            elif reasoning_supplied:
+                target.reasoning.enabled = bool(payload.reasoning)
+            if budget_supplied:
+                # reset=true = 恢复供应商自动；省略/旧客户端 null = 保持原选择。
+                target.reasoning.budget = (
+                    None if payload.reasoning_budget_reset
+                    else payload.reasoning_budget
+                )
 
     try:
         apply_validated(rt.config, mutate)

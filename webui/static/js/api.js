@@ -178,6 +178,7 @@ export const endpoints = {
 
   settings: () => api.get('/api/settings'),
   patchSetting: (path, value) => api.patch('/api/settings', { path, value }),
+  patchVision: (payload) => api.patch('/api/settings/vision', payload),
   providers: () => api.get('/api/settings/providers'),
   patchAgent: (name, payload) => api.patch(`/api/settings/agents/${name}`, payload),
   putSecret: (keyId, value) => api.put('/api/settings/secrets', { key_id: keyId, value }),
@@ -221,4 +222,15 @@ export const endpoints = {
   updateApply: (payload) =>
     api.post('/api/update/apply', payload, { timeoutMs: 330000 }),
   updatePreferences: (payload) => api.patch('/api/update/preferences', payload),
+
+  backupStatus: () => api.get('/api/backup/status'),
+  backupStart: (payload = {}) =>
+    api.post('/api/backup', payload, { timeoutMs: 60000 }),
+  backupJob: (jobId) => api.get(`/api/backup/jobs/${encodeURIComponent(jobId)}`),
+  backupCancel: (jobId) =>
+    api.post(`/api/backup/jobs/${encodeURIComponent(jobId)}/cancel`, {}),
+  backupVerify: (filename) =>
+    api.post('/api/backup/verify', { filename }, { timeoutMs: 300000 }),
+  backupDownloadUrl: (name) =>
+    `/api/backup/files/${encodeURIComponent(name)}`,
 };

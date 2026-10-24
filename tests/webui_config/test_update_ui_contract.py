@@ -59,6 +59,9 @@ def test_release_notes_can_collapse_and_expand():
     assert "notesBlock(release)" in source
     assert "更新到此版本" in source
     assert "回退到此版本" in source
+    assert "不可自动应用" in source
+    assert "兼容性未通过" in source
+    assert "legacy_unknown" in source
 
 
 def test_badge_exit_prompt_only_suppresses_when_checked_and_yes():

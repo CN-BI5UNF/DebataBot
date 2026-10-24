@@ -49,7 +49,7 @@ OpenAI / Anthropic Claude / DeepSeek / 智谱 GLM / 通义千问 / 火山方舟 
 
 ### 9. 在线更新
 
-设置 →「更新」以 GitHub Releases/tag 为版本目录，可以查看每个版本的更新日志并选择更新、回退或切换版本.版本日志来自 `releases/<tag>.md`，目标仓库是 `CN-BI5UNF/DebataBot`；更新只操作代码工作树，不覆盖数据目录.脏工作树、非 DebataBot 仓库和依赖文件变化会拒绝自动应用；应用前会备份 HEAD 和本地稳定分支并重启服务.自动检查默认每 9 天一次，失败后 6 小时重试.支持常用镜像预设和自定义 https 镜像.
+设置 →「更新」以 GitHub Releases/tag 为版本目录，可以查看每个版本的更新日志并选择更新、回退或切换版本.版本日志来自 `releases/<tag>.md`，目标仓库是 `CN-BI5UNF/DebataBot`；更新只操作代码工作树，不覆盖数据目录.兼容声明 `compatibility.json` 会在应用前检查数据版本、契约 epoch 和所需能力；旧 tag 或需要迁移的版本不能自动应用.脏工作树、非 DebataBot 仓库和依赖文件变化会拒绝自动应用；应用前会备份 HEAD 和本地稳定分支并重启服务.自动检查默认每 9 天一次，失败后 6 小时重试.支持常用镜像预设和自定义 https 镜像.
 
 ### 7. 安全
 

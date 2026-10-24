@@ -2,6 +2,87 @@
 
 本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] — 2.6 L00/B00/M00/B02-E0/D01：统一门禁与账本基础
+
+### Added
+- `tests/test_compat_parity.py`：core 与 stdlib launcher 对同一合成状态做逐库/epoch/phase/feature/first-run golden 差分；统一 `supported_read/write` 为上界，统一 `data_contract_epoch`。
+- core/launcher 真首次运行与恢复区分：无 config 但已有 DB/state 返回 `recovery_required`；空实例返回 `setup_required`，launcher 需显式 `--allow-setup`。
+- launcher 绑定 project root/data dir/config/入口；只允许 project root 内 Python + `main.py`，校验命令 `--config`，exec 前固定 `DEBATA_DATA_ROOT`。
+- `core/maintenance.py`：持久维护状态、POSIX flock、writer 注册/结算、`ControllerBarrier`、startup gate；RuntimeHost 的 start/restart 同时检查维护和当前代码兼容 gate。
+- `core/bootstrap.py`：epoch0 资格检查、bootstrap_epoch0 严格快照、verify/drill、绑定源 inventory/目标 build/manifest/允许迁移 ID/期限的一次性 permit；不造空 ledger。
+- `core/d01.py`：隔离 `debata.db` v1->v2（M001）迁移，稳定 UUID/seq/life_epoch、import ledger、origin/copy/summary/outbox/tombstone/checkpoint schema，同库 append/tombstone 事务；生产路径默认拒绝。
+- WebUI RuntimeHost 启动门禁：维护 phase 或当前数据版本不兼容时进入 maintenance，不允许从 WebUI 绕过 launcher。
+
+### Changed
+- 备份 worker 生命周期：外层 Task.cancel 不再提前释放 barrier/flock；等待 worker 结算后持锁持久化终态再解锁；发布提交点后取消返回已发布包，不假装无产物。
+- build identity 使用源码目录白名单、lstat/no-follow/root 校验，不扫描/读取数据、密钥、personas 或外部 symlink；新增 `identity_kind=startup_source_snapshot` 语义说明。
+
+### Known limitations
+- M00 writer registry 尚未接入全部 Runtime writer；旁路 SQL/文件写入仍可能绕过。
+- D01 只在 tmp 合成库验证，未在生产迁移；`DEBATA_DB_SCHEMA_VERSION` 仍为 1。
+- bootstrap permit 未接入生产迁移工具；未安装 launcher/systemd，未重启。
+- R01/P01/S01–S03 及资源/删除/分页/RAG/配置安全仍未开始；不声称 2.6 完成。
+
+## [Unreleased] — 2.5 W00/B01/B02/U01-L：构建身份、备份协调与独立启动
+
+### Added
+- `core/build_identity.py` 与 `GET /api/system/build`：进程启动时捕获 loaded build identity，与当前磁盘 source identity 分开；源码指纹不含 `data/`、聊天正文、密钥或日志。
+- `BackupCoordinator`：按数据目录共享实例级互斥和 job 注册表；POSIX `flock` 跨进程租约；job 元数据持久化到 `backup_jobs.json`（0600），重启后非终态标 `interrupted`，另一进程持锁时不覆盖其权威状态。
+- 备份合作式取消：`cancelling/cancelled` 状态、API `POST /api/backup/jobs/{id}/cancel`、页面取消按钮；扫描/块写入/SQLite 进度/校验/发布边界响应；未完成临时包不发布。
+- 备份发布 fsync 文件与目录、原子 rename；临时目录带 owner/job/boot 标记，只在本实例持锁时清理。
+- `core/restore.py`：离线 `verify` 和隔离 `drill`，校验 CRC/成员集合/路径/hash/SQLite quick_check/密钥配对，拒绝穿越、符号链接、重复成员、异常压缩比和超限包；不解压到生产目录、不执行包内脚本。
+- 备份 API 新增 `POST /api/backup/verify`；设置页已有包新增“离线验证”按钮。
+- 严格迁移快照框架：`SnapshotBarrier` 协议 + `backup_type=migration_snapshot`，额外包含 maintenance 库/目录与 compatibility state；缺 barrier/必需项/一致性/密钥验证时失败，不 raw-copy 兜底。当前 epoch 无 deletion ledger 时仍写 `migration_safe=false`。
+- 独立受信 launcher `deploy/trusted_launcher.py`（仅标准库、不 import 项目代码）和 systemd 样例；失败退出 78、不启动目标。代码与合成测试已准备，未安装、未改 unit。
+
+### Changed
+- 备份目录已存在时检查 owner/权限；组或其他用户可访问的目录 fail-closed（不擅自 chmod 用户目录）。
+- 备份 manifest 升级为 `format_version=2`，新增 `backup_type=user_export`、`validation_status`、`partial`、`missing` 和能力字段：`chat_restorable`、`media_complete`、`credential_restorable`、`migration_safe=false`、`cross_plane_consistent=false`。
+- ZIP 关闭后重新打开校验 CRC、成员集合、逐成员 size/SHA-256 和 SQLite 成员头；SQLite 快照写入前执行 `quick_check`。验证失败不发布为可下载完成包。
+- SQLite raw-copy 兜底、文件备份期间变化、必需项缺失或密钥材料无法验证时，job 标为 `partial`，不再一律 `done`。
+- sidecar 只是索引缓存；缺失/损坏时列表从包内 `manifest.json` 重建；created_at 统一为 epoch 数字，避免 ISO 字符串/浮点混排 TypeError。
+- 备份 UI 明确 ZIP 未加密、验证状态、密钥材料可验证性和部分完成；`backup.include_media` 文案明确覆盖整个 `workspace/incoming`。
+- `core/compat.py` 改为只读 URI/query_only 探针；逐库登记 DB 版本/schema_version，逐项评估，不能用同平面 max 掩盖旧库或新增异版本库。
+- `compatibility_state.json` 增加 state_format/phase/generation；planes 不能升降实测版本（projection 除外）；迁移中/需恢复状态阻止普通更新。
+- `reasoning:null` 恢复为 no-change，不因字段出现把 reasoning 关闭；六档/reset 契约保留。
+
+### Known limitations
+- 普通一键备份仍是 `user_export`；`credential_restorable` 只验证私钥与公钥匹配，不证明 `secrets.enc` 可解密。
+- 备份仍无包级加密、无在线一键恢复；严格迁移快照只有框架/合成屏障，真实维护控制器、D01 deletion ledger 和生产恢复演练未完成。
+- 独立 launcher 未安装、未修改 systemd、未重启；当前 live 进程未证明加载本轮代码。
+- 备份保留策略未实现；默认不自动删除旧包。
+- D01/R01/P01/S01–S03/A01–A02/X01–X02/Q01–Q02/C12-R 及后续合同仍未完成；当前不上传/不发布。
+
+## [Unreleased] — 2.4 P0：兼容门禁、CI 与六档 PATCH
+
+### Added
+- 新增仓库根 `compatibility.json`（manifest_format=1）与 `core/compat.py`：纯数据解析、本地 schema/epoch/feature 快照、fail-closed 评估，不执行目标代码。
+- 更新器 `check`/`apply` 接入兼容门禁：legacy 无 manifest、migration_required、unsupported_data_contract、feature_missing、data_state_changed 都会阻止自动 apply；计划绑定 manifest hash 与数据快照。
+- Release 列表返回每个版本的兼容结果；WebUI 显示“兼容性未通过”并禁用自动应用按钮。
+- 新增 `docs/compatibility.md`，说明 manifest、数据快照、apply 重验和受信 launcher 边界。
+- `.github/workflows/test.yml` 的 push/PR 显式加入 `refactor/main`，并支持 `workflow_dispatch`；默认分支不变。
+
+### Changed
+- Agent PATCH 的思考强度 DTO 从三档扩展为 `minimal/low/medium/high/xhigh/max`；旧客户端省略/`null`=不改，新增 `reasoning_budget_reset=true` 显式恢复供应商 auto；关闭 reasoning 不清空已选档位。
+- Release 自动绿标只提示可向前推进且通过兼容门禁的版本；分叉/回退仍只允许在版本列表手动选择。
+
+## [Unreleased] — 用户数据一键备份
+
+### Added
+- 设置 →「备份」新增一键备份：配置、加密密钥库、RSA 私钥、聊天数据库、RAG 数据库、工作区、表情包、自定义 provider 预设和人格定义。
+- 备份在后台 job 中执行，显示扫描/写入/校验阶段、字节进度、警告和失败原因；完成后可在页面下载 zip。
+- SQLite 数据库使用 `sqlite3.Connection.backup()` 生成一致性快照；失败时才退回文件复制并在 manifest 标记 `consistent=false`。
+- 新增 `backup.directory`（默认 `~/Debata_Backups`）和 `backup.include_media`（默认包含入站媒体）。
+- 备份包含 manifest（路径/大小/SHA-256/警告）和 `README_RESTORE.txt`；zip 与 sidecar 权限 0600，下载接口走鉴权且禁止缓存。
+- 新增 `POST /api/backup`、`GET /api/backup/status`、`GET /api/backup/jobs/{id}`、`GET /api/backup/files/{name}`。
+- 新增 `docs/backup.md`，说明备份范围、敏感信息、空间检查和手动恢复步骤。
+
+### Known limitations
+- 只提供备份，不提供在线一键恢复；恢复需停止服务并手动复制，避免覆盖备份后的新数据。
+- 日志、缓存、模型文件、配置历史、维护任务/隔离区和 WebUI 登录令牌不在备份范围内。
+- 备份包含可以解密 API 密钥的材料，必须像密码一样保管；不会上传到任何第三方。
+- 备份是某一时刻的尽力快照；非 SQLite 文件在备份期间被修改时可能不是严格同一时间点。
+
 ## [Unreleased] — Releases 版本管理、更新与回退
 
 ### Added

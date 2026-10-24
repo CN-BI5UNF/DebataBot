@@ -1,0 +1,5 @@
+# 样例：复制到 ~/.config/systemd/user/debata-agent.service.d/launcher.conf
+# 本轮未安装、未 daemon-reload、未重启。请先把路径改成实际数据目录。
+[Service]
+ExecStart=
+ExecStart=/usr/local/lib/debata/trusted_launcher.py --project-root /home/kickpi/Debata_Agent --data-dir /home/kickpi/.local/share/Debata_Agent/instances/default -- /home/kickpi/Debata_Agent/.venv/bin/python /home/kickpi/Debata_Agent/main.py --host 0.0.0.0 --port 8000

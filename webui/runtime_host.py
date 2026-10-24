@@ -30,6 +30,7 @@ STATE_STARTING = "starting"
 STATE_RUNNING = "running"
 STATE_STOPPED = "stopped"
 STATE_ERROR = "error"
+STATE_MAINTENANCE = "maintenance"
 
 
 class RuntimeHost:
@@ -123,6 +124,28 @@ class RuntimeHost:
                 logger.info("未找到 config.yaml，WebUI 进入首次配置模式：%s", self.config_file_path)
                 return False
 
+            # 外部维护控制器与 WebUI 内 start/restart 共用同一 gate；不能
+            # 因为 launcher 被阻止、WebUI 仍能直接拉起 Runtime。
+            from core.maintenance import startup_gate
+
+            gate = startup_gate(self.build_paths())
+            if not gate.get("ok"):
+                self.state = STATE_MAINTENANCE
+                self.last_error = str(gate.get("message") or "维护状态禁止启动")
+                logger.warning(
+                    "Runtime 启动被维护门禁阻止：%s", self.last_error
+                )
+                return False
+
+            compat = self._runtime_compat_gate()
+            if not compat.get("ok"):
+                self.state = STATE_MAINTENANCE
+                self.last_error = str(compat.get("message") or "数据兼容门禁阻止启动")
+                logger.warning(
+                    "Runtime 启动被兼容门禁阻止：%s", self.last_error
+                )
+                return False
+
             self.state = STATE_STARTING
             self.last_error = ""
             from core import Runtime
@@ -166,6 +189,59 @@ class RuntimeHost:
             logger.info("正在重启 Runtime ...")
             await self.stop()
             return await self.start()
+
+    def _runtime_compat_gate(self) -> dict[str, Any]:
+        """同 launcher 的目标 manifest + 本地数据门禁，防 WebUI 绕过。"""
+        from core.compat import (
+            CompatError,
+            evaluate,
+            parse_manifest,
+            read_local_state,
+        )
+
+        manifest_path = Path(self.project_root) / "compatibility.json"
+        try:
+            manifest_path = manifest_path.resolve()
+            manifest_path.relative_to(Path(self.project_root).resolve())
+        except (OSError, ValueError):
+            return {"ok": False, "code": "manifest_path_escape",
+                    "message": "compatibility.json 不在 project root 内"}
+        if not manifest_path.is_file() or manifest_path.is_symlink():
+            return {"ok": False, "code": "manifest_missing",
+                    "message": "目标源码缺少 compatibility.json"}
+        try:
+            manifest = parse_manifest(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, CompatError) as exc:
+            return {"ok": False, "code": "manifest_invalid",
+                    "message": f"compatibility.json 非法：{exc}"}
+        paths = self.build_paths()
+        local = read_local_state(paths.DATA_DIR, config_path=paths.CONFIG_FILE)
+        # 刚完成向导、还没有任何库的实例允许创建 v1 schema；一旦已有任一
+        # 数据库，仍走逐库/迁移门禁，不能用“空”掩盖旧库。
+        if (
+            not local.databases
+            and not local.first_run
+            and not local.config_missing
+            and all(
+                local.planes.get(name, 0) == 0
+                for name in ("persona_db", "maintenance", "rag", "projection")
+            )
+            and local.planes.get("root_config", 0)
+            >= manifest.planes["root_config"].target_version
+        ):
+            return {
+                "ok": True,
+                "code": "compatible_empty",
+                "message": "空实例，允许初始化数据库",
+                "snapshot": local.snapshot(),
+            }
+        result = evaluate(manifest, local)
+        return {
+            "ok": result.get("code") == "compatible",
+            "code": result.get("code"),
+            "message": result.get("message"),
+            "snapshot": result.get("data_snapshot"),
+        }
 
     def request_stop(self) -> None:
         """供系统级接口请求退出整个 WebUI。"""

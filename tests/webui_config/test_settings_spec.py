@@ -298,11 +298,17 @@ def test_coerce_json_fields_accept_their_own_defaults():
 
 
 class _FakeSecrets:
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+
     def list_ids(self) -> list[str]:
-        return []
+        return sorted(self.data)
 
     def get(self, key_id: str):
-        return None
+        return self.data.get(key_id)
+
+    def set(self, key_id: str, value: str) -> None:
+        self.data[key_id] = value
 
 
 class _FakeHost:
@@ -404,3 +410,65 @@ async def test_valid_patch_is_committed():
     await patch_setting(request, SettingPatch(path="features.vision.provider", value=""))
     assert rt.config.features.vision.enabled is False
     assert rt.config.features.vision.provider == ""
+
+
+async def test_vision_batch_saves_custom_endpoint_and_disable_keeps_fields():
+    """批量保存自定义视觉端点：一次写入密钥，关闭时保留其它字段。"""
+    from webui.api.settings import VisionSettingPatch, patch_vision_settings
+
+    rt = _FakeRt(_default_config())
+    request = _patch_request(rt)
+    result = await patch_vision_settings(
+        request,
+        VisionSettingPatch(
+            enabled=True,
+            provider="",
+            model="vision-model",
+            base_url="https://vision.example.com/v1",
+            api_key="sk-test",
+        ),
+    )
+    assert result["ok"] is True
+    assert result["needs_restart"] is True
+    assert result["api_key_saved"] is True
+    vision = rt.config.features.vision
+    assert vision.enabled is True
+    assert vision.provider is None
+    assert vision.model == "vision-model"
+    assert vision.base_url == "https://vision.example.com/v1"
+    assert vision.api_key_id == "vision_key"
+    assert rt.secrets.data["vision_key"] == "sk-test"
+
+    disabled = await patch_vision_settings(
+        request, VisionSettingPatch(enabled=False)
+    )
+    assert disabled["value"]["enabled"] is False
+    vision = rt.config.features.vision
+    assert vision.enabled is False
+    assert vision.model == "vision-model"
+    assert vision.base_url == "https://vision.example.com/v1"
+    assert vision.api_key_id == "vision_key"
+
+
+async def test_vision_batch_rejects_incomplete_enable_without_touching_config():
+    """enabled=true 但缺 provider/端点时必须原子拒绝，不能留下半配置。"""
+    from fastapi import HTTPException
+
+    from webui.api.settings import VisionSettingPatch, patch_vision_settings
+
+    rt = _FakeRt(_default_config())
+    before = rt.config.features.vision.model_dump()
+    with pytest.raises(HTTPException) as excinfo:
+        await patch_vision_settings(
+            _patch_request(rt),
+            VisionSettingPatch(
+                enabled=True,
+                provider="",
+                model="vision-model",
+                base_url="",
+                api_key="",
+            ),
+        )
+    assert excinfo.value.status_code == 400
+    assert "视觉设置不合法" in str(excinfo.value.detail)
+    assert rt.config.features.vision.model_dump() == before

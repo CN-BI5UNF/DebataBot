@@ -8,6 +8,19 @@ import { endpoints } from '../api.js';
 import { renderModelsPanel } from '../providers.js';
 import { renderReleaseList, formatDateTime } from '../releases.js';
 
+// 视觉字段由专用面板渲染；这里再按路径兜底一次，避免旧进程尚未加载
+// settings_spec 的 hidden 标记时，通用表单和专用面板重复出现同一批字段。
+const VISION_FIELD_PATHS = new Set([
+  'features.vision.main_model_images',
+  'features.vision.enabled',
+  'features.vision.provider',
+  'features.vision.model',
+  'features.vision.base_url',
+  'features.vision.api_key_id',
+  'features.vision.image_token_reserve',
+  'features.vision.image_limits.max_images_per_request',
+]);
+
 export async function render(container, ctx) {
   let payload;
   try {
@@ -179,6 +192,359 @@ export async function render(container, ctx) {
     } catch (e) {
       ctx.toast(`${fieldSpec.label} 保存失败：${e.message}`, 'error');
     }
+  }
+
+  // ============================================================
+  // 视觉设置（专用面板）
+  // ============================================================
+
+  async function appendVisionPanel(nodes, group) {
+    const byPath = new Map(group.fields.map((spec) => [spec.path, spec]));
+    const nativeSpec = byPath.get('features.vision.main_model_images');
+    const enabledSpec = byPath.get('features.vision.enabled');
+    const providerSpec = byPath.get('features.vision.provider');
+    const modelSpec = byPath.get('features.vision.model');
+    const baseUrlSpec = byPath.get('features.vision.base_url');
+    const apiKeySpec = byPath.get('features.vision.api_key_id');
+    const tokenSpec = byPath.get('features.vision.image_token_reserve');
+    const maxImagesSpec = byPath.get('features.vision.image_limits.max_images_per_request');
+    if (!nativeSpec || !enabledSpec || !providerSpec || !modelSpec
+        || !baseUrlSpec || !apiKeySpec) {
+      return;
+    }
+
+    let providerPayload = { providers: [], agents: {} };
+    let presets = [];
+    let providerLoadError = '';
+    try {
+      providerPayload = await endpoints.providers();
+    } catch (e) {
+      providerLoadError = e.message;
+    }
+    try {
+      const data = await endpoints.providerPresets();
+      presets = Array.isArray(data.presets) ? data.presets : [];
+    } catch {
+      // 预设只用于模型候选；读取失败时仍允许手填模型 ID。
+    }
+    const providerList = Array.isArray(providerPayload.providers)
+      ? providerPayload.providers : [];
+
+    function presetOf(provider) {
+      const presetId = String(provider?.preset || '').toLowerCase();
+      return presets.find((item) => item.id === presetId) || null;
+    }
+
+    function chatVisionInfo() {
+      const chat = providerPayload.agents?.chat;
+      if (!chat) return null;
+      const provider = providerList.find((item) => item.id === chat.provider) || null;
+      const preset = presetOf(provider);
+      const model = preset?.models?.find((item) => item.id === chat.model) || null;
+      return {
+        chat,
+        provider,
+        supports: Boolean(model?.capabilities?.includes('vision')),
+      };
+    }
+
+    // ---- 主模型原生图片输入 ----------------------------------
+
+    const nativeSelect = h('select', { dataset: { visionNative: '1' } });
+    for (const [value, label] of nativeSpec.options || []) {
+      nativeSelect.append(h('option', {
+        value,
+        selected: value === nativeSpec.value,
+      }, label));
+    }
+    const nativeHint = h('p', { class: 'field-help' });
+    function refreshNativeHint() {
+      if (nativeSelect.value === 'off') {
+        nativeHint.textContent = '不向主模型附图；独立视觉仍可按需使用。';
+        return;
+      }
+      if (nativeSelect.value === 'on') {
+        nativeHint.textContent = '明确声明主模型可接收图片；仍需协议支持图片转换，否则不会附图。';
+        return;
+      }
+      const info = chatVisionInfo();
+      if (!info) {
+        nativeHint.textContent = '还没有配置聊天模型，auto 无法判断视觉能力。';
+        return;
+      }
+      const label = `${info.provider?.display_name || info.chat.provider} / ${info.chat.model}`;
+      nativeHint.textContent = info.supports
+        ? `当前聊天模型 ${label} 在预设中标记了 vision，auto 会附图。`
+        : `当前聊天模型 ${label} 未被预设标记为 vision，auto 不会附图；`
+          + '可以改成“开启”，或使用下方独立视觉。';
+    }
+    nativeSelect.addEventListener('change', async () => {
+      await saveField(nativeSpec, nativeSelect.value);
+      refreshNativeHint();
+    });
+    refreshNativeHint();
+
+    const nativeChildren = [
+      field('图片输入策略', nativeSelect,
+        'auto：仅预设标记 vision 的聊天模型；on：显式开启；off：不向主模型附图。'),
+      nativeHint,
+    ];
+    if (tokenSpec) {
+      nativeChildren.push(control(tokenSpec,
+        (value) => saveField(tokenSpec, value)));
+    }
+    if (maxImagesSpec) {
+      nativeChildren.push(control(maxImagesSpec,
+        (value) => saveField(maxImagesSpec, value)));
+    }
+    if (providerLoadError) {
+      nativeChildren.push(h('p', { class: 'field-help' },
+        `读取 provider/预设失败，无法判断当前聊天模型：${providerLoadError}`));
+    }
+    nodes.push(card('主模型原生图片输入',
+      '让聊天模型直接接收用户图片。预设模型是否支持由能力表决定；'
+      + '这条路径不需要独立视觉 provider。',
+      ...nativeChildren));
+
+    // ---- 独立视觉识别 ----------------------------------------
+
+    const enabledInput = h('input', {
+      type: 'checkbox',
+      checked: Boolean(enabledSpec.value),
+      dataset: { visionToggle: '1' },
+    });
+    const enabledRow = h('label', { class: 'switch' }, enabledInput,
+      '启用独立视觉识别（describe_image）');
+
+    const currentProvider = String(providerSpec.value || '').trim();
+    const providerSelect = h('select', { dataset: { visionProvider: '1' } });
+    providerSelect.append(h('option', { value: '' },
+      '自定义 OpenAI 兼容端点（不引用已有 provider）'));
+    for (const provider of providerList) {
+      const preset = presetOf(provider);
+      const label = `${provider.display_name || provider.id} (${provider.id})`
+        + (preset ? ` · 预设 ${preset.display_name || preset.id}` : '');
+      providerSelect.append(h('option', {
+        value: provider.id,
+        selected: provider.id === currentProvider,
+      }, label));
+    }
+    if (currentProvider
+        && !providerList.some((provider) => provider.id === currentProvider)) {
+      providerSelect.append(h('option', {
+        value: currentProvider,
+        selected: true,
+      }, `当前配置：${currentProvider}（不在 provider 列表）`));
+    }
+    providerSelect.value = currentProvider;
+    let lastProvider = providerSelect.value;
+
+    const modelInput = h('input', {
+      value: String(modelSpec.value || ''),
+      placeholder: '例如 glm-4v / qwen-vl-max',
+      list: 'vision-model-options',
+      dataset: { visionModel: '1' },
+    });
+    const modelDatalist = h('datalist', { id: 'vision-model-options' });
+    function visionModelsFor(providerId) {
+      if (providerId) {
+        const provider = providerList.find((item) => item.id === providerId);
+        const preset = presetOf(provider);
+        const models = Array.isArray(preset?.models) ? preset.models : [];
+        const visionModels = models.filter(
+          (model) => (model.capabilities || []).includes('vision'));
+        return visionModels.length ? visionModels : models;
+      }
+      const seen = new Set();
+      const out = [];
+      for (const preset of presets) {
+        for (const model of preset.models || []) {
+          if (!(model.capabilities || []).includes('vision') || seen.has(model.id)) {
+            continue;
+          }
+          seen.add(model.id);
+          out.push(model);
+        }
+      }
+      return out;
+    }
+    function refreshModelOptions() {
+      fill(modelDatalist);
+      for (const model of visionModelsFor(providerSelect.value)) {
+        modelDatalist.append(h('option', { value: model.id },
+          `${model.display_name || model.id}（${model.id}）`));
+      }
+    }
+
+    const baseUrlInput = h('input', {
+      value: String(baseUrlSpec.value || ''),
+      placeholder: 'https://api.example.com/v1',
+      dataset: { visionBaseUrl: '1' },
+    });
+    const keyInput = h('input', {
+      type: 'password',
+      placeholder: apiKeySpec.value
+        ? `已配置 ${apiKeySpec.value}（留空不修改）`
+        : '未设置',
+      dataset: { visionKey: '1' },
+    });
+    const overrideInput = h('input', {
+      type: 'checkbox',
+      checked: Boolean(currentProvider
+        && (baseUrlSpec.value || apiKeySpec.value)),
+      dataset: { visionOverride: '1' },
+    });
+    const overrideRow = h('label', { class: 'switch' }, overrideInput,
+      '覆盖该 provider 的地址/密钥（高级）');
+    const providerRow = field('视觉 provider', providerSelect,
+      '引用“设置→模型”里已添加的 provider；选择已有 provider 后通常不需要再填地址和 Key。');
+    const modelRow = field('视觉模型', h('div', {}, modelInput, modelDatalist),
+      '独立看图模型 ID，例如 glm-4v / qwen-vl-max；可以和聊天模型不同。');
+    const baseUrlRow = field('视觉独立 base_url', baseUrlInput,
+      '自定义端点必填；选择已有 provider 时留空即可复用其地址。');
+    const keyRow = field('视觉独立 API Key', keyInput,
+      '自定义端点必填；选择已有 provider 时留空即可复用其密钥。');
+    const providerWarning = h('p', { class: 'field-help' });
+    const customNote = h('p', { class: 'field-help' });
+    const saveStatus = h('p', { class: 'field-help' });
+    const saveBtn = h('button', {
+      class: 'btn btn-primary',
+      dataset: { visionSave: '1' },
+    }, '保存视觉设置');
+
+    saveBtn.addEventListener('click', async () => {
+      const wantEnabled = enabledInput.checked;
+      const providerValue = providerSelect.value.trim();
+      const modelValue = modelInput.value.trim();
+      const isCustom = !providerValue;
+      const useOverride = isCustom || overrideInput.checked;
+      const baseUrlValue = useOverride ? baseUrlInput.value.trim() : '';
+      const keyValue = useOverride ? keyInput.value.trim() : '';
+      const existingKeyId = String(apiKeySpec.value || '');
+
+      if (wantEnabled) {
+        if (!modelValue) {
+          saveStatus.textContent = '请填写视觉模型 ID。';
+          modelInput.focus();
+          return;
+        }
+        if (isCustom && !baseUrlValue) {
+          saveStatus.textContent = '自定义视觉端点需要填写 base_url。';
+          baseUrlInput.focus();
+          return;
+        }
+        if (isCustom && !keyValue && !existingKeyId) {
+          saveStatus.textContent = '自定义视觉端点需要填写 API Key。';
+          keyInput.focus();
+          return;
+        }
+      }
+
+      const payload = { enabled: wantEnabled };
+      if (wantEnabled) {
+        // 一次请求保存全部依赖字段；后端统一校验后再落盘一次。
+        payload.provider = providerValue;
+        payload.model = modelValue;
+        payload.base_url = baseUrlValue;
+        payload.api_key_id = useOverride ? existingKeyId : '';
+        if (keyValue) payload.api_key = keyValue;
+      }
+
+      saveBtn.disabled = true;
+      saveStatus.textContent = '正在保存…';
+      try {
+        const result = await endpoints.patchVision(payload);
+        const saved = result.value || {};
+        enabledSpec.value = Boolean(saved.enabled);
+        providerSpec.value = saved.provider || '';
+        modelSpec.value = saved.model || '';
+        baseUrlSpec.value = saved.base_url || '';
+        apiKeySpec.value = saved.api_key_id || '';
+        lastProvider = providerSpec.value;
+        if (result.api_key_saved) keyInput.value = '';
+        keyInput.placeholder = apiKeySpec.value
+          ? `已配置 ${apiKeySpec.value}（留空不修改）`
+          : '未设置';
+        saveStatus.textContent = wantEnabled
+          ? '视觉设置已保存；重启 Runtime 后生效。'
+          : '独立视觉已关闭；provider、模型和密钥配置仍保留。';
+        markRestart();
+        ctx.toast('视觉设置已保存', 'ok');
+      } catch (e) {
+        saveStatus.textContent = `保存失败：${e.message}`;
+        ctx.toast(`视觉设置保存失败：${e.message}`, 'error');
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    const independentFields = h('div', {
+      dataset: { visionDetails: '1' },
+    },
+      providerWarning,
+      customNote,
+      providerRow,
+      modelRow,
+      overrideRow,
+      baseUrlRow,
+      keyRow,
+    );
+
+    function syncVisibility() {
+      independentFields.style.display = enabledInput.checked ? '' : 'none';
+      const isCustom = !providerSelect.value;
+      const showOverride = isCustom || overrideInput.checked;
+      overrideRow.style.display = isCustom ? 'none' : '';
+      baseUrlRow.style.display = showOverride ? '' : 'none';
+      keyRow.style.display = showOverride ? '' : 'none';
+
+      const provider = providerList.find(
+        (item) => item.id === providerSelect.value);
+      if (isCustom) {
+        customNote.textContent = '未选择已有 provider：需要填写 base_url 和 API Key，'
+          + '按 OpenAI 兼容协议连接。';
+      } else if (provider) {
+        customNote.textContent = `复用 provider ${provider.id} 的协议、地址与密钥；`
+          + '只有视觉端点不同时才勾选“覆盖”。';
+      } else {
+        customNote.textContent = '当前视觉 provider 不在已添加列表中，请重新选择。';
+      }
+      let warning = '';
+      if (providerLoadError) {
+        warning = `读取 provider 列表失败：${providerLoadError}`;
+      } else if (!providerList.length) {
+        warning = '还没有添加 provider。可以到“模型”页添加，或使用自定义端点。';
+      }
+      providerWarning.textContent = warning;
+      providerWarning.style.display = warning ? '' : 'none';
+      refreshModelOptions();
+    }
+
+    providerSelect.addEventListener('change', () => {
+      if (providerSelect.value !== lastProvider) {
+        // 换 provider 时不沿用上一个 provider 的地址/密钥覆盖值。
+        overrideInput.checked = false;
+        baseUrlInput.value = '';
+        keyInput.value = '';
+      }
+      lastProvider = providerSelect.value;
+      syncVisibility();
+    });
+    overrideInput.addEventListener('change', syncVisibility);
+    enabledInput.addEventListener('change', syncVisibility);
+    syncVisibility();
+
+    nodes.push(card('独立视觉识别（可选）',
+      '主模型不能看图，或想把看图交给另一个模型时使用。开启后只提供 '
+      + 'describe_image 工具，按需调用，不会每轮自动跑。',
+      enabledRow,
+      h('p', { class: 'field-help' },
+        '关闭时保留配置，不会删除密钥；只有开启后才会构造独立视觉客户端。'),
+      independentFields,
+      h('div', { class: 'row' },
+        h('div', { class: 'spacer' }),
+        saveBtn),
+      saveStatus));
   }
 
   // ============================================================
@@ -402,6 +768,269 @@ export async function render(container, ctx) {
     );
   }
 
+  const BACKUP_STATE_TEXT = {
+    queued: '排队中',
+    running: '备份中',
+    cancelling: '正在取消',
+    cancelled: '已取消',
+    interrupted: '已中断',
+    done: '已完成',
+    partial: '部分完成',
+    failed: '失败',
+  };
+  const BACKUP_STAGE_TEXT = {
+    queued: '排队中',
+    scanning: '扫描文件',
+    writing: '写入压缩包',
+    verifying: '验证压缩包',
+    hashing: '计算校验值',
+    cancelling: '收尾中',
+    cancelled: '已取消',
+    interrupted: '已中断',
+    done: '完成',
+    failed: '失败',
+  };
+  const BACKUP_TERMINAL_STATES = new Set([
+    'done', 'partial', 'failed', 'cancelled', 'interrupted',
+  ]);
+
+  function formatBytes(value) {
+    const num = Math.max(0, Number(value) || 0);
+    if (num >= 1024 ** 3) return `${(num / 1024 ** 3).toFixed(2)} GiB`;
+    if (num >= 1024 ** 2) return `${(num / 1024 ** 2).toFixed(1)} MiB`;
+    if (num >= 1024) return `${(num / 1024).toFixed(1)} KiB`;
+    return `${num} B`;
+  }
+
+  async function appendBackupPanel(nodes) {
+    let status = null;
+    try {
+      status = await endpoints.backupStatus();
+    } catch (e) {
+      nodes.push(card('一键备份用户数据', '',
+        empty(`读取备份状态失败：${e.message}`)));
+      return;
+    }
+    let pollTimer = null;
+    const statusLine = h('p', { class: 'field-help' });
+    const progressHost = h('div', {});
+    const filesHost = h('div', {});
+    const summaryHost = h('div', {});
+    const startBtn = h('button', { class: 'btn btn-primary' }, '立即备份');
+    const refreshBtn = h('button', { class: 'btn' }, '刷新');
+
+    function clearPoll() {
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    function renderProgress(job) {
+      if (!job) {
+        fill(progressHost);
+        startBtn.disabled = false;
+        return;
+      }
+      const total = Number(job.total_bytes || 0);
+      const done = Number(job.processed_bytes || 0);
+      const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(done / total * 100))) : 0;
+      const stateText = BACKUP_STATE_TEXT[job.state] || job.state;
+      const stageText = BACKUP_STAGE_TEXT[job.stage] || job.stage;
+      const running = ['running', 'queued', 'cancelling'].includes(job.state);
+      const line = running
+        ? `${stateText} · ${stageText}`
+          + (total > 0 ? ` · ${formatBytes(done)} / ${formatBytes(total)}` : '')
+        : `${stateText}${job.filename ? ` · ${job.filename}` : ''}`;
+      const cancelBtn = running && job.state !== 'cancelling'
+        ? h('button', { class: 'btn btn-sm' }, '取消备份')
+        : null;
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', async () => {
+          cancelBtn.disabled = true;
+          statusLine.textContent = '正在请求取消…';
+          try {
+            const updated = await endpoints.backupCancel(job.id);
+            renderProgress(updated);
+            pollJob(job.id);
+          } catch (e) {
+            cancelBtn.disabled = false;
+            statusLine.textContent = `取消失败：${e.message}`;
+          }
+        });
+      }
+      fill(progressHost,
+        h('div', { class: 'row' },
+          h('span', {}, line),
+          h('div', { class: 'spacer' }),
+          cancelBtn,
+          job.error ? h('span', { class: 'badge bad' }, '失败') : null),
+        running
+          ? h('div', { class: 'backup-progress' },
+            h('div', {
+              class: 'backup-progress-bar',
+              style: { width: `${pct}%` },
+            }))
+          : null,
+        job.current ? h('p', { class: 'field-help mono' }, job.current) : null,
+        ...(job.warnings || []).map((warning) =>
+          h('p', { class: 'field-help' }, warning)),
+        job.error
+          ? h('p', { class: 'field-help backup-error' },
+            `${job.error.code}: ${job.error.message}`)
+          : null,
+      );
+      startBtn.disabled = running;
+      if (job.state === 'done') {
+        statusLine.textContent = `备份完成：${job.filename}（${formatBytes(job.size)}）`;
+      } else if (job.state === 'partial') {
+        statusLine.textContent = `备份部分完成：${job.filename}（${formatBytes(job.size)}），请查看警告`;
+      } else if (job.state === 'failed') {
+        statusLine.textContent = `备份失败：${job.error?.message || '未知错误'}`;
+      } else if (job.state === 'cancelled') {
+        statusLine.textContent = '备份已取消，未生成可下载文件。';
+      } else if (job.state === 'interrupted') {
+        statusLine.textContent = '上次备份被服务重启中断；可重新发起备份。';
+      }
+    }
+
+    function renderFiles() {
+      const files = status.files || [];
+      if (!files.length) {
+        fill(filesHost, empty('还没有备份文件。'));
+        return;
+      }
+      fill(filesHost, h('div', { class: 'backup-file-list' },
+        ...files.map((file) => {
+          const verifyBtn = h('button', { class: 'btn btn-sm' }, '离线验证');
+          verifyBtn.addEventListener('click', async () => {
+            verifyBtn.disabled = true;
+            statusLine.textContent = `正在验证 ${file.filename}…`;
+            try {
+              const report = await endpoints.backupVerify(file.filename);
+              const problems = [
+                ...(report.errors || []).map((item) => `${item.code}: ${item.message}`),
+                ...(report.warnings || []),
+              ];
+              statusLine.textContent = `${report.ok ? '验证通过' : '验证失败'}`
+                + ` · 聊天可恢复=${report.chat_restorable ? '是' : '否'}`
+                + ` · 凭据可恢复=${report.credential_restorable ? '是' : '否'}`
+                + (problems.length ? ` · ${problems.slice(0, 2).join('；')}` : '');
+            } catch (e) {
+              statusLine.textContent = `验证失败：${e.message}`;
+            } finally {
+              verifyBtn.disabled = false;
+            }
+          });
+          return h('div', { class: 'backup-file' },
+            h('div', { class: 'backup-file-main' },
+              h('div', { class: 'backup-file-name mono' }, file.filename),
+              h('div', { class: 'field-help' },
+                `${formatDateTime(file.created_at)} · ${formatBytes(file.size)}`
+                + (file.includes_keys ? ' · 含密钥材料' : '')
+                + (file.credential_restorable ? ' · 密钥材料可验证' : '')
+                + (file.include_media === false ? ' · 未含入站媒体' : '')
+                + (file.validation_status === 'verified'
+                  ? ' · 已验证' : ' · 未完整验证')
+                + (file.partial ? ' · 部分完成' : '')),
+            ),
+            verifyBtn,
+            h('a', {
+              class: 'btn btn-sm',
+              href: endpoints.backupDownloadUrl(file.filename),
+              download: file.filename,
+            }, '下载'),
+          );
+        }),
+      ));
+    }
+
+    function renderSummary() {
+      const active = (status.jobs || []).find(
+        (job) => ['running', 'queued', 'cancelling'].includes(job.state),
+      ) || null;
+      startBtn.disabled = !!active;
+      fill(summaryHost, table(['项目', '值'], [
+        h('tr', {}, h('td', {}, '备份目录'),
+          h('td', { class: 'mono' }, status.directory)),
+        h('tr', {}, h('td', {}, '入站媒体'),
+          h('td', {}, status.include_media ? '包含' : '不包含')),
+        h('tr', {}, h('td', {}, '上次备份'),
+          h('td', {}, status.files?.[0]
+            ? `${status.files[0].filename}（${formatBytes(status.files[0].size)}）`
+            : '还没有备份')),
+      ]));
+      renderFiles();
+      renderProgress(active);
+      if (active && !pollTimer) pollJob(active.id);
+    }
+
+    async function refreshStatus() {
+      try {
+        status = await endpoints.backupStatus();
+        renderSummary();
+      } catch (e) {
+        statusLine.textContent = `读取备份状态失败：${e.message}`;
+      }
+    }
+
+    async function pollJob(jobId) {
+      clearPoll();
+      if (!startBtn.isConnected) return;
+      try {
+        const job = await endpoints.backupJob(jobId);
+        renderProgress(job);
+        if (BACKUP_TERMINAL_STATES.has(job.state)) {
+          await refreshStatus();
+          return;
+        }
+      } catch (e) {
+        statusLine.textContent = `读取备份进度失败：${e.message}`;
+      }
+      pollTimer = setTimeout(() => pollJob(jobId), 1000);
+    }
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      statusLine.textContent = '正在启动备份…';
+      try {
+        // 不传 include_media：让后端读取当前配置，避免字段刚保存但面板状态
+        // 还是旧值时用旧覆盖值启动备份。
+        const job = await endpoints.backupStart({});
+        statusLine.textContent = '';
+        renderProgress(job);
+        pollJob(job.id);
+      } catch (e) {
+        startBtn.disabled = false;
+        statusLine.textContent = `启动备份失败：${e.message}`;
+        await refreshStatus();
+      }
+    });
+    refreshBtn.addEventListener('click', refreshStatus);
+
+    nodes.push(card('一键备份用户数据',
+      '备份配置、加密密钥、聊天/RAG 数据库、工作区、表情包、自定义预设和人格。'
+      + '各 SQLite 库分别一致性快照，不是跨库全局事务；备份后的新消息不会包含在内。',
+      h('p', { class: 'field-help backup-warning' },
+        '安全提示：备份包含加密 API 密钥库和 RSA 私钥，拿到它就可能解密模型密钥。'
+        + 'ZIP 本身未加密，0600 只是本机文件权限；请像密码一样保管，'
+        + '不要上传到公共网盘或通过不安全渠道发送。'),
+      summaryHost,
+      h('div', { class: 'row' },
+        h('div', { class: 'spacer' }),
+        refreshBtn,
+        startBtn),
+      statusLine,
+      progressHost,
+      h('h2', { class: 'card-title', style: { marginTop: '16px' } }, '已有备份'),
+      filesHost,
+      h('p', { class: 'field-help' },
+        '恢复为手动操作：停止服务后按压缩包内 README_RESTORE.txt 操作；'
+        + '本页不提供在线一键恢复。'),
+    ));
+    renderSummary();
+  }
+
   function renderUpdateResult(checked) {
     const commits = (checked.commits || []).map((line) => h('li', {}, line));
     const warnings = (checked.warnings || []).map((line) =>
@@ -431,7 +1060,8 @@ export async function render(container, ctx) {
     if (!group) return fill(body, empty('未知分页'));
 
     const nodes = [h('p', { class: 'card-sub' }, group.desc || '')];
-    const visibleFields = group.fields.filter((spec) => !spec.hidden);
+    const visibleFields = group.fields.filter(
+      (spec) => !spec.hidden && !VISION_FIELD_PATHS.has(spec.path));
     if (!visibleFields.length) {
       if (group.fields.length) {
         nodes.push(empty('这个分页的选项在下方专用面板中设置'));
@@ -445,8 +1075,14 @@ export async function render(container, ctx) {
       }
       nodes.push(section);
     }
+    if (key === 'features') {
+      await appendVisionPanel(nodes, group);
+    }
     if (key === 'update') {
       await appendUpdatePanel(nodes);
+    }
+    if (key === 'backup') {
+      await appendBackupPanel(nodes);
     }
     if (key === 'token_budget') {
       try {

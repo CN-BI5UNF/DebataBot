@@ -74,6 +74,30 @@ async def status(request: Request) -> dict[str, Any]:
     return info
 
 
+@router.get("/api/system/build")
+async def build_identity(request: Request) -> dict[str, Any]:
+    """源码身份与已加载身份分开报告，避免把磁盘 HEAD 当成线上版本。"""
+    from core.build_identity import compute_build_identity, loaded_build_identity
+
+    host = get_host(request)
+    source = compute_build_identity(host.project_root)
+    loaded = loaded_build_identity()
+    return {
+        "loaded": loaded,
+        "source": source,
+        "loaded_matches_source": bool(
+            loaded
+            and loaded.get("base_commit") == source.get("base_commit")
+            and loaded.get("source_bundle_sha256")
+            == source.get("source_bundle_sha256")
+        ),
+        "note": (
+            "loaded 是进程启动时捕获的身份；source 是当前磁盘。"
+            "WebUI 静态资源可能已更新而 Python 进程仍旧。"
+        ),
+    }
+
+
 @router.post("/api/system/restart")
 async def restart_runtime(request: Request) -> dict[str, Any]:
     """重启 Runtime（改完需要重启的配置后用）。"""

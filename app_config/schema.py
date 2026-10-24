@@ -1512,6 +1512,19 @@ class UpdateConfig(StrictModel):
     """后台自动检查更新的间隔（天）；失败后 6 小时重试。"""
 
 
+class BackupConfig(StrictModel):
+    """用户数据一键备份设置。
+
+    备份包含加密密钥库、RSA 私钥、聊天数据库和 RAG 数据库；文件权限为 0600。
+    """
+
+    directory: str = ""
+    """备份目录；空表示 ~/Debata_Backups。相对路径按用户主目录解析。"""
+
+    include_media: bool = True
+    """是否包含 workspace/incoming 中的入站图片/视频。"""
+
+
 # ============================================================
 # 根配置
 # ============================================================
@@ -1534,6 +1547,7 @@ class RootConfig(StrictModel):
     behavior: BehaviorConfig = Field(default_factory=BehaviorConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     update: UpdateConfig = Field(default_factory=UpdateConfig)
+    backup: BackupConfig = Field(default_factory=BackupConfig)
 
     @field_validator("version")
     @classmethod

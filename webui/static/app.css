@@ -898,3 +898,27 @@ html[data-theme="dark"] .modal-backdrop { background: rgba(0, 0, 0, .6); }
 .release-message { min-height: 1.2em; margin-top: 8px; }
 .release-message.ok { color: var(--success); }
 .release-message.bad { color: var(--error); }
+
+/* ================= 一键备份 ================= */
+
+.backup-warning { color: var(--warning); }
+.backup-error { color: var(--error); }
+.backup-progress {
+  height: 8px; margin-top: 8px;
+  border-radius: 999px; overflow: hidden;
+  background: var(--bg-hover);
+}
+.backup-progress-bar {
+  height: 100%; width: 0;
+  background: var(--accent);
+  transition: width var(--transition-list) ease-out;
+}
+.backup-file-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.backup-file {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-card);
+  background: var(--bg-primary);
+}
+.backup-file-main { min-width: 0; }
+.backup-file-name { overflow-wrap: anywhere; font-size: var(--fs-small); }

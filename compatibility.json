@@ -1,0 +1,39 @@
+{
+  "manifest_format": 1,
+  "minimum_launcher_protocol": 1,
+  "data_contract_epoch": 0,
+  "migration_set_id": "",
+  "irreversible": false,
+  "planes": {
+    "root_config": {
+      "supported_read": 2,
+      "supported_write": 2,
+      "target_version": 2
+    },
+    "persona_db": {
+      "supported_read": 1,
+      "supported_write": 1,
+      "target_version": 1
+    },
+    "maintenance": {
+      "supported_read": 1,
+      "supported_write": 1,
+      "target_version": 1
+    },
+    "rag": {
+      "supported_read": 0,
+      "supported_write": 0,
+      "target_version": 0
+    },
+    "projection": {
+      "supported_read": 0,
+      "supported_write": 0,
+      "target_version": 0
+    }
+  },
+  "required_features": [],
+  "optional_features": [
+    "releases",
+    "user_backup"
+  ]
+}

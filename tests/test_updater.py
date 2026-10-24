@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sqlite3
 import stat
 import subprocess
 import time
@@ -19,6 +20,8 @@ from core.updater import (
     mirror_presets,
     resolve_update_repo_url,
 )
+
+COMPAT_MANIFEST = (Path(__file__).resolve().parents[1] / "compatibility.json").read_text(encoding="utf-8")
 
 
 def _git(
@@ -42,7 +45,25 @@ def _git(
     return result.stdout
 
 
-def _seed_repo(tmp_path: Path, *, dependency_change: bool = False):
+def _seed_data_contract(data: Path) -> None:
+    """满足 compatibility.json 基线的根配置/persona/maintenance 版本。"""
+    (data / "config.yaml").write_text("version: 2\n", encoding="utf-8")
+    memory = data / "memory" / "test"
+    memory.mkdir(parents=True)
+    with sqlite3.connect(memory / "chat.db") as conn:
+        conn.execute("PRAGMA user_version=1")
+        conn.execute("CREATE TABLE history_records (id INTEGER PRIMARY KEY)")
+    with sqlite3.connect(data / "maintenance.sqlite3") as conn:
+        conn.execute("PRAGMA user_version=1")
+
+
+def _seed_repo(
+    tmp_path: Path,
+    *,
+    dependency_change: bool = False,
+    compat_manifest: bool = True,
+    compat_override: str | None = None,
+):
     seed = tmp_path / "seed"
     remote = tmp_path / "remote.git"
     work = tmp_path / "work"
@@ -70,8 +91,16 @@ def _seed_repo(tmp_path: Path, *, dependency_change: bool = False):
     _git(work, "commit", "-m", "feature")
     data.mkdir()
     (data / "user.txt").write_text("do-not-touch\n", encoding="utf-8")
+    # 2.6：无 config 但有未知持久物是 recovery_required，不再是可更新状态；
+    # 同时更新门禁要求 persona/maintenance 达到基线版本。
+    _seed_data_contract(data)
 
     (seed / "app.py").write_text("new\n", encoding="utf-8")
+    if compat_manifest:
+        (seed / "compatibility.json").write_text(
+            compat_override if compat_override is not None else COMPAT_MANIFEST,
+            encoding="utf-8",
+        )
     if dependency_change:
         (seed / "pyproject.toml").write_text("[project]\nname='new'\n", encoding="utf-8")
     _git(seed, "add", ".")
@@ -105,9 +134,11 @@ def _seed_release_repo(tmp_path: Path):
     _git(work, "config", "user.name", "Test")
     data.mkdir()
     (data / "user.txt").write_text("do-not-touch\n", encoding="utf-8")
+    _seed_data_contract(data)
 
     def release(tag: str, title: str, body: str, content: str, date: str) -> None:
         (seed / "app.py").write_text(content, encoding="utf-8")
+        (seed / "compatibility.json").write_text(COMPAT_MANIFEST, encoding="utf-8")
         notes_dir = seed / "releases"
         notes_dir.mkdir(exist_ok=True)
         (notes_dir / f"{tag}.md").write_text(
@@ -548,3 +579,63 @@ async def test_apply_switches_back_when_local_branch_already_at_target(tmp_path)
     assert _git(work, "branch", "--show-current").strip() == "refactor/main"
     assert not (work / "feature.txt").exists()
     assert _git(work, "rev-parse", "feature/after-release").strip()
+
+
+@pytest.mark.asyncio
+async def test_check_blocks_legacy_target_without_compat_manifest(tmp_path):
+    work, data, remote = _seed_repo(tmp_path, compat_manifest=False)
+    service = UpdateService(
+        work, data, mirror=f"file://{remote}", allow_local_remote=True
+    )
+    checked = await service.check()
+    assert checked["can_apply"] is False
+    assert checked["reason"] == "legacy_unknown"
+    assert checked["compat"]["code"] == "legacy_unknown"
+    assert checked["compat_manifest_hash"] == ""
+
+
+@pytest.mark.asyncio
+async def test_check_blocks_migration_required_target(tmp_path):
+    manifest = json.loads(COMPAT_MANIFEST)
+    manifest["planes"]["root_config"] = {
+        "supported_read": 3,
+        "supported_write": 3,
+        "target_version": 3,
+    }
+    work, data, remote = _seed_repo(
+        tmp_path,
+        compat_override=json.dumps(manifest, ensure_ascii=False),
+    )
+    service = UpdateService(
+        work, data, mirror=f"file://{remote}", allow_local_remote=True
+    )
+    checked = await service.check()
+    assert checked["can_apply"] is False
+    assert checked["reason"] == "migration_required"
+    assert checked["compat"]["compatible"] is False
+
+
+@pytest.mark.asyncio
+async def test_apply_rechecks_data_state_after_plan(tmp_path):
+    work, data, remote = _seed_repo(tmp_path)
+    service = UpdateService(
+        work, data, mirror=f"file://{remote}", allow_local_remote=True
+    )
+    checked = await service.check()
+    assert checked["can_apply"] is True
+    (data / "compatibility_state.json").write_text(
+        json.dumps({
+            "data_contract_epoch": 1,
+            "migration_set_id": "future",
+            "features": [],
+            "planes": {},
+        }),
+        encoding="utf-8",
+    )
+    with pytest.raises(UpdateError) as exc:
+        await service.apply(
+            confirmation_token=checked["confirmation_token"],
+            target_sha=checked["target_commit"],
+            confirm_branch_switch=True,
+        )
+    assert exc.value.code == "data_state_changed"

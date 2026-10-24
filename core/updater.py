@@ -28,6 +28,17 @@ import time
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from core.compat import (
+    MANIFEST_FILENAME,
+    CompatError,
+    evaluate,
+    invalid_result,
+    legacy_result,
+    parse_manifest,
+    public_compat,
+    read_local_state,
+)
+
 logger = logging.getLogger(__name__)
 
 UPDATE_REPO_URL = "https://github.com/CN-BI5UNF/DebataBot.git"
@@ -185,7 +196,7 @@ class UpdateService:
         self._state_io_lock = asyncio.Lock()
         self._plan: dict | None = None
         self._restart_tasks: set[asyncio.Task] = set()
-        self._releases_cache: tuple[float, str, list[dict]] | None = None
+        self._releases_cache: tuple[float, str, str, list[dict]] | None = None
 
     # ============================================================
     # 远程 / 状态
@@ -407,10 +418,34 @@ class UpdateService:
                 "releases": releases,
             }
 
+    async def _local_compat_state(self):
+        return await asyncio.to_thread(read_local_state, self.data_dir)
+
+    async def _compat_for_target(self, target_sha: str, local_state=None) -> dict:
+        """读取目标提交的 compatibility.json 并离线评估；不执行目标代码。"""
+        local = local_state if local_state is not None else await self._local_compat_state()
+        try:
+            raw = await self._git(
+                "show", f"{target_sha}:{MANIFEST_FILENAME}"
+            )
+        except UpdateError:
+            return legacy_result(local)
+        try:
+            manifest = parse_manifest(raw)
+        except CompatError as exc:
+            return invalid_result(exc, local)
+        return evaluate(manifest, local)
+
     async def _fetch_releases_unlocked(
         self, remote_url: str, *, force: bool = False
     ) -> list[dict]:
         current_sha = (await self._git("rev-parse", "HEAD")).strip()
+        local_state = await self._local_compat_state()
+        state_key = hashlib.sha256(
+            json.dumps(
+                local_state.snapshot(), ensure_ascii=False, sort_keys=True
+            ).encode("utf-8")
+        ).hexdigest()
         cached = self._releases_cache
         now = time.time()
         if (
@@ -418,8 +453,9 @@ class UpdateService:
             and cached is not None
             and cached[0] > now
             and cached[1] == current_sha
+            and cached[2] == state_key
         ):
-            return [dict(item) for item in cached[2]]
+            return [dict(item) for item in cached[3]]
 
         await self._git(
             "fetch",
@@ -458,6 +494,9 @@ class UpdateService:
                     ).strip()
                 except UpdateError:
                     created = ""
+            compat_result = await self._compat_for_target(
+                commit.strip(), local_state
+            )
             releases.append(
                 {
                     "tag": tag,
@@ -468,6 +507,7 @@ class UpdateService:
                     "notes": notes,
                     "relation": await self._relation(current_sha, commit.strip()),
                     "is_current": commit.strip() == current_sha,
+                    "compat": public_compat(compat_result),
                 }
             )
             if len(releases) >= MAX_RELEASES:
@@ -476,6 +516,7 @@ class UpdateService:
         self._releases_cache = (
             now + RELEASES_CACHE_SECONDS,
             current_sha,
+            state_key,
             [dict(item) for item in releases],
         )
         return releases
@@ -564,6 +605,10 @@ class UpdateService:
             dependency_changes = [
                 line for line in dep_text.splitlines() if line.strip()
             ]
+            local_state = await self._local_compat_state()
+            compat_result = await self._compat_for_target(
+                target_sha, local_state
+            )
             can_apply = True
             reason = relation
             if target_sha == current_sha:
@@ -576,6 +621,9 @@ class UpdateService:
                 # 默认检查不主动提示回退到旧版本；用户需要显式选择版本。
                 can_apply = False
                 reason = "up_to_date"
+            elif not compat_result["compatible"]:
+                can_apply = False
+                reason = compat_result["code"]
 
             commits_text = await self._git(
                 "log",
@@ -605,6 +653,8 @@ class UpdateService:
                 )
             if reason == "up_to_date":
                 warnings.append("当前已经是最新版本；没有可应用的更新。")
+            if not compat_result["compatible"]:
+                warnings.append(compat_result["message"])
             if self.mirror:
                 warnings.append(
                     "镜像站会提供将要执行的代码；只使用你信任的 https 镜像。"
@@ -622,14 +672,19 @@ class UpdateService:
                 "kind": plan_kind,
                 "old_head": status["current_commit"],
                 "mirror": self.mirror,
+                "target_full_sha": target_sha,
+                "compat_manifest_hash": compat_result.get("manifest_hash", ""),
+                "compat_code": compat_result.get("code", ""),
+                "data_snapshot": compat_result.get("data_snapshot", {}),
             }
             available_release = None
             if (
                 target_tag is None
                 and selected is not None
-                # 自动提醒只针对可向前推进的 Release；另一条历史/回退版本
-                # 仍可从版本列表手动选择，但不主动弹绿标。
+                # 自动提醒只针对可向前推进且通过兼容门禁的 Release；
+                # 另一条历史/回退版本仍可从版本列表手动选择，但不主动弹绿标。
                 and relation == "newer"
+                and compat_result["compatible"]
             ):
                 available_release = {
                     "tag": selected["tag"],
@@ -661,6 +716,10 @@ class UpdateService:
                 "available_release": available_release,
                 "latest_release": _release_public(releases[0]) if releases else None,
                 "releases_count": len(releases),
+                "compat": compat_result,
+                "compat_code": compat_result.get("code", ""),
+                "compat_message": compat_result.get("message", ""),
+                "compat_manifest_hash": compat_result.get("manifest_hash", ""),
                 "mode": mode,
             }
             if target_tag is None:
@@ -726,6 +785,29 @@ class UpdateService:
                 raise UpdateError(
                     "dependency_change_requires_install",
                     "目标版本修改了依赖文件；请手动安装依赖后再更新",
+                )
+
+            # 计划创建后本地数据可能已经变化；在切换源码前重新做兼容预检。
+            local_state = await self._local_compat_state()
+            compat_result = await self._compat_for_target(
+                target_sha, local_state
+            )
+            planned_snapshot = plan.get("data_snapshot") or {}
+            if planned_snapshot and planned_snapshot != compat_result.get("data_snapshot"):
+                raise UpdateError(
+                    "data_state_changed",
+                    "检查后本地数据版本/迁移状态发生变化，请重新检查更新",
+                )
+            if not compat_result.get("compatible"):
+                raise UpdateError(
+                    compat_result.get("code", "incompatible"),
+                    compat_result.get("message", "目标版本与当前数据不兼容"),
+                )
+            expected_hash = plan.get("compat_manifest_hash") or ""
+            if expected_hash and compat_result.get("manifest_hash") != expected_hash:
+                raise UpdateError(
+                    "compat_manifest_changed",
+                    "目标兼容声明在计划创建后发生变化，请重新检查",
                 )
 
             backup_ref = (

@@ -42,6 +42,13 @@ gh release create snapshot-20261024 \
 git remote add bot https://github.com/CN-BI5UNF/DebataBot.git
 ```
 
+## 兼容声明
+
+每个发布 tag 必须包含根目录 `compatibility.json`（与 `releases/<tag>.md` 一起提交）。
+更新器只读取该纯 JSON，不执行目标代码；`check`/`apply` 会比较本地 config/DB
+版本、data contract epoch、required features 和 manifest hash。没有 manifest 的
+旧 tag 可以展示，但不能自动应用。详见 `docs/compatibility.md`。
+
 ## App 侧行为
 
 - 设置 →「更新」列出远端 tag（按 tag 时间倒序），可展开/收起日志。

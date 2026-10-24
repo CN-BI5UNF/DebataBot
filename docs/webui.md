@@ -287,6 +287,8 @@ Anthropic 映射为 thinking budget；其他未声明支持的供应商只保存
 的更新日志来自仓库内 `releases/<tag>.md`，可展开/收起；可以选择更新、回退或
 切换到任意版本。应用前必须检查并确认，创建 `refs/backups/update/*` 备份，
 只切代码工作树，不读取或覆盖用户数据目录；依赖文件变化时拒绝自动应用。
+版本还会读取 `compatibility.json`：旧 tag 无声明、需要数据迁移或本地数据版本
+超出目标支持范围时，显示“兼容性未通过”并禁用自动应用按钮。
 
 镜像提供 GitHub 官方、gh-proxy.com、ghfast.top、ghproxy.net 预设，以及自定义
 https 输入。更新器只接受同一 `CN-BI5UNF/DebataBot` 仓库，拒绝 http、账号密码、

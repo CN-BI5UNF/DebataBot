@@ -27,6 +27,19 @@ const REASON_TEXT = {
   git_failed: 'git 拉取失败',
   release_not_found: '远端找不到这个版本',
   rollback_not_confirmed: '回退/切换操作需要确认',
+  legacy_unknown: '目标版本没有兼容声明，不能自动应用',
+  migration_required: '目标版本需要数据迁移，自动更新已阻止',
+  downgrade_required: '目标版本不能安全读取当前数据版本',
+  data_contract_too_new: '目标版本不认识当前较新的数据契约',
+  unsupported_data_contract: '目标版本不支持当前数据版本',
+  feature_missing: '目标版本需要本地尚不支持的数据能力',
+  data_unreadable: '本地数据版本不可读',
+  launcher_protocol_too_old: '启动保护协议过旧',
+  data_state_changed: '检查后本地数据已变化，请重新检查',
+  compat_manifest_changed: '目标兼容声明已变化，请重新检查',
+  manifest_invalid: '目标兼容声明无效',
+  unsupported_manifest_format: '目标兼容声明格式不受支持',
+  unknown_plane: '目标兼容声明包含未知数据平面',
 };
 
 function pad(value) {
@@ -94,18 +107,27 @@ function releaseCard(release, { busy, onApply }) {
   const actionLabel = release.relation === 'older'
     ? '回退到此版本'
     : (release.relation === 'diverged' ? '切换到此版本' : '更新到此版本');
+  const compat = release.compat || {};
+  // 当前正在使用的版本即使没有 manifest，也不在列表里报“不可应用”。
+  const blocked = !release.is_current && compat.compatible === false;
   const action = release.is_current
     ? h('span', { class: 'badge ok' }, '当前版本')
     : h('button', {
       class: 'btn btn-sm btn-primary',
-      disabled: busy,
+      disabled: busy || blocked,
+      title: blocked ? (compat.message || '目标版本与当前数据不兼容') : '',
       onclick: () => onApply(release),
-    }, actionLabel);
+    }, blocked ? '不可自动应用' : actionLabel);
   return h('article', { class: 'release-item' },
     h('div', { class: 'release-head' },
       h('div', { class: 'release-title-row' },
         h('strong', { class: 'release-title' }, title),
-        relationBadge(release),
+        blocked
+          ? h('span', {
+            class: 'badge warn',
+            title: compat.message || '目标版本与当前数据不兼容',
+          }, '兼容性未通过')
+          : relationBadge(release),
         release.is_current ? h('span', { class: 'badge' }, '正在使用') : null,
       ),
       h('div', { class: 'release-meta' },
@@ -209,6 +231,13 @@ export async function renderReleaseList(
 
   async function applyRelease(release) {
     if (busy) return;
+    if (release.compat && release.compat.compatible === false) {
+      setMessage(
+        `不可自动应用：${release.compat.message || release.compat.code}`,
+        'bad',
+      );
+      return;
+    }
     busy = true;
     setMessage('正在检查目标版本…');
     renderList();

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from . import (
+    backup,
     chats,
     context,
     emoji,
@@ -50,6 +51,7 @@ ALL_ROUTERS = [
     storage.router,
     context.router,
     update.router,
+    backup.router,
 ]
 
 __all__ = ["ALL_ROUTERS"]
