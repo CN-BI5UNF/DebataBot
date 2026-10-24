@@ -291,6 +291,10 @@ async def test_apply_creates_local_target_when_only_remote_tracking_exists(tmp_p
     assert (data / "user.txt").read_text(encoding="utf-8") == "do-not-touch\n"
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX 进程组/管道语义；Windows 没有 killpg",
+)
 @pytest.mark.asyncio
 async def test_git_timeout_kills_helpers_holding_pipes(tmp_path, monkeypatch):
     """git 超时要杀掉整个进程组，不能被子进程管道拖住。"""
@@ -392,7 +396,9 @@ async def test_auto_check_nine_days_state_and_suppression(tmp_path):
     assert state["next_check_at"] - state["last_check_at"] == pytest.approx(
         9 * 86400, abs=5
     )
-    assert stat.S_IMODE(os.stat(state_path).st_mode) == 0o600
+    if os.name != "nt":
+        # Windows 的 chmod 只表达只读位，不能断言完整 POSIX mode。
+        assert stat.S_IMODE(os.stat(state_path).st_mode) == 0o600
 
     skipped = await service.auto_check_if_due(now=state["last_check_at"] + 3600)
     assert skipped["skipped"] is True

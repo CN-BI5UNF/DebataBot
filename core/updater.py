@@ -871,18 +871,40 @@ class UpdateService:
         *args: str,
         timeout: float | None = None,
     ) -> str:
+        windows = os.name == "nt"
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
-        env["GIT_ASKPASS"] = "/bin/false"
+        if not windows:
+            env["GIT_ASKPASS"] = "/bin/false"
         env["LC_ALL"] = "C"
         command = [
             "git",
             "-C",
             str(self.project_root),
             "-c",
-            "core.hooksPath=/dev/null",
+            f"core.hooksPath={os.devnull}",
             *args,
         ]
+
+        def kill_process() -> None:
+            if windows:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except (OSError, subprocess.SubprocessError):
+                    try:
+                        proc.kill()
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                return
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, AttributeError):
+                pass
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 *command,
@@ -891,7 +913,7 @@ class UpdateService:
                 env=env,
                 # git 会派生 git-remote-https 等子进程；只 kill 父进程时子进程
                 # 仍持有管道，communicate() 可能永久挂住并卡死更新锁。
-                start_new_session=True,
+                start_new_session=not windows,
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -899,10 +921,7 @@ class UpdateService:
                     timeout=float(timeout or self.timeout_seconds),
                 )
             except asyncio.TimeoutError:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    pass
+                kill_process()
                 try:
                     await asyncio.wait_for(proc.communicate(), timeout=5.0)
                 except asyncio.TimeoutError:
@@ -914,10 +933,7 @@ class UpdateService:
             except asyncio.CancelledError:
                 # 服务关闭/任务取消时也要回收 git 子进程，避免 watchdog 取消后
                 # 留下仍在 fetch 的 git-remote-https。
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
-                    pass
+                kill_process()
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=5.0)
                 except (asyncio.TimeoutError, asyncio.CancelledError):
