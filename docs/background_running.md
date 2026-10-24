@@ -46,16 +46,16 @@ debata log        # 日志
 ## 0. 先确认能前台跑起来
 
 ```bash
-cd ~/Debata_Agent
+cd ~/DebataBot
 uv sync
-uv run main.py
+uv run python main.py
 ```
 
 浏览器打开终端打印的地址，完成首次配置后按 `Ctrl+C` 退出。
 如果还没有配置，也可以先跑 CLI 向导：
 
 ```bash
-uv run main.py --no-gui --setup
+uv run python main.py --no-gui --setup
 ```
 
 后台服务建议直接调用项目虚拟环境，不依赖 shell 的 PATH：
@@ -74,7 +74,7 @@ uv run main.py --no-gui --setup
 ### 一次性安装
 
 ```bash
-cd ~/Debata_Agent
+cd ~/DebataBot
 bash scripts/install_systemd_user.sh
 ```
 
@@ -150,7 +150,7 @@ cat ~/.local/share/Debata_Agent/instances/default/webui_token.txt
 mkdir -p ~/.config/systemd/user
 cp scripts/systemd/debata-agent.user.service \
    ~/.config/systemd/user/debata-agent.service
-# 如果项目不在 ~/Debata_Agent，先编辑 unit 里的 WorkingDirectory/ExecStart
+# 如果项目不在 ~/DebataBot，先编辑 unit 里的 WorkingDirectory/ExecStart
 systemctl --user daemon-reload
 systemctl --user enable --now debata-agent
 sudo loginctl enable-linger "$USER"
@@ -164,13 +164,13 @@ sudo loginctl enable-linger "$USER"
 
 ```bash
 sudo useradd --system --create-home --shell /usr/sbin/nologin debata
-sudo mkdir -p /opt/Debata_Agent
-sudo chown -R debata:debata /opt/Debata_Agent
+sudo mkdir -p /opt/DebataBot
+sudo chown -R debata:debata /opt/DebataBot
 
 # 用 debata 用户完成部署：
 sudo -u debata -H bash
-cd /opt/Debata_Agent
-git clone https://github.com/binglang001/Debata_Agent.git .
+cd /opt/DebataBot
+git clone https://github.com/CN-BI5UNF/DebataBot.git .
 uv sync
 exit
 
@@ -206,10 +206,10 @@ Wants=napcat.service
 适合调试、短时间离开。SSH 断开后进程仍在。
 
 ```bash
-cd ~/Debata_Agent
+cd ~/DebataBot
 tmux new -s debata
 # 在 tmux 里运行：
-uv run main.py
+uv run python main.py
 # 或：.venv/bin/python main.py
 ```
 
@@ -226,9 +226,9 @@ tmux kill-session -t debata
 ## 4. 临时挂机：screen
 
 ```bash
-cd ~/Debata_Agent
+cd ~/DebataBot
 screen -S debata
-uv run main.py
+uv run python main.py
 ```
 
 分离：按 `Ctrl+A`，松开后按 `D`。
@@ -244,7 +244,7 @@ screen -S debata -X quit
 ## 5. nohup（最简单，不推荐长期）
 
 ```bash
-cd ~/Debata_Agent
+cd ~/DebataBot
 mkdir -p logs
 nohup .venv/bin/python main.py > logs/debata-console.log 2>&1 &
 echo $! > logs/debata.pid
@@ -268,7 +268,7 @@ kill "$(cat logs/debata.pid)"
 ## 6. 更新升级
 
 ```bash
-cd ~/Debata_Agent
+cd ~/DebataBot
 git pull --ff-only
 uv sync
 systemctl --user restart debata-agent
@@ -351,8 +351,8 @@ Debata 只负责作为客户端连接 NapCat，不会替你启动 NapCat。
 先确认 NapCat 的 WebSocket 地址/端口/token 与配置一致：
 
 ```bash
-uv run main.py --napcat          # 只重新配置 NapCat
-uv run main.py --test-adapter    # 连接测试 5 秒后退出
+uv run python main.py --napcat          # 只重新配置 NapCat
+uv run python main.py --test-adapter    # 连接测试 5 秒后退出
 ```
 
 ### 看不到 WebUI 令牌

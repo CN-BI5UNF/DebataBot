@@ -36,13 +36,13 @@ Debata 不是 ChatGPT 套壳，也不是「能多就多」的 AI 全家桶。她
 ## PR 流程
 
 1. **先开 Issue 或在已有 Issue 上 +1**。除非是 typo 修复或文案微调，不要默写大改动 PR — 容易白做。
-2. **fork → 拉 develop 分支**。`main` 只接 release 提交；日常开发都在 `develop`。
+2. **fork → 从 `main` 创建功能分支**。`main` 是默认发布线；日常开发放在功能分支，`refactor/main` 只作为应用内更新跟踪分支，不接收普通 PR。
 3. **写代码 + 测试**。
    - 改了行为：补回归测试
    - 加了新功能：先写用例测试，再实现到通过
    - 不要直接 commit 到 `main`
 4. **安装测试依赖并跑全部测试**：`uv sync --extra dev` 后执行 `uv run python -m pytest tests/ -q --ignore=tests/test_kv_cache_real.py`，确保全过（与 CI 的 `.github/workflows/test.yml` 一致）。
-5. **提 PR 到 `develop` 分支**。
+5. **提 PR 到 `main` 分支**。
    - PR 标题：动词开头，一句话讲明白做了什么（如「fix: 修白名单 verify 模式漏判群消息」）
    - PR 描述写：动机 + 变更点 + 自测清单
 6. **绝对不要写 `Co-Authored-By: Claude <...>` 或类似 AI 协作署名**。所有 commit 只署人类作者。

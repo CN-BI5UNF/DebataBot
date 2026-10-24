@@ -23,6 +23,6 @@ assignees: []
 ### 环境信息
 
 - OS: [Windows / Linux / macOS / 版本]
-- Python 版本: [3.11 / 3.12 / ...]
-- Debata 版本: [v0.9.0 / main / develop / commit hash]
+- Python 版本: [3.10 / 3.11 / 3.12 / ...]
+- Debata 版本: [v0.9.0 / main / refactor/main / commit hash]
 - 使用的 LLM 平台: [DeepSeek / OpenAI / Anthropic / ...]

@@ -15,24 +15,24 @@ NapCat 启动后，记下它的 WebSocket 地址和 token（如果设了的话�
 ## 2.安装 Debata
 
 ```bash
-git clone https://github.com/binglang001/Debata_Agent.git
-cd Debata_Agent
+git clone https://github.com/CN-BI5UNF/DebataBot.git
+cd DebataBot
 
-python -m pip install uv      # 没装 uv 的话先装
+# 没装 uv 的话先安装：https://docs.astral.sh/uv/getting-started/installation/
 uv sync
-uv run main.py
+uv run python main.py
 ```
 
 启动后终端会打印访问地址和令牌，浏览器打开即可。首次启动检测不到配置会自动进入配置向导，
-以后启动直接进仪表盘。纯命令行环境跑 `uv run main.py --no-gui`，不启动 WebUI。
+以后启动直接进仪表盘。纯命令行环境跑 `uv run python main.py --no-gui`，不启动 WebUI。
 后台长期运行见 [后台运行指南](background_running.md)。
 
-环境要求：Python 3.11+，一个 LLM API 密钥（推荐 [DeepSeek](https://platform.deepseek.com)）。
+环境要求：Python 3.10+（CI 覆盖 3.11/3.12），一个 LLM API 密钥（推荐 [DeepSeek](https://platform.deepseek.com)）。
 
 Linux 服务器或 SSH 环境可以直接跑纯 CLI 向导：
 
 ```bash
-uv run main.py --no-gui --setup
+uv run python main.py --no-gui --setup
 ```
 
 CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapCat 和人格等主要配置。密钥优先保存到系统 keyring；如果 Linux 没有可用 Secret Service，会自动退回数据目录下的 `rsa_private.pem` 本地私钥文件（默认 `~/.local/share/Debata_Agent/instances/default/rsa_private.pem`），并使用 0600 权限保护。
@@ -45,23 +45,23 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 第一步：选路径
 
-![欢迎页](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_welcome.png)
+![欢迎页](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_welcome.png)
 
 推荐路径用 DeepSeek 主模型快速上手。想逐个调校每个参数选自定义。
 
 ### 第二步：主模型
 
-![主模型](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_model_quick.png)
+![主模型](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_model_quick.png)
 
 填入 [DeepSeek API 密钥](https://platform.deepseek.com/api_keys)，点「测试连接」验证。推荐先充 5 块钱，够测很久。
 
 自定义路径可以选其他 provider，调 temperature、top_p 等参数。
 
-![自定义模型](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_model_custom.png)
+![自定义模型](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_model_custom.png)
 
 ### 第三步：可选功能
 
-![功能开关](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_features.png)
+![功能开关](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_features.png)
 
 4 个可选功能，按需打开。以后在设置页随时能改：
 
@@ -72,7 +72,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 第四步：记忆方式
 
-![记忆方式](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_embedding.png)
+![记忆方式](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_embedding.png)
 
 选 [长期记忆](feature_guides/embedding_rag.md) 的工作方式：
 
@@ -81,13 +81,13 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 第五步：接 NapCat
 
-![NapCat](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_adapter.png)
+![NapCat](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_adapter.png)
 
 在NapCat创建Server后（注意：NapCat填Server意味着程序要选择Client模式），填入 NapCat 的 WebSocket 地址和 token。白名单建议选「管理员审核」——陌生人加好友时你手动确认，避免意外费用。
 
 ### 第六步：选角色
 
-![人格选择](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_persona.png)
+![人格选择](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_persona.png)
 
 三种方式：
 
@@ -101,7 +101,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 确认 & 启动
 
-![确认](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/wizard_summary.png)
+![确认](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_summary.png)
 
 检查配置没问题，点「启动」。以后在设置页随时能改。
 
@@ -109,7 +109,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ## 4.仪表盘
 
-![总览](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/dashboard_overview.png)
+![总览](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/dashboard_overview.png)
 
 左边 7 个导航：
 
@@ -175,7 +175,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 改动需要重启 Runtime 才生效，页面会给出「立即重启」提示。
 
-![设置模型](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/dashboard_settings_model.png)
+![设置模型](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/dashboard_settings_model.png)
 
 设置页 → 模型 → 改 Provider 密钥或 Agent 模型。点「测试连接」确认可用。
 
@@ -185,7 +185,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 调主题
 
-![外观](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/dashboard_appearance.png)
+![外观](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/dashboard_appearance.png)
 
 设置页 → 软件行为 → 外观 → 深浅主题即时切换。
 
@@ -208,7 +208,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 调试完成后，不要让 Debata 依赖 SSH 窗口。一次性安装后，用短命令管理：
 
 ```bash
-cd ~/Debata_Agent
+cd ~/DebataBot
 bash scripts/install_systemd_user.sh   # 一次性安装并启动
 
 debata start       # 启动
