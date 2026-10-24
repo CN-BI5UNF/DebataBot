@@ -37,6 +37,8 @@ def _git(
         ["git", "-C", str(cwd), *args],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         env=run_env,
     )

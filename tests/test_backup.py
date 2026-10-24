@@ -480,7 +480,9 @@ async def test_cancel_stops_before_publish_and_cleans_temp(tmp_path, monkeypatch
     assert finished["error"]["code"] == "backup_cancelled"
     assert not list((tmp_path / "backups").glob("Debata_Backup_*.zip"))
     assert not list((tmp_path / "backups").glob(".backup-work-*"))
-    persisted = json.loads((paths.DATA_DIR / "backup_jobs.json").read_text())
+    persisted = json.loads(
+        (paths.DATA_DIR / "backup_jobs.json").read_text(encoding="utf-8")
+    )
     persisted_job = next(item for item in persisted["jobs"] if item["id"] == job["id"])
     assert persisted_job["state"] == "cancelled"
 

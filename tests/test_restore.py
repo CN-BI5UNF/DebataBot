@@ -167,7 +167,7 @@ def test_drill_refuses_nonempty_destination(backup_path, tmp_path):
     with pytest.raises(RestoreError) as exc:
         drill_backup(backup_path, destination=destination)
     assert exc.value.code == "destination_not_empty"
-    assert (destination / "keep.txt").read_text() == "do not overwrite"
+    assert (destination / "keep.txt").read_text(encoding="utf-8") == "do not overwrite"
 
 
 def test_drill_rejects_protected_overlap(backup_path, tmp_path):
