@@ -2,6 +2,33 @@
 
 本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [snapshot-20261025] — 开发快照：备份/兼容/账本与视觉设置 UI
+
+开发快照，不发布正式版本号。详见 `releases/snapshot-20261025.md`。
+
+### Added
+
+- 视觉设置 UI：原生看图与独立 `describe_image` 分成独立卡片；独立视觉关闭时折叠，开启后复用已有 provider，只有自定义端点/高级覆盖才要求 base_url 和 API Key。
+- `PATCH /api/settings/vision`：一次校验、一次落盘，自定义端点密钥写入 `vision_key`。
+- 严格迁移快照、离线 verify/drill、bootstrap permit、受信 launcher、build identity、维护控制器和兼容门禁。
+- 隔离 D01 v1→v2（M001）稳定账本、ledger-aware 快照、恢复重放计划和墓碑重放。
+
+### Changed
+
+- 默认分支统一为 `main`；`refactor/main` 作为应用内更新跟踪分支；README/README_EN、贡献指南、CI 和文档链接同步。
+- 更新器 git 超时处理跨平台：Windows 清理进程树，POSIX-only 测试在 Windows 跳过。
+- 视觉字段不再由通用设置表单平铺渲染，避免把“视觉 provider / base_url”误认为主模型看图的前置条件。
+
+### Verification
+
+- 本地 Linux/aarch64、Python 3.12 全量测试 2182 passed；ruff、diff check、node check 通过。
+- 视觉设置 DOM smoke test 通过；远端 CI 在 Ubuntu / Windows × Python 3.11 / 3.12 上运行。
+
+### Known limitations
+
+- 开发快照，未安装 launcher、未改 systemd、未重启服务；未执行生产迁移/恢复。
+- M00 真实 writer、权威 inventory、R01/P01/S01–S03 等仍未完成。
+
 ## [Unreleased] — 2.6 L00/B00/M00/B02-E0/D01：统一门禁与账本基础
 
 ### Added
