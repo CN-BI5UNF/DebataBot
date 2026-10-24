@@ -28,7 +28,7 @@ EdgeTTS 是默认推荐项：
 8. 重新进入刚刚的页面<https://www.xfyun.cn/free?target=price>，按照前述步骤点击“在线语音合成”下方的“立即领取”。
 9. 进入购买页面，点击”选择应用“输入框右侧的加号，如图填写后点击“提交”。
 
-![创建应用](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/guide_tts_create_app.png)
+![创建应用](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/guide_tts_create_app.png)
 
 10. 滚动到页面底部，点击”确认下单“。
 11. 点击左侧“语音合成”下拉列表中“在线语音合成”，查看右侧 `AppID`、`APIKey`、`APISecret`。

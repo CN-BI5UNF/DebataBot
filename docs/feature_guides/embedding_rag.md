@@ -6,7 +6,7 @@ Debata 有两种记忆模式。文件模式零配置直接跑，RAG 模式需要
 
 设置页 → 记忆 →「长期记忆模式」卡片。
 
-![记忆模式](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/guide_rag_mode.png)
+![记忆模式](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/guide_rag_mode.png)
 
 **文件模式**：AI 主动调工具保存记忆，写 `important.json`。单人聊天够用，完全透明。
 
@@ -20,12 +20,12 @@ Debata 有两种记忆模式。文件模式零配置直接跑，RAG 模式需要
 
 点击后，按照图示推荐配置来配置RAG提供商（推荐采用火山方舟）。
 
-![添加提供商](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/guide_rag_add_provider.png)
+![添加提供商](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/guide_rag_add_provider.png)
 
 设置页 → 记忆。
 点击“编辑 Embedding 配置”，选 API 服务，填 provider + 模型 ID + Key，若上一步采用火山方舟，则推荐如图配置。
 
-![Embedding API 配置](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/guide_rag_api.png)
+![Embedding API 配置](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/guide_rag_api.png)
 
 推荐：
 
@@ -38,7 +38,7 @@ DeepSeek 主要是聊天平台，不建议拿它做 Embedding。火山的 `douba
 
 ### 本地模式
 
-![Embedding 本地配置](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/guide_rag_local.png)
+![Embedding 本地配置](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/guide_rag_local.png)
 
 不需要网络。在模型管理页找到对应的 embedding 插件，按安装指引下载模型文件，拖到 `data/models/` 目录。
 

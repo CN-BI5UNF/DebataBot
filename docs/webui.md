@@ -6,8 +6,8 @@ Debata_Agent 的界面是浏览器控制台，取代了早期的 PySide6 桌面�
 ## 启动
 
 ```bash
-uv run main.py                 # 默认 0.0.0.0:8000
-uv run webui_server.py         # 等价入口，参数相同
+uv run python main.py          # 默认 0.0.0.0:8000
+uv run python webui_server.py  # 等价入口，参数相同
 ```
 
 | 参数 | 说明 |

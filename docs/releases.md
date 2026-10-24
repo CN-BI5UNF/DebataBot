@@ -5,8 +5,9 @@
 
 ## 发布仓库
 
-- 仓库：`CN-BI5UNF/DebataBot`（当前私有，后续可公开）。
-- 更新目标分支：`refactor/main`。
+- 仓库：`CN-BI5UNF/DebataBot`（公开）。
+- 默认分支：`main`。
+- 更新目标分支：`refactor/main`（与 `main` 同步）。
 - 用户数据目录不在代码仓库内；更新只切换源码。
 
 ## 一个版本需要什么
@@ -26,7 +27,7 @@ git commit -m "docs: release snapshot-20261024"
 
 # 2) 打 tag 并推送（DebataBot 是发布仓库 remote）
 git tag -a snapshot-20261024 -m "开发快照 2026-10-24"
-git push bot refactor/main
+git push bot main refactor/main
 git push bot snapshot-20261024
 
 # 3) 创建 GitHub Release，body 与仓库内日志一致
@@ -61,8 +62,8 @@ git remote add bot https://github.com/CN-BI5UNF/DebataBot.git
 
 - 拒绝 http、账号密码、localhost/.local、内网/回环 IP、查询参数和 fragment。
 - 只接受指向 `CN-BI5UNF/DebataBot` 的地址。
-- 第三方镜像能看到代码请求；私有仓库通常无法通过公共镜像拉取，
-  建议使用官方直连并配置本机 git 凭据（例如已登录的 `gh`）。
+- 第三方镜像能看到代码请求；公开仓库可以用公共镜像，若仓库转为私有，
+  公共镜像通常无法拉取，建议改用官方直连并配置本机 git 凭据（例如已登录的 `gh`）。
 
 ## 回退边界
 
@@ -74,4 +75,5 @@ git remote add bot https://github.com/CN-BI5UNF/DebataBot.git
 - 覆盖用户数据目录。
 
 更早的 schema 若与当前数据不兼容，应先备份数据并按迁移文档处理，
-不要只依赖代码回退。
+不要只依赖代码回退。当前快照的更新器只负责源码切换；兼容门禁与数据契约
+检查在后续快照中引入，详见对应版本的 `CHANGELOG.md`。

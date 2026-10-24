@@ -12,7 +12,7 @@
 浏览器打开任意一个打印出来的地址，输入令牌即可进入控制台。
 
 这个脚本只做参数解析，真正的服务在 ``webui/server.py``；``main.py`` 也复用它，
-所以 `uv run main.py` 的行为与这里完全一致。
+所以 `uv run python main.py` 的行为与这里完全一致。
 """
 
 from __future__ import annotations

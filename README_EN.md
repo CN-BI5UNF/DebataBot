@@ -1,13 +1,15 @@
 <div align="center">
 
-# Debata_Agent
+# DebataBot
 
 **A chatbot framework that makes virtual characters feel alive**
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![WebUI](https://img.shields.io/badge/UI-WebUI%20%28FastAPI%29-blueviolet.svg)](#)
-[![Tests](https://img.shields.io/badge/tests-1697%20passed-brightgreen.svg)](#testing-and-verification)
+[![CI](https://github.com/CN-BI5UNF/DebataBot/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/CN-BI5UNF/DebataBot/actions/workflows/test.yml)
+
+[Quick start](#quick-start) · [debata commands](#debata-commands) · [Common uv commands](#common-uv-commands) · [Documentation](#documentation)
 
 </div>
 
@@ -15,321 +17,314 @@
 
 > "What if the thing behind `/v1/chat/completions` were a person?"
 
-Debata_Agent does not come with a fixed personality. You give it one, and it
-becomes that person. The project is named after Debata, the first character
+DebataBot does not come with a fixed personality. You give it one, and it
+becomes that person. The framework is named after Debata, the first character
 built with it.
 
-<div align="center">
-<img src="personas/debata/角色人设主图.png" width="600" alt="Debata character design">
+- Repository: <https://github.com/CN-BI5UNF/DebataBot>
+- Default branch: `main`
+- In-app update branch: `refactor/main` (kept in sync with `main`, used by the updater for Releases/tags)
+- Current state: `0.9.0-alpha` refactor snapshot; interfaces may still change
 
-*Debata — 17, short dark hair, charcoal hoodie. Sharp-tongued with close friends, quietly caring underneath.*
-</div>
+> This repository is a refactor snapshot of
+> [binglang001/Debata_Agent](https://github.com/binglang001/Debata_Agent).
+> Original copyright and Apache-2.0 notices are preserved.
 
-## Contents
+## Features
 
-- [Why it feels different](#why-it-feels-different)
-- [2026-10 token-efficiency refactor](#2026-10-token-efficiency-refactor)
-- [Key features](#key-features)
-- [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Running in the background](#running-in-the-background)
-- [Configuration and data directory](#configuration-and-data-directory)
-- [Project layout](#project-layout)
-- [Testing and verification](#testing-and-verification)
-- [Documentation](#documentation)
-- [Design decisions](#design-decisions)
-- [Security and privacy](#security-and-privacy)
-- [License and acknowledgements](#license-and-acknowledgements)
+- **Persona system**: persona prompts, dynamic state, relationships, and memory.
+- **QQ / NapCat**: WebSocket client/server modes, private and group chats, send queue.
+- **Long-term memory**: file mode or RAG mode; archives never rewrite raw history.
+- **Tool loop**: send, recall, memory, search, weather, scheduled wake-ups, sub-agents.
+- **WebUI**: FastAPI backend + static frontend with setup wizard, settings, chats, memory, logs, and updates.
+- **Multiple providers**: OpenAI, Anthropic, DeepSeek, GLM, Qwen, Gemini, OpenRouter presets, plus custom compatible endpoints.
+- **Native / standalone vision**: images can go to the main model or an optional separate vision provider.
+- **Online updates**: choose a GitHub Release/tag in Settings → Update; only source code changes, data is preserved.
 
----
-
-## Why it feels different
-
-| | Typical AI bot | Debata_Agent |
-|---|---|---|
-| Context | Per conversation | **Unified timeline plus state and relationship context** |
-| Replies | One long message | 3-7 short messages, 60% under 12 characters |
-| Timing | Always instant | Can "miss" messages, reply hours later |
-| Tone | "Of course! 😊" | "?" / "nah" / "6" / "whatever" |
-| Style | Same for everyone | **Switches with the relationship** (close friend / elder / stranger) |
-| Initiative | Passive | Decides on its own when to speak |
-| Memory | Last few messages | Important memories + local archive + optional RAG |
-| Config | Edit code | **Browser wizard + settings, instant save** |
-
-## 2026-10 token-efficiency refactor
-
-The goal was not to change languages. Token cost is driven by prompts and
-context, not by Python versus Go. This refactor makes the prompt spend tokens on
-useful context instead of repeating stale runtime snapshots.
-
-Measured with `scripts/benchmark_prompt_tokens.py` on a real instance:
-
-| Metric | Before | After | Change |
-|---|---:|---:|---:|
-| Active history tokens | 185,173 | 43,248 | **-76.6%** |
-| Tool schema tokens | 9,817 | 4,740 | **-51.7%** |
-| Estimated prompt tokens | 206,768 | 59,766 | **-71.1%** |
-| Visible records | 568 | 296 | -47.9% |
-
-What changed:
-
-- **Non-destructive model view** (`core/model_view.py`): trims the view sent to
-  the model only. Raw history, archive, and event store stay untouched. Old
-  `task_context`, send receipts, and `no_action` pairs no longer accumulate.
-- **Tool schema profiles**: `compact` by default. High-frequency tools expose
-  core fields; low-frequency/high-risk tools become stubs and are expanded via
-  `tool_search detail=full`.
-- **Auto-finish after a successful send**: avoids an extra `no_action` model
-  turn just to close the loop.
-- **More accurate metering**: canonical JSON for messages + tools, persistent
-  per-provider/model calibration, and estimate-error reporting in the dashboard.
-- **Leaner runtime**: summary-mode KV diagnostics by default; caches for text
-  encoding, tool schemas, and tool diagnostics.
-
-## Key features
-
-- **Human chat patterns**: short message waterfalls, split sends, no forced
-  goodbyes, no customer-service voice; off-topic, changes of mind, and
-  forgetting are allowed.
-- **Relationship matrix**: one persona, different tone and boundaries for close
-  friends, elders, strangers, and group members.
-- **Persona state and background mind**: age brackets, energy, satiety, mood,
-  social needs, sleep/meal recovery with formula fallback.
-- **Structured context**: events, bounded episode fragments, state, user
-  profiles, short-term effects, clues, todos, and relevant long-term memory.
-- **Long-term memory**: zero-config file mode, or RAG mode with a background
-  vector index and semantic retrieval.
-- **14 built-in provider presets**: OpenAI, Anthropic Claude, DeepSeek, GLM,
-  Qwen, Volcengine, Gemini, Moonshot, SiliconFlow, OpenRouter, Groq, Together,
-  xAI, Xiaomi MiMo; custom OpenAI/Anthropic-compatible gateways are supported.
-- **Multi-agent design**: chat, proactive thinking, summarization, persona
-  management, social decisions, and subconscious consolidation can use
-  different models.
-- **WebUI**: setup wizard + 9 pages (overview, chats, memory, persona, logs,
-  personas, models, blacklist, settings) with instant-save settings.
-- **Optional capabilities**: vision, TTS, weather, web search, local VoxCPM2 /
-  sentence-transformers plugins; QQ voice transcription uses NapCat.
-- **Security**: AES-256-GCM + RSA-2048 encrypted secrets, OS keyring preferred,
-  token auth for the WebUI.
-- **Background running**: systemd user/system services, tmux, screen, and nohup,
-  with a one-command installer.
+See [Features](docs/features.md) and [Architecture](docs/architecture.md) for details.
 
 ## Requirements
 
-- **Python** 3.11+ (3.12 recommended)
+- **Python 3.10+** (CI covers 3.11 and 3.12)
 - **uv** for dependencies and virtual environments
-- **NapCat** ([install guide](https://napneko.github.io/guide/start-install)) — QQ protocol bridge
-- **LLM API key** — DeepSeek recommended (good Chinese, affordable, strong KV cache)
-- Windows / macOS / Linux; servers can run headless
+- **NapCat** (optional, required for QQ): [install guide](https://napneko.github.io/guide/start-install)
+- **LLM API key** (DeepSeek is a good default for Chinese and cost)
+- Linux / Windows / macOS; servers can run headless
 
 ## Quick start
 
-### 1. Get the code and install dependencies
+### 1. Install uv
+
+Linux / macOS:
 
 ```bash
-git clone https://github.com/binglang001/Debata_Agent.git
-cd Debata_Agent
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+See the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/) for other options.
+
+### 2. Clone and install
+
+```bash
+git clone https://github.com/CN-BI5UNF/DebataBot.git
+cd DebataBot
+
+# Runtime dependencies; creates .venv and the `debata` entry point
 uv sync
+
+# Optional: uvloop performance extra on Linux/macOS
+uv sync --extra perf
 ```
 
-Or with SSH:
+### 3. First run
+
+The WebUI is the recommended setup path:
 
 ```bash
-git clone git@github.com:binglang001/Debata_Agent.git
-cd Debata_Agent
-uv sync
+# Default: 0.0.0.0:8000, reachable on the LAN
+uv run python main.py
+
+# Local-only
+uv run python main.py --host 127.0.0.1 --port 8000
 ```
 
-### 2. Start the WebUI
+The terminal prints the access URLs and a WebUI token. The first visit opens
+the setup wizard. The token is also stored in `webui_token.txt` under the data
+directory.
+
+CLI wizard for servers / SSH:
 
 ```bash
-uv run main.py
+uv run python main.py --no-gui --setup
 ```
 
-The terminal prints the access URLs and a token. Open either URL in a browser.
-On first launch, the setup wizard configures the model, persona, NapCat, and
-background agents.
-
-### 3. Useful flags
+Fully headless:
 
 ```bash
-uv run main.py --port 9000          # different port
-uv run main.py --host 127.0.0.1     # local access only
-uv run main.py --token my-token     # fixed WebUI token
-uv run main.py --no-auth            # disable auth (trusted LAN only)
-uv run main.py --no-gui             # headless runtime, no WebUI
-uv run main.py --no-gui --setup     # CLI setup wizard
-uv run main.py --napcat             # reconfigure NapCat only
-uv run main.py --test-adapter       # test NapCat connection for 5 seconds
+uv run python main.py --no-gui
 ```
 
-## Running in the background
+### 4. Run in the background (Linux)
 
-Install once, then use the short `debata` commands:
+Install and start the systemd user service once (no sudo):
 
 ```bash
-cd ~/Debata_Agent
-bash scripts/install_systemd_user.sh     # one-time install + start
-
-debata start       # start (auto-installs the service on first run)
-debata stop        # stop
-debata log         # follow logs
-debata enable      # enable boot autostart (and start now)
-debata disable     # disable boot autostart
-debata status      # show status
-debata restart     # restart
+bash scripts/install_systemd_user.sh
 ```
 
-- `debata enable` also tries to enable linger; if it fails, run
+Then use the short commands:
+
+```bash
+./debata start      # start; installs the service on first run
+./debata status     # show status
+./debata log        # follow logs (Ctrl+C to exit)
+./debata stop       # stop
+```
+
+Without a systemd user session (containers, WSL, minimal systems), the CLI
+falls back to PID-file background mode for `start/stop/restart/status/log`.
+Boot autostart then needs a container restart policy or cron `@reboot`.
+
+Custom host/port or headless mode:
+
+```bash
+bash scripts/install_systemd_user.sh --host 127.0.0.1 --port 9000
+bash scripts/install_systemd_user.sh --headless
+```
+
+Full guide: [Background Running](docs/background_running.md).
+
+## debata commands
+
+`debata` is the service-management command. The installer places it in
+`~/.local/bin/debata`; if that directory is not on `PATH`, use `./debata` from
+the project directory or `uv run debata ...`.
+
+| Command | Purpose |
+|---|---|
+| `debata start` | Start; installs the systemd user service on first run |
+| `debata stop` | Stop the service |
+| `debata restart` | Restart the service |
+| `debata status` | Show status |
+| `debata log` | Follow logs (Ctrl+C to exit) |
+| `debata enable` | Enable boot autostart and start now |
+| `debata disable` | Disable boot autostart (current process keeps running) |
+| `debata install` | Install the service without starting |
+| `debata uninstall` | Uninstall the service |
+| `debata help` | Show help |
+
+Examples:
+
+```bash
+./debata status
+./debata log
+./debata restart
+uv run debata status          # without relying on PATH
+```
+
+Notes:
+
+- systemd user services are preferred and do not require sudo.
+- `debata enable` tries to enable linger; if it fails, run
   `sudo loginctl enable-linger "$USER"`.
-- Without a systemd user session (containers, WSL, minimal systems), the CLI
-  falls back to a PID-file background mode: `start/stop/restart/status/log`
-  still work. `enable` starts the process but cannot configure boot autostart;
-  use a container restart policy or cron `@reboot` instead.
-- Starts the WebUI and QQ runtime by default. Headless:
-  `bash scripts/install_systemd_user.sh --headless`.
-- If `debata` is not on PATH, use `./debata start`.
 - NapCat must be kept running separately.
+- Re-run the installer with options to change host/port or headless mode.
 
-Full guide: **[docs/background_running.md](docs/background_running.md)**.
-System-level template: `scripts/systemd/debata-agent.system.service`.
+## Common uv commands
+
+| Command | Purpose |
+|---|---|
+| `uv sync` | Create/sync `.venv` from `uv.lock` and install the project |
+| `uv sync --extra dev` | Install development tools (pytest, ruff) |
+| `uv sync --extra perf` | Install uvloop on Linux/macOS |
+| `uv sync --extra dev --extra perf` | Install both extras |
+| `uv run python main.py` | Start the WebUI in the project environment |
+| `uv run python main.py --no-gui --setup` | Run the CLI setup wizard |
+| `uv run python main.py --napcat` | Reconfigure NapCat only |
+| `uv run python main.py --test-adapter` | Test the NapCat connection for 5 seconds |
+| `uv run debata status` | Run the `debata` entry point |
+| `uv run pytest tests/ -q --ignore=tests/test_kv_cache_real.py` | Run tests (dev extra required) |
+| `uv run ruff check .` | Run lint |
+| `uv lock` | Re-resolve and update `uv.lock` |
+| `uv add <package>` | Add a runtime dependency |
+| `uv run --frozen ...` | Use the current lockfile without updating |
+| `uv tree` | Show the dependency tree |
+
+Common combinations:
+
+```bash
+uv sync --extra dev
+uv run pytest tests/ -q --ignore=tests/test_kv_cache_real.py
+uv run ruff check .
+uv run python main.py --host 127.0.0.1 --port 9000
+```
+
+## Common launch flags
+
+```bash
+uv run python main.py --port 9000          # change WebUI port
+uv run python main.py --host 127.0.0.1     # local-only
+uv run python main.py --token my-token     # fixed WebUI token
+uv run python main.py --no-auth            # disable auth (trusted LAN only)
+uv run python main.py --no-gui             # headless runtime
+uv run python main.py --no-gui --setup     # CLI setup wizard
+uv run python main.py --napcat             # reconfigure NapCat only
+uv run python main.py --test-adapter       # test NapCat connection
+uv run python main.py --list-secrets       # list secret IDs, not values
+```
 
 ## Configuration and data directory
 
-Default data directory:
+Default Linux data directory:
 
 ```text
 ~/.local/share/Debata_Agent/instances/default/
 ├── config.yaml          # main config (gitignored)
 ├── secrets.enc          # encrypted API keys
 ├── logs/debata.log      # application log
-├── memory/              # history, important memories, usage records
+├── memory/              # chat history, important memory, usage records
 ├── vector/              # RAG vector store
 ├── workspace/           # AI read/write sandbox
 ├── providers/presets/   # user-defined provider presets
 └── webui_token.txt      # WebUI access token
 ```
 
-Legacy mode (project-local `.debata-dev-data-root`) still uses `data/`.
-`DEBATA_DATA_ROOT` can override the data root; old data is migrated on first start.
+- Use `--config` to point at another config file.
+- `DEBATA_DATA_ROOT` overrides the data root; old data is migrated on first start.
+- See [Data Root Contract](docs/data_root_contract.md) for other platforms.
+- `config.yaml`, `secrets.enc`, chat databases, and workspace are gitignored. Back them up yourself.
 
-Common settings (WebUI → Settings):
+## Branches and updates
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `behavior.context.max_context_tokens` | 131072 (live instance) | Working context budget, not the model hard limit |
-| `behavior.summarize.trigger_at_context_percent` | 50 | Trigger rolling summary at 50% of the view budget |
-| `behavior.summarize.target_after_context_percent` | 30 | Target active-window size after compaction |
-| `behavior.tool_schema_profile` | `compact` | Tool schema profile; `full` is the rollback path |
-| `behavior.context.model_view.enabled` | `true` | Non-destructive model view; disable for full history |
-| `behavior.auto_finish_after_send` | `true` | Finish the tool loop after a successful send |
-| `behavior.kv_prompt_diagnostics` | `summary` | KV diagnostics level; `full` for debugging |
+- `main` — default branch for browsing, cloning, and snapshot releases.
+- `refactor/main` — stable branch tracked by the in-app updater; kept in sync with `main`.
+- Development happens on feature branches and pull requests. There is no `develop` branch.
+
+The WebUI updater reads GitHub Releases/tags and targets `refactor/main`. It
+changes source code only; data is preserved. Dependency changes or a dirty
+worktree will block the update. See [Releases](docs/releases.md).
+
+## Testing and quality
+
+```bash
+uv sync --extra dev
+uv run pytest tests/ -q --ignore=tests/test_kv_cache_real.py
+uv run ruff check .
+```
+
+GitHub Actions runs pytest and ruff on Ubuntu / Windows × Python 3.11 / 3.12;
+see [.github/workflows/test.yml](.github/workflows/test.yml).
+`tests/test_kv_cache_real.py` requires live API/network access and is skipped by default.
 
 ## Project layout
 
 ```text
-Debata_Agent/
+DebataBot/
 ├── adapters/               Channel adapters (NapCat)
-├── providers/              LLM providers, 14 presets, capability matrix
-├── agents/                 Chat / proactive / summary / persona / social / subconscious
-├── mind/                   Persona state, profiles, relationships, clues, todos, audits
+├── providers/              LLM providers, presets, capability matrix
+├── agents/                 Chat / proactive / summary / persona / social agents
+├── mind/                   Persona state, profiles, relationships, clues, todos
 ├── memory/                 History, important memory, archive, RAG, usage stores
 ├── tools/                  AI tools, schema profiles, result shrinking
 ├── features/               Vision / TTS / weather / search / embedding
-├── core/                   Event bus, pipelines, runtime, model view, token calibration
+├── core/                   Event bus, pipelines, runtime, model view
 ├── app_config/             Config, paths, secret encryption
-├── webui/                  WebUI (FastAPI backend + static frontend)
-├── plugins/                Local model plugins (VoxCPM2 / embedding)
-├── utils/                  CQ parsing, token estimation, proxy, time
-├── personas/               Persona files (debata tracked; personal ones gitignored)
-├── scripts/                Benchmarks, systemd installer and templates
-├── docs/                   Tutorials, architecture, background running, development docs
-├── tests/                  Unit / integration tests
-└── main.py                 Entry point (WebUI by default)
-```
-
-## Testing and verification
-
-```bash
-uv sync --extra dev
-
-.venv/bin/python -m pytest tests/ -q --ignore=tests/test_kv_cache_real.py
-.venv/bin/ruff check .
-```
-
-Local result: **1697 passed**, `ruff check .` clean (Linux / Python 3.12).
-The CI matrix is defined in [.github/workflows/test.yml](.github/workflows/test.yml)
-(Ubuntu + Windows, Python 3.11 / 3.12).
-
-Prompt-token benchmark (read-only, no model calls):
-
-```bash
-.venv/bin/python scripts/benchmark_prompt_tokens.py \
-  --db ~/.local/share/Debata_Agent/instances/default/memory/小堡/小堡.db \
-  --persona 小堡 --model deepseek-flash
+├── webui/                  FastAPI backend + static frontend
+├── plugins/                Local model plugins
+├── utils/                  CQ parsing, token estimation, image contracts
+├── personas/               Persona files
+├── scripts/                Installer, benchmarks, maintenance scripts
+└── tests/                  Unit, protocol, integration, and WebUI tests
 ```
 
 ## Documentation
 
 - [Getting Started](docs/getting_started.md) — step-by-step with screenshots
-- [Background Running Guide](docs/background_running.md) — systemd / tmux / screen / nohup
+- [Background Running](docs/background_running.md) — systemd / tmux / screen / nohup
 - [Features](docs/features.md) — chat style, memory, persona, WebUI
 - [Persona Writing Guide](docs/persona_writing_guide.md) — writing a persona that feels alive
-- [Architecture Overview](docs/architecture.md) — model view, token metering, tool profiles
-- [KV Cache Benchmark](docs/kv_cache_benchmark.md) — hit-rate data and post-refactor estimates
+- [Architecture](docs/architecture.md) — model view, token metering, tool profiles
+- [WebUI Guide](docs/webui.md) — pages and API surface
+- [Releases](docs/releases.md) — releases, rollback, compatibility
 - [Provider Development](docs/provider_development.md) — adding LLM backends
 - [Adapter Development](docs/adapter_development.md) — adding chat platforms
-- [WebUI Guide](docs/webui.md) — pages, API surface, extending the console
-- [UI Style Guide](docs/ui_style_guide.md) — design principles and color specs
-
-## Design decisions
-
-- **One stable system prompt + XML sections**: stable prefix first for better KV
-  cache hits, lower token cost, and lower latency.
-- **Volatile blocks after history**: `task_context`, long-term memory, rolling
-  summary, and RAG are appended after the append-only history so they do not
-  invalidate the whole prefix.
-- **Model view separate from on-disk history**: stale runtime snapshots can be
-  hidden from the prompt without deleting raw history or archives.
-- **Tool profiles instead of exposing everything**: high-frequency tools expose
-  core fields; low-frequency tools are expanded on demand.
-- **Imperfection by design**: going off-topic, changing one's mind, and
-  forgetting are part of the experience, not bugs.
-- **Secrets without passwords**: OS keyring + AES-GCM, backed by cryptography.
-- **Configuration in the UI where possible**: settings save instantly; persona
-  files remain hand-editable.
-- **Blacklist over whitelist**: block specific people or groups instead of
-  tightening the whole open policy.
+- [Storage Maintenance](docs/storage_maintenance.md) — paging, inventory, safe cleanup
+- [Data Root Contract](docs/data_root_contract.md) — data directory and migration
+- [KV Cache Benchmark](docs/kv_cache_benchmark.md) — caching and estimates
 
 ## Security and privacy
 
-- `config.yaml`, `secrets.enc`, `data/`, non-debata personas, logs, and the
-  workspace are gitignored and never committed.
-- The WebUI uses token auth by default. `--no-auth` is only for a fully trusted
-  LAN.
+- `config.yaml`, `secrets.enc`, `data/`, personal personas, logs, and the workspace are gitignored.
+- The WebUI uses token auth by default. `--no-auth` is only for a fully trusted LAN.
 - For public access, use Nginx/Caddy with HTTPS, or bind to `127.0.0.1`.
-- Run system services as a dedicated user, never as root.
-- Chat history, personas, and configuration are personal data; back up and
-  sanitize before sharing.
+- Run services as a dedicated user, never as root.
+- Chat history, personas, and configuration are personal data; back up and sanitize before sharing.
+
+## Known limitations
+
+- This is a refactor snapshot and does not include the upstream full commit history. See [binglang001/Debata_Agent](https://github.com/binglang001/Debata_Agent) for the upstream stable line.
+- Real provider rate limits, image billing, and online KV hit rates still need authorized small-traffic validation.
+- Image tokens are a resource reservation, not an exact provider bill.
+- Online updates do not install dependencies or run data migrations.
 
 ## License and acknowledgements
 
-This project is maintained by
-[binglang001/Debata_Agent](https://github.com/binglang001/Debata_Agent)
-and its contributors. Original copyright and license notices are preserved.
+This project originates from
+[binglang001/Debata_Agent](https://github.com/binglang001/Debata_Agent) and its
+contributors. Original copyright and license notices are preserved.
 
-[Apache 2.0](LICENSE) — free for commercial use, modification, and distribution.
+[Apache License 2.0](LICENSE) — free for commercial use, modification, and distribution.
 
-Acknowledgements:
-
-- [NapCat](https://github.com/NapNeko/NapCatQQ) — modern QQ protocol bridge
-- [FastAPI](https://fastapi.tiangolo.com/) — WebUI HTTP / WebSocket framework
-- [Uvicorn](https://www.uvicorn.org/) — ASGI server
-- [uv](https://github.com/astral-sh/uv) — Python dependency and environment manager
-- Everyone who filed issues, opened pull requests, or helped with testing
-
----
+Acknowledgements: [NapCat](https://github.com/NapNeko/NapCatQQ),
+[FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/),
+[uv](https://github.com/astral-sh/uv), and everyone who filed issues, opened
+pull requests, or helped with testing.
 
 <div align="center">
 

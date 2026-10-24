@@ -2,8 +2,8 @@
 #
 # 适用于服务器/多用户环境，服务以专用用户运行。安装：
 #   sudo useradd --system --create-home --shell /usr/sbin/nologin debata
-#   sudo mkdir -p /opt/Debata_Agent
-#   sudo chown -R debata:debata /opt/Debata_Agent
+#   sudo mkdir -p /opt/DebataBot
+#   sudo chown -R debata:debata /opt/DebataBot
 #   # 以 debata 用户完成部署和 uv sync 后：
 #   sudo cp scripts/systemd/debata-agent.system.service /etc/systemd/system/debata-agent.service
 #   sudo systemctl daemon-reload
@@ -23,8 +23,8 @@ StartLimitBurst=5
 Type=simple
 User=debata
 Group=debata
-WorkingDirectory=/opt/Debata_Agent
-ExecStart=/opt/Debata_Agent/.venv/bin/python /opt/Debata_Agent/main.py --host 0.0.0.0 --port 8000
+WorkingDirectory=/opt/DebataBot
+ExecStart=/opt/DebataBot/.venv/bin/python /opt/DebataBot/main.py --host 0.0.0.0 --port 8000
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/etc/debata-agent.env
 Restart=on-failure

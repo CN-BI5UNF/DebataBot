@@ -10,11 +10,11 @@
 # 更推荐直接运行：
 #   bash scripts/install_systemd_user.sh
 #
-# 下面的 %h 会展开为当前用户 home。项目不在 ~/Debata_Agent 时请替换路径。
+# 下面的 %h 会展开为当前用户 home。项目不在 ~/DebataBot 时请替换路径。
 
 [Unit]
 Description=Debata Agent (WebUI + QQ runtime)
-Documentation=file://%h/Debata_Agent/docs/background_running.md
+Documentation=file://%h/DebataBot/docs/background_running.md
 After=network-online.target
 Wants=network-online.target
 # 如果 NapCat 也做成用户服务，取消下面两行注释并改成实际服务名：
@@ -25,9 +25,9 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Debata_Agent
+WorkingDirectory=%h/DebataBot
 # 默认同时启动 WebUI 和 QQ Runtime；只跑 headless Runtime 时改成 --no-gui。
-ExecStart=%h/Debata_Agent/.venv/bin/python %h/Debata_Agent/main.py --host 0.0.0.0 --port 8000
+ExecStart=%h/DebataBot/.venv/bin/python %h/DebataBot/main.py --host 0.0.0.0 --port 8000
 Environment=PYTHONUNBUFFERED=1
 # 可选：把 DEBATA_DATA_ROOT、代理等环境变量放在这里（chmod 600）。
 EnvironmentFile=-%h/.config/debata-agent.env

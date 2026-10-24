@@ -6,7 +6,7 @@ GLM 系列模型，中文能力强，视觉和 Embedding 也有不错的表现�
 
 打开 [智谱开放平台](https://open.bigmodel.cn)，点击右上角“登录/注册”，用手机号注册。
 
-![智谱首页](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/tutorial_glm_home.png)
+![智谱首页](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/tutorial_glm_home.png)
 
 注册成功后点击下方“跳过”跳过邮箱填写，随后点击“开始体验”。
 
@@ -14,13 +14,13 @@ GLM 系列模型，中文能力强，视觉和 Embedding 也有不错的表现�
 
 在刚刚的页面，点击右上角“控制台” → 左侧API Keys → 点击右上角**新建 API Key**。输入名称“Debata”，点击确定后，点击复制按钮复制保存。
 
-![创建 Key](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/tutorial_glm_create_key.png)
+![创建 Key](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/tutorial_glm_create_key.png)
 
 ## 3. 实名认证
 
 点击右上角“财务” → 右侧“去充值” → 选择任意额度，点击确认支付，会弹出实名认证对话框，点击“立即认证”并选择“个人实名认证”。随后按照网站指引完成认证流程
 
-![实名认证](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/tutorial_glm_real_name_authentication.png)
+![实名认证](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/tutorial_glm_real_name_authentication.png)
 
 ## 4. 充值
 

@@ -16,13 +16,13 @@
 
 点击后，按照图示推荐配置来配置视觉提供商（推荐采用火山方舟）。
 
-![添加提供商](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/guide_vision_add_provider.png)
+![添加提供商](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/guide_vision_add_provider.png)
 
 ### 打开 Vision
 
 设置页 → 功能 →「看懂图片」卡片，打开开关。首次打开会弹配置对话框，若上一步提供商按照推荐配置，则可参考如图配置。
 
-![设置页 Vision 卡片](https://raw.githubusercontent.com/binglang001/Debata_Agent/main/docs/images/guide_vision_settings.png)
+![设置页 Vision 卡片](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/guide_vision_settings.png)
 
 **配置完后点击下方“重启Debata服务”**
 
