@@ -107,6 +107,21 @@ def _job_is_terminal(state: str) -> bool:
     return state in TERMINAL_JOB_STATES
 
 
+_LOCAL_LOCK_GUARD = threading.Lock()
+_LOCAL_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _local_instance_lock(data_dir: Path) -> threading.Lock:
+    """无 flock 平台（Windows）的进程内实例锁。"""
+    key = str(data_dir)
+    with _LOCAL_LOCK_GUARD:
+        lock = _LOCAL_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _LOCAL_LOCKS[key] = lock
+        return lock
+
+
 def _fsync_directory(path: Path) -> None:
     """atomic replace 后同步目录项；Windows/不支持时静默跳过。"""
     if os.name == "nt":
@@ -156,6 +171,8 @@ class BackupCoordinator:
         self.cancel_events: dict[str, threading.Event] = {}
         self.active_job: str | None = None
         self._lock_fd: int | None = None
+        self._local_lock = _local_instance_lock(self.data_dir)
+        self._local_lock_held = False
         self._start_lock: asyncio.Lock | None = None
         self._start_lock_loop: Any = None
         self._load_jobs(mark_interrupted=False)
@@ -260,6 +277,14 @@ class BackupCoordinator:
 
     def acquire_instance_lock(self) -> None:
         if fcntl is None:
+            if self._local_lock_held:
+                return
+            if not self._local_lock.acquire(blocking=False):
+                raise BackupError(
+                    "backup_running",
+                    "另一个备份协调器正在使用该实例",
+                )
+            self._local_lock_held = True
             return
         if self._lock_fd is not None:
             return
@@ -285,6 +310,9 @@ class BackupCoordinator:
         self._lock_fd = fd
 
     def release_instance_lock(self) -> None:
+        if self._local_lock_held:
+            self._local_lock_held = False
+            self._local_lock.release()
         fd = self._lock_fd
         self._lock_fd = None
         if fd is None:
@@ -299,6 +327,10 @@ class BackupCoordinator:
                 os.close(fd)
             except OSError:
                 pass
+
+    @property
+    def locked(self) -> bool:
+        return self._lock_fd is not None or self._local_lock_held
 
     def _public_job(self, job: dict) -> dict:
         out = dict(job)
@@ -644,7 +676,7 @@ class BackupService:
                 "pid": self._shared.pid,
                 "boot_id": self._shared.boot_id,
                 "jobs_file": str(self._shared.jobs_file),
-                "instance_lock": self._shared._lock_fd is not None,
+                "instance_lock": self._shared.locked,
             },
         }
 
@@ -2133,6 +2165,8 @@ class BackupService:
                 ["git", "-C", str(self.project_root), "rev-parse", "HEAD"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
                 check=False,
             )

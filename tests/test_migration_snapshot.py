@@ -81,9 +81,12 @@ def _seed(paths: AppPaths) -> str:
         conn.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
         conn.execute("INSERT INTO messages(body) VALUES ('strict')")
         conn.commit()
-    with sqlite3.connect(paths.MAINTENANCE_DB_FILE) as conn:
+    conn = sqlite3.connect(paths.MAINTENANCE_DB_FILE)
+    try:
         conn.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, kind TEXT)")
         conn.commit()
+    finally:
+        conn.close()
     (paths.MAINTENANCE_DIR / "deletion_ledger.jsonl").write_text(
         '{"id": 1}\n', encoding="utf-8"
     )

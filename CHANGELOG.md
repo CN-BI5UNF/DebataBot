@@ -17,6 +17,7 @@
 
 - 默认分支统一为 `main`；`refactor/main` 作为应用内更新跟踪分支；README/README_EN、贡献指南、CI 和文档链接同步。
 - 更新器 git 超时处理跨平台：Windows 清理进程树，POSIX-only 测试在 Windows 跳过。
+- Windows 无 `flock` 时备份/维护使用进程内实例锁；修复 Windows 下 SQLite 测试文件占用和 git 子进程输出解码。
 - 视觉字段不再由通用设置表单平铺渲染，避免把“视觉 provider / base_url”误认为主模型看图的前置条件。
 
 ### Verification

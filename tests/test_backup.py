@@ -558,7 +558,7 @@ async def test_external_task_cancel_keeps_lock_until_worker_stops(tmp_path):
     await asyncio.sleep(0.05)
 
     # worker 未退出时，barrier/flock 和 active job 都不能被释放。
-    assert service._shared._lock_fd is not None
+    assert service._shared.locked
     assert service._shared.active_job == job["id"]
     with pytest.raises(BackupError) as exc:
         await service.start()
@@ -568,11 +568,11 @@ async def test_external_task_cancel_keeps_lock_until_worker_stops(tmp_path):
     deadline = asyncio.get_running_loop().time() + 10
     while (
         service._shared.active_job is not None
-        or service._shared._lock_fd is not None
+        or service._shared.locked
     ) and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0.05)
     assert service._shared.active_job is None
-    assert service._shared._lock_fd is None
+    assert service._shared.locked is False
     finished = service.get_job(job["id"])
     assert finished["state"] == "cancelled", finished
     assert not list((tmp_path / "backups").glob("Debata_Backup_*.zip"))

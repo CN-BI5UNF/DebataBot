@@ -64,6 +64,8 @@ def _run_git(project_root: Path, *args: str, timeout: float = 8.0) -> str:
             ["git", "--no-optional-locks", "-C", str(project_root), *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )

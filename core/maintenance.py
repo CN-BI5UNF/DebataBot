@@ -138,6 +138,21 @@ def _idle_state() -> MaintenanceState:
     )
 
 
+_LOCAL_LOCK_GUARD = threading.Lock()
+_LOCAL_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _local_controller_lock(directory: Path) -> threading.Lock:
+    """无 flock 平台（Windows）的进程内维护锁。"""
+    key = str(directory)
+    with _LOCAL_LOCK_GUARD:
+        lock = _LOCAL_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _LOCAL_LOCKS[key] = lock
+        return lock
+
+
 class MaintenanceController:
     """实例维护状态与 writer 屏障。"""
 
@@ -148,6 +163,8 @@ class MaintenanceController:
         self.state_file = self.directory / STATE_FILENAME
         self.lock_file = self.directory / LOCK_FILENAME
         self._lock_fd: int | None = None
+        self._local_lock = _local_controller_lock(self.directory)
+        self._local_lock_held = False
         self._writers: dict[str, tuple[Callable[[], Any], Callable[[], Any] | None]] = {}
         self._settled: set[str] = set()
         self._mutex = threading.RLock()
@@ -241,9 +258,15 @@ class MaintenanceController:
     def acquire_lock(self) -> None:
         self.directory.mkdir(parents=True, exist_ok=True)
         if fcntl is None:
-            if self._lock_fd is not None:
-                raise MaintenanceError("maintenance_busy", "维护锁已由当前实例持有")
-            self._lock_fd = -1
+            if self._local_lock_held:
+                raise MaintenanceError(
+                    "maintenance_busy", "维护锁已由当前实例持有"
+                )
+            if not self._local_lock.acquire(blocking=False):
+                raise MaintenanceError(
+                    "maintenance_busy", "另一个维护控制器正在使用该实例"
+                )
+            self._local_lock_held = True
             return
         if self._lock_fd is not None:
             raise MaintenanceError("maintenance_busy", "维护锁已由当前实例持有")
@@ -261,6 +284,9 @@ class MaintenanceController:
         self._lock_fd = fd
 
     def release_lock(self) -> None:
+        if self._local_lock_held:
+            self._local_lock_held = False
+            self._local_lock.release()
         fd = self._lock_fd
         self._lock_fd = None
         if fd is None:
@@ -277,7 +303,7 @@ class MaintenanceController:
 
     @property
     def locked(self) -> bool:
-        return self._lock_fd is not None
+        return self._lock_fd is not None or self._local_lock_held
 
     def register_writer(
         self,
