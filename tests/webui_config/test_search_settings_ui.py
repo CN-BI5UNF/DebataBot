@@ -67,3 +67,22 @@ def test_update_mirror_card_has_probe_and_use_action():
     assert "只执行 git ls-remote" in source
     assert "updateProbe: (payload = {})" in api_source
     assert "api.post('/api/update/probe'" in api_source
+
+
+def test_search_toggles_stay_visible_when_details_are_collapsed():
+    source = SETTINGS_JS.read_text(encoding="utf-8")
+    # 开关必须在 details 外面，否则关闭后就无法再打开（官方搜索默认关闭）。
+    assert "masterRow,\n      freeRow,\n      freeDetails," in source
+    assert "officialRow,\n      officialDetails," in source
+    assert (
+        "const freeDetails = h('div', {\n"
+        "      dataset: { searchFreeDetails: '1' },\n"
+        "    },\n"
+        "      freeRow,"
+    ) not in source
+    assert (
+        "const officialDetails = h('div', {\n"
+        "      dataset: { searchOfficialDetails: '1' },\n"
+        "    },\n"
+        "      officialRow,"
+    ) not in source

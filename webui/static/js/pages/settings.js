@@ -683,7 +683,6 @@ export async function render(container, ctx) {
     const freeDetails = h('div', {
       dataset: { searchFreeDetails: '1' },
     },
-      freeRow,
       field('免费搜索后端', engineSelect,
         'Bing RSS 国内可直连且 RSS 无广告；百度国内可直连，页面较大时会稍慢；'
         + 'SearXNG 需要自建实例并开启 JSON。'),
@@ -723,7 +722,6 @@ export async function render(container, ctx) {
     const officialDetails = h('div', {
       dataset: { searchOfficialDetails: '1' },
     },
-      officialRow,
       field('官方搜索通道', channelSelect,
         '只列出预设中已确认存在官方搜索 API 的 provider / 模型。'),
       field('官方搜索超时（秒）', officialTimeoutInput,
@@ -853,10 +851,12 @@ export async function render(container, ctx) {
     nodes.push(card('联网搜索',
       '免费搜索优先；官方搜索只在免费通道测速/请求失败时回退，且需要显式开启。',
       masterRow,
+      freeRow,
       freeDetails,
     ));
     nodes.push(card('官方搜索（可选）',
       '调用模型或搜索服务的官方 API，可能产生额外费用。',
+      officialRow,
       officialDetails,
       h('div', { class: 'row' },
         h('div', { class: 'spacer' }),
