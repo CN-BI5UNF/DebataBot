@@ -256,7 +256,7 @@ export async function renderReleaseList(
         : '';
       if (!confirm(
         `确认${verb}到“${checked.target_name || release.name || release.tag}”？\n\n`
-        + '更新会重启 Debata，用户数据目录不会被覆盖。'
+        + '更新完成后可选择是否立即重启后端；用户数据目录不会被覆盖。'
         + extra
         + (warnings ? `\n\n${warnings}` : ''),
       )) {
@@ -268,10 +268,26 @@ export async function renderReleaseList(
         target_sha: checked.target_commit,
         confirm_branch_switch: true,
         confirm_rollback: needsExtraConfirm,
+        defer_restart: true,
       });
       applied = true;
-      setMessage(payload.message || '更新完成；服务将重启。', 'ok');
+      setMessage(payload.message || '更新完成；请重启后端加载新代码。', 'ok');
       if (onApplied) onApplied(payload);
+      if (payload.restart_scheduled) {
+        setMessage('更新完成；服务正在自动重启，请稍候…', 'ok');
+        await waitForBackendReady();
+        window.location.reload();
+        return;
+      }
+      if (payload.restart_required) {
+        const restarted = await promptBackendRestart(ctx, {
+          title: '更新完成',
+          message: '新版本已写入磁盘；需要重启后端才会加载新代码。',
+        });
+        if (!restarted) {
+          setMessage('更新已应用；可在此页点击“重启后端”加载新代码。', 'ok');
+        }
+      }
     } catch (e) {
       setMessage(`操作失败：${e.message}`, 'bad');
     } finally {
@@ -313,6 +329,88 @@ export async function renderReleaseList(
     refresh: () => load(true),
     get applied() { return applied; },
   };
+}
+
+async function waitForBackendReady(timeoutMs = 90000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    try {
+      const response = await fetch('/api/auth/state', { cache: 'no-store' });
+      if (response.ok) return true;
+    } catch {
+      // 后端正在重启，端口尚未恢复。
+    }
+  }
+  return false;
+}
+
+/**
+ * 重启整个后端进程，加载磁盘上的新 Python 代码。
+ *
+ * 只重启 Runtime 不会重新导入模块；只有更新代码后才需要这个操作。
+ * 返回 Promise<boolean>：用户取消为 false；确认重启并恢复后 reload 页面。
+ */
+export function promptBackendRestart(ctx, {
+  title = '重启后端？',
+  message = '重启后会重新加载磁盘上的最新 Python 代码。',
+  confirmLabel = '立即重启后端',
+} = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let restarting = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const status = h('p', { class: 'field-help' });
+    const later = h('button', {
+      class: 'btn',
+      onclick: () => dialog.close(),
+    }, '稍后');
+    const confirm = h('button', { class: 'btn btn-primary' }, confirmLabel);
+    const body = h('div', {},
+      h('p', {}, message),
+      h('p', { class: 'field-help' },
+        '后端重启期间 WebUI 将无法连接，通常需要 30–60 秒；'
+        + '重启后如提示登录，请重新输入访问令牌。'),
+      status,
+    );
+    const dialog = modal({
+      title,
+      body,
+      footer: [later, confirm],
+      onClose: () => finish(false),
+    });
+    confirm.addEventListener('click', async () => {
+      if (restarting) return;
+      restarting = true;
+      confirm.disabled = true;
+      later.disabled = true;
+      status.textContent = '正在重启后端…';
+      try {
+        await endpoints.restartBackend();
+      } catch (e) {
+        status.textContent = `重启失败：${e.message}`;
+        confirm.disabled = false;
+        later.disabled = false;
+        restarting = false;
+        return;
+      }
+      const ready = await waitForBackendReady();
+      if (!ready) {
+        status.textContent = '等待后端起超时，请手动刷新页面或检查服务日志。';
+        confirm.disabled = false;
+        later.disabled = false;
+        restarting = false;
+        return;
+      }
+      finish(true);
+      window.location.reload();
+    });
+    document.body.append(dialog.el);
+  });
 }
 
 /**
@@ -369,7 +467,7 @@ export function openUpdateDialog(ctx, { onClosed = null } = {}) {
   const bodyHost = h('div', {});
   const dialog = modal({
     title: '版本与更新',
-    subtitle: '选择要更新或回退到的版本；应用会重启 Debata。',
+    subtitle: '选择要更新或回退到的版本；更新后需重启后端才会生效。',
     wide: true,
     body: bodyHost,
     footer: [h('button', {

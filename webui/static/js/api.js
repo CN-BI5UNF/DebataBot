@@ -98,6 +98,7 @@ export const endpoints = {
 
   status: () => api.get('/api/status'),
   restart: () => api.post('/api/system/restart'),
+  restartBackend: () => api.post('/api/system/restart-backend', {}, { timeoutMs: 15000 }),
   stopRuntime: () => api.post('/api/system/stop'),
   startRuntime: () => api.post('/api/system/start'),
   quit: () => api.post('/api/system/quit'),

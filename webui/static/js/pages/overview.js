@@ -54,6 +54,7 @@ export async function render(container, ctx) {
         updateHost,
         h('button', {
           class: 'btn',
+          title: '只重建运行时，不加载新代码；更新后请到 设置 → 更新 重启后端',
           onclick: async (event) => {
             event.currentTarget.disabled = true;
             try {

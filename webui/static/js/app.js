@@ -363,7 +363,8 @@ function wireChrome() {
 
   qs('#btn-restart').onclick = async (event) => {
     const btn = event.currentTarget;
-    if (!confirm('重启 Runtime？正在处理的对话会被中断。')) return;
+    if (!confirm('重启 Runtime？正在处理的对话会被中断。\n\n'
+      + '只重建运行时，不会重新加载 Python 代码；更新代码后请使用“重启后端”。')) return;
     btn.disabled = true;
     try {
       await endpoints.restart();

@@ -98,3 +98,19 @@ def test_frontend_requests_target_tag_and_rollback_confirmation():
     assert "target_tag: release.tag" in source
     assert "confirm_rollback" in source
     assert "confirmation_token" in source
+
+
+def test_update_flow_defers_restart_and_offers_backend_restart_button():
+    releases = _read(JS / "releases.js")
+    settings = _read(JS / "pages" / "settings.js")
+    api = _read(JS / "api.js")
+    assert "defer_restart: true" in releases
+    assert "promptBackendRestart" in releases
+    assert "restart_required" in releases
+    assert "重启后端" in settings
+    assert "dataset: { backendRestart: '1' }" in settings
+    assert "restartBackend" in api
+    assert "/api/system/restart-backend" in api
+    # 已实测整进程重启时 WebUI 会断开，不写“可能”。
+    assert "WebUI 将无法连接" in releases
+    assert "WebUI 可能无法连接" not in releases

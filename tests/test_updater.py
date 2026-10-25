@@ -220,6 +220,35 @@ async def test_check_and_apply_fast_forward_switch_and_preserves_data(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_apply_can_defer_restart_until_ui_confirmation(tmp_path):
+    work, data, remote = _seed_repo(tmp_path)
+    restarted = []
+
+    async def restart():
+        restarted.append(True)
+
+    service = UpdateService(
+        work,
+        data,
+        mirror=f"file://{remote}",
+        allow_local_remote=True,
+        restart_callback=restart,
+    )
+    checked = await service.check()
+    applied = await service.apply(
+        confirmation_token=checked["confirmation_token"],
+        target_sha=checked["target_commit"],
+        confirm_branch_switch=True,
+        defer_restart=True,
+    )
+    assert applied["restart_scheduled"] is False
+    assert applied["restart_required"] is True
+    assert "请重启后端" in applied["message"]
+    assert not service._restart_tasks
+    assert restarted == []
+
+
+@pytest.mark.asyncio
 async def test_dirty_worktree_blocks_check(tmp_path):
     work, data, remote = _seed_repo(tmp_path)
     (work / "app.py").write_text("dirty\n", encoding="utf-8")
@@ -689,3 +718,26 @@ async def test_apply_rechecks_data_state_after_plan(tmp_path):
             confirm_branch_switch=True,
         )
     assert exc.value.code == "data_state_changed"
+
+
+@pytest.mark.asyncio
+async def test_releases_prune_deleted_remote_tag(tmp_path):
+    work, data, remote = _seed_release_repo(tmp_path)
+    service = UpdateService(
+        work,
+        data,
+        mirror=f"file://{remote}",
+        allow_local_remote=True,
+    )
+    first = await service.releases()
+    assert [item["tag"] for item in first["releases"]] == [
+        "snapshot-20261023",
+        "snapshot-20261020",
+    ]
+
+    _git(remote, "tag", "-d", "snapshot-20261020")
+    second = await service.releases(force=True)
+    tags = [item["tag"] for item in second["releases"]]
+    assert "snapshot-20261020" not in tags
+    refs = _git(work, "for-each-ref", "--format=%(refname)", "refs/update-target/tags")
+    assert "snapshot-20261020" not in refs

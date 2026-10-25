@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shutil
+import sys
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from core.updater import systemd_restart_callback
 from webui.auth import COOKIE_NAME, SESSION_TTL_SECONDS
 from webui.runtime_host import STATE_SETUP_REQUIRED
 
@@ -19,6 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["system"])
 
 COOKIE_MAX_AGE = SESSION_TTL_SECONDS
+BACKEND_RESTART_DELAY_SECONDS = 1.0
 
 
 class LoginPayload(BaseModel):
@@ -111,6 +116,46 @@ async def restart_runtime(request: Request) -> dict[str, Any]:
             detail=host.last_error or "Runtime 重启失败，请看日志",
         )
     return {"ok": True, "message": "Runtime 已重启"}
+
+
+def backend_restart_supported() -> bool:
+    """只有 systemd 用户服务才能安全地整进程重启。"""
+    return (
+        sys.platform.startswith("linux")
+        and shutil.which("systemctl") is not None
+        and bool(os.environ.get("INVOCATION_ID"))
+    )
+
+
+async def _restart_backend_after_delay() -> None:
+    await asyncio.sleep(BACKEND_RESTART_DELAY_SECONDS)
+    try:
+        await systemd_restart_callback()
+    except Exception:  # noqa: BLE001
+        logger.exception("重启后端失败")
+
+
+@router.post("/api/system/restart-backend")
+async def restart_backend() -> dict[str, Any]:
+    """重启整个后端进程，用于加载磁盘上的新 Python 代码。
+
+    先返回响应，再由独立子进程执行 systemctl restart；进程切换期间
+    WebUI 会短暂无法连接，重启后会话 cookie 失效，需要重新登录。
+    """
+    if not backend_restart_supported():
+        raise HTTPException(
+            status_code=400,
+            detail="当前进程不是由 systemd 用户服务托管，无法自动重启后端；请手动重启服务",
+        )
+    asyncio.create_task(
+        _restart_backend_after_delay(), name="restart-backend"
+    )
+    return {
+        "ok": True,
+        "restart_scheduled": True,
+        "delay_seconds": BACKEND_RESTART_DELAY_SECONDS,
+        "message": "后端将在约 1 秒后重启；期间 WebUI 将无法连接",
+    }
 
 
 @router.post("/api/system/stop")

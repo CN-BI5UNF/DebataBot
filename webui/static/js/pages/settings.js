@@ -6,7 +6,7 @@
 import { h, fill, card, empty, field, table, formatNumber } from '../dom.js';
 import { endpoints } from '../api.js';
 import { renderModelsPanel } from '../providers.js';
-import { renderReleaseList, formatDateTime } from '../releases.js';
+import { renderReleaseList, formatDateTime, promptBackendRestart } from '../releases.js';
 
 // 视觉字段由专用面板渲染；这里再按路径兜底一次，避免旧进程尚未加载
 // settings_spec 的 hidden 标记时，通用表单和专用面板重复出现同一批字段。
@@ -940,6 +940,15 @@ export async function render(container, ctx) {
     const resultHost = h('div', {});
     let releaseList = null;
     const checkBtn = h('button', { class: 'btn btn-primary' }, '检查更新');
+    const restartBackendBtn = h('button', {
+      class: 'btn', dataset: { backendRestart: '1' },
+    }, '重启后端');
+    restartBackendBtn.addEventListener('click', () => {
+      promptBackendRestart(ctx, {
+        title: '重启后端？',
+        message: '重启会重新加载磁盘上的 Python 代码。只改配置时用“重启 Runtime”即可。',
+      });
+    });
     checkBtn.addEventListener('click', async () => {
       checkBtn.disabled = true;
       statusLine.textContent = '正在连接 GitHub / 镜像…';
@@ -994,7 +1003,13 @@ export async function render(container, ctx) {
       h('p', { class: 'field-help' },
         '应用版本会备份当前提交并重启服务；依赖文件变化时会拒绝自动应用。'
         + '镜像站会提供将执行的代码，请只使用可信 https 镜像。'),
-      h('div', { class: 'row' }, h('div', { class: 'spacer' }), checkBtn),
+      h('p', { class: 'field-help' },
+        '“重启 Runtime”只重建运行时，不会重新导入 Python 代码；'
+        + '更新到新版本或改了后端代码后，请用“重启后端”。'),
+      h('div', { class: 'row' },
+        restartBackendBtn,
+        h('div', { class: 'spacer' }),
+        checkBtn),
       statusLine,
       resultHost,
     ));

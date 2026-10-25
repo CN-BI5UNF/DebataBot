@@ -537,6 +537,7 @@ class UpdateService:
 
         await self._git(
             "fetch",
+            "--prune",
             "--no-tags",
             "--force",
             remote_url,
@@ -811,6 +812,7 @@ class UpdateService:
         target_sha: str,
         confirm_branch_switch: bool,
         confirm_rollback: bool = False,
+        defer_restart: bool = False,
     ) -> dict:
         async with self._lock:
             plan = self._plan
@@ -937,10 +939,20 @@ class UpdateService:
             self._plan = None
             self._releases_cache = None
             await self._record_applied(new_head)
-            if self.restart_callback is not None:
+            restart_scheduled = (
+                self.restart_callback is not None and not defer_restart
+            )
+            if restart_scheduled:
                 task = asyncio.create_task(self._restart_after_delay())
                 self._restart_tasks.add(task)
                 task.add_done_callback(self._restart_tasks.discard)
+            restart_required = self.restart_callback is not None and defer_restart
+            if restart_scheduled:
+                message = "更新完成；服务将在约 1 秒后重启"
+            elif restart_required:
+                message = "更新完成；请重启后端加载新代码"
+            else:
+                message = "更新完成"
             return {
                 "ok": True,
                 "old_commit": old_head,
@@ -949,8 +961,9 @@ class UpdateService:
                 "kind": plan.get("kind"),
                 "backup_ref": backup_ref,
                 "backup_branch_ref": backup_branch_ref,
-                "restart_scheduled": self.restart_callback is not None,
-                "message": "更新完成；服务将在约 1 秒后重启",
+                "restart_scheduled": restart_scheduled,
+                "restart_required": restart_required,
+                "message": message,
             }
 
     async def auto_check_if_due(self, *, now: float | None = None) -> dict:

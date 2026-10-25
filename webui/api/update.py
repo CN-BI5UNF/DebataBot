@@ -43,6 +43,8 @@ class UpdateApplyPayload(BaseModel):
     target_sha: str = Field(min_length=7, max_length=64)
     confirm_branch_switch: bool = False
     confirm_rollback: bool = False
+    defer_restart: bool = False
+    """新版前端先返回更新结果，再弹窗询问是否重启后端。"""
 
 
 class UpdateNotificationPayload(BaseModel):
@@ -206,6 +208,7 @@ async def apply(
             target_sha=payload.target_sha,
             confirm_branch_switch=payload.confirm_branch_switch,
             confirm_rollback=payload.confirm_rollback,
+            defer_restart=payload.defer_restart,
         )
     except UpdateError as exc:
         raise _http_error(exc) from exc
