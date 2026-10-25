@@ -665,6 +665,14 @@ class WebSearchFeatureConfig(StrictModel):
     timeout_seconds: float = 10.0
     """单次免费搜索的网络超时。"""
 
+    @field_validator("provider", mode="before")
+    @classmethod
+    def migrate_legacy_provider(cls, value: Any) -> Any:
+        """旧配置可能保存过 ddg；国内已不可用，自动迁到 Bing RSS。"""
+        if isinstance(value, str) and value.strip().lower() == "ddg":
+            return "bing_rss"
+        return value
+
     @model_validator(mode="after")
     def validate_search_channel(self) -> WebSearchFeatureConfig:
         if not self.enabled:

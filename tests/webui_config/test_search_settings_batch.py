@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app_config.schema import RootConfig
+from app_config.schema import RootConfig, WebSearchFeatureConfig
 from features.web_search.engines import ProbeResult
 from providers.presets_loader import ProviderPreset
 from webui.api.settings import (
@@ -15,6 +15,11 @@ from webui.api.settings import (
     patch_web_search_settings,
     probe_web_search,
 )
+
+
+def test_legacy_ddg_provider_migrates_to_bing_rss():
+    search = WebSearchFeatureConfig(provider="ddg")
+    assert search.provider == "bing_rss"
 
 
 class _Secrets:
