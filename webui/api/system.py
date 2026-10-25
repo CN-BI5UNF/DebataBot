@@ -166,6 +166,8 @@ async def setup_options(request: Request) -> dict[str, Any]:
                     "base_url": getattr(preset, "base_url", ""),
                     "registration_url": getattr(preset, "registration_url", ""),
                     "reasoning_style": getattr(preset, "reasoning_style", ""),
+                    "search_channel": getattr(preset, "search_channel", ""),
+                    "search_label": getattr(preset, "search_label", ""),
                     "reasoning_effort_options": list(
                         getattr(preset, "reasoning_effort_options", []) or []
                     ),
@@ -175,6 +177,7 @@ async def setup_options(request: Request) -> dict[str, Any]:
                             "display_name": getattr(m, "display_name", m.id),
                             "capabilities": list(getattr(m, "capabilities", []) or []),
                             "context_length": getattr(m, "context_length", 0),
+                            "search_channel": getattr(m, "search_channel", ""),
                             "reasoning_effort_options": (
                                 list(
                                     getattr(m, "reasoning_effort_options", []) or []

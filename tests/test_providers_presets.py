@@ -322,13 +322,21 @@ def test_mimo_preset_shape():
     presets = load_all_presets(PRESETS_DIR)
     mimo = presets["mimo"]
     assert mimo.reasoning_style == "thinking_extra_body"
-    assert {m.id for m in mimo.models} == {"mimo-v2.5-pro", "mimo-v2.5"}
+    assert {m.id for m in mimo.models} == {
+        "mimo-v2.5-pro", "mimo-v2.5",
+        "mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed",
+    }
     assert mimo.base_url.startswith("https://api.xiaomimimo.com")
     pro = next(m for m in mimo.models if m.id == "mimo-v2.5-pro")
     assert "tool_call" in pro.capabilities
     assert "vision" not in pro.capabilities  # 官方规格：pro 仅文本输入
     plain = next(m for m in mimo.models if m.id == "mimo-v2.5")
     assert "vision" in plain.capabilities  # 官方规格：v2.5 原生全模态
+    v26 = next(m for m in mimo.models if m.id == "mimo-v2.6-pro")
+    assert "web_search" in v26.capabilities
+    assert v26.search_channel == "mimo_chat_web_search"
+    assert v26.search_payload["tools"][0]["type"] == "web_search"
+    assert plain.search_channel == ""  # v2.5 未确认官方搜索 API
 
 
 # ============================================================

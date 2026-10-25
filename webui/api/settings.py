@@ -224,6 +224,181 @@ async def patch_vision_settings(
     }
 
 
+class WebSearchSettingPatch(BaseModel):
+    """联网搜索批量保存；None 表示不修改。"""
+
+    enabled: bool | None = None
+    free_enabled: bool | None = None
+    provider: Literal["bing_rss", "baidu", "searxng"] | None = None
+    searxng_base_url: str | None = None
+    max_results: int | None = None
+    timeout_seconds: float | None = None
+    official_enabled: bool | None = None
+    official_provider: str | None = None
+    official_model: str | None = None
+    official_timeout_seconds: float | None = None
+
+
+class WebSearchProbePayload(BaseModel):
+    provider: Literal["bing_rss", "baidu", "searxng"] = "bing_rss"
+    searxng_base_url: str = ""
+    timeout_seconds: float = 10.0
+
+
+def _apply_web_search_patch(
+    draft: Any, payload: WebSearchSettingPatch
+) -> None:
+    search = draft.features.web_search
+    if payload.enabled is not None:
+        search.enabled = payload.enabled
+    if payload.free_enabled is not None:
+        search.free_enabled = payload.free_enabled
+    if payload.provider is not None:
+        search.provider = payload.provider
+    if payload.searxng_base_url is not None:
+        search.searxng_base_url = payload.searxng_base_url.strip()
+    if payload.max_results is not None:
+        search.max_results = payload.max_results
+    if payload.timeout_seconds is not None:
+        search.timeout_seconds = payload.timeout_seconds
+    if payload.official_enabled is not None:
+        search.official.enabled = payload.official_enabled
+    if payload.official_provider is not None:
+        search.official.provider = payload.official_provider.strip() or None
+    if payload.official_model is not None:
+        search.official.model = payload.official_model.strip()
+    if payload.official_timeout_seconds is not None:
+        search.official.timeout_seconds = payload.official_timeout_seconds
+
+
+def _validate_official_search_channel(
+    rt: Any, provider_id: str, model_id: str
+) -> None:
+    provider_id = (provider_id or "").strip()
+    model_id = (model_id or "").strip()
+    if not provider_id:
+        raise HTTPException(
+            status_code=400,
+            detail="官方搜索需要选择 provider",
+        )
+    provider = (rt.config.providers or {}).get(provider_id)
+    if provider is None:
+        raise HTTPException(
+            status_code=400, detail=f"官方搜索 provider 不存在：{provider_id}"
+        )
+    preset_id = str(getattr(provider, "preset", "") or "").lower()
+    preset = (getattr(rt.provider_registry, "presets", {}) or {}).get(preset_id)
+    if preset is None:
+        raise HTTPException(
+            status_code=400,
+            detail="官方搜索只支持带内置预设的 provider",
+        )
+    if getattr(preset, "search_channel", ""):
+        # provider 级搜索（如 DeepSeek/Kimi Search）不绑定聊天模型。
+        return
+    if not model_id:
+        raise HTTPException(
+            status_code=400,
+            detail="该 provider 的搜索通道需要选择具体模型",
+        )
+    model = next(
+        (item for item in getattr(preset, "models", []) if item.id == model_id),
+        None,
+    )
+    if (
+        model is None
+        or not getattr(model, "search_channel", "")
+        or "web_search" not in (getattr(model, "capabilities", []) or [])
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{preset_id}/{model_id} 没有已确认的官方搜索 API",
+        )
+
+
+@router.patch("/web-search")
+async def patch_web_search_settings(
+    request: Request, payload: Annotated[WebSearchSettingPatch, Body()]
+) -> dict[str, Any]:
+    """一次校验、一次落盘保存联网搜索配置。"""
+    rt = require_runtime(request)
+    host = request.app.state.host
+    draft = rt.config.model_copy(deep=True)
+    _apply_web_search_patch(draft, payload)
+    try:
+        validate_config(draft)
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=400, detail=f"搜索设置不合法：{user_error_text(e)}"
+        ) from e
+    search = draft.features.web_search
+    if search.enabled and search.free_enabled:
+        from features.web_search.engines import build_free_engine
+
+        try:
+            build_free_engine(
+                search.provider,
+                searxng_base_url=search.searxng_base_url,
+                timeout_seconds=search.timeout_seconds,
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, detail=f"免费搜索配置不合法：{e}"
+            ) from e
+    if search.enabled and search.official.enabled:
+        _validate_official_search_channel(
+            rt,
+            str(search.official.provider or ""),
+            search.official.model,
+        )
+    apply_validated(
+        rt.config, lambda cfg: _apply_web_search_patch(cfg, payload)
+    )
+    await asyncio.to_thread(host.save_config)
+    search = rt.config.features.web_search
+    return {
+        "ok": True,
+        "needs_restart": True,
+        "value": {
+            "enabled": search.enabled,
+            "free_enabled": search.free_enabled,
+            "provider": search.provider,
+            "searxng_base_url": search.searxng_base_url,
+            "max_results": search.max_results,
+            "timeout_seconds": search.timeout_seconds,
+            "official_enabled": search.official.enabled,
+            "official_provider": search.official.provider or "",
+            "official_model": search.official.model,
+            "official_timeout_seconds": search.official.timeout_seconds,
+        },
+        "message": "搜索设置已保存；重启 Runtime 后生效",
+    }
+
+
+@router.post("/web-search/probe")
+async def probe_web_search(
+    request: Request, payload: Annotated[WebSearchProbePayload, Body()]
+) -> dict[str, Any]:
+    """测试免费搜索连通性；不调用官方付费搜索。"""
+    require_runtime(request)
+    from features.web_search.engines import build_free_engine
+
+    try:
+        engine = build_free_engine(
+            payload.provider,
+            searxng_base_url=payload.searxng_base_url,
+            timeout_seconds=payload.timeout_seconds,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail=f"免费搜索配置不合法：{e}"
+        ) from e
+    result = await engine.probe(
+        timeout_seconds=min(max(1.0, payload.timeout_seconds), 8.0)
+    )
+    return {"ok": result.ok, **result.as_dict()}
+
+
 def _coerce(value: Any, spec: dict[str, Any]) -> Any:
     kind = spec.get("type")
     if kind == "bool":

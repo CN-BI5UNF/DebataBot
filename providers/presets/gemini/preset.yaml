@@ -10,20 +10,32 @@ reasoning_style: openai_native
 models:
   - id: gemini-3-pro
     display_name: Gemini 3 Pro（推荐 · 2M 上下文）
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 2000000
+    search_channel: gemini_generate_content
+    search_payload:
+      base_url: https://generativelanguage.googleapis.com/v1beta
 
   - id: gemini-2.5-flash
     display_name: Gemini 2.5 Flash（推荐 · 性价比）
-    capabilities: [chat, tool_call, vision]
+    capabilities: [chat, tool_call, vision, web_search]
     context_length: 1000000
+    search_channel: gemini_generate_content
+    search_payload:
+      base_url: https://generativelanguage.googleapis.com/v1beta
 
   - id: gemini-2.5-pro
     display_name: Gemini 2.5 Pro
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1000000
+    search_channel: gemini_generate_content
+    search_payload:
+      base_url: https://generativelanguage.googleapis.com/v1beta
 
   - id: gemini-2.5-flash-lite
     display_name: Gemini 2.5 Flash Lite
-    capabilities: [chat, tool_call, vision]
+    capabilities: [chat, tool_call, vision, web_search]
     context_length: 1000000
+    search_channel: gemini_generate_content
+    search_payload:
+      base_url: https://generativelanguage.googleapis.com/v1beta

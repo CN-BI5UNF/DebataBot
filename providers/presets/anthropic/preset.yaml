@@ -10,15 +10,27 @@ image_detail_supported: false
 models:
   - id: claude-opus-4-8
     display_name: Claude Opus 4.8
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1000000
+    search_channel: anthropic_messages
+    search_payload:
+      tool_type: web_search_20250305
+      max_uses: 5
 
   - id: claude-sonnet-4-6
     display_name: Claude Sonnet 4.6
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1000000
+    search_channel: anthropic_messages
+    search_payload:
+      tool_type: web_search_20250305
+      max_uses: 5
 
   - id: claude-haiku-4-5-20251001
     display_name: Claude Haiku 4.5
-    capabilities: [chat, tool_call, vision]
+    capabilities: [chat, tool_call, vision, web_search]
     context_length: 200000
+    search_channel: anthropic_messages
+    search_payload:
+      tool_type: web_search_20250305
+      max_uses: 5

@@ -27,3 +27,43 @@ models:
     display_name: MiMo V2.5（全模态 · 1M 上下文）
     capabilities: [chat, tool_call, reasoning, vision]
     context_length: 1000000
+
+  # V2.6 官方 Web Search 插件（需先在 MiMo 控制台启用插件）。
+  - id: mimo-v2.6-flash
+    display_name: MiMo V2.6 Flash（官方联网搜索）
+    capabilities: [chat, tool_call, reasoning, web_search]
+    context_length: 1000000
+    search_channel: mimo_chat_web_search
+    search_payload:
+      tools:
+        - type: web_search
+          force_search: true
+          max_keyword: 3
+          limit: 5
+      tool_choice: auto
+
+  - id: mimo-v2.6-pro
+    display_name: MiMo V2.6 Pro（官方联网搜索）
+    capabilities: [chat, tool_call, reasoning, web_search]
+    context_length: 1000000
+    search_channel: mimo_chat_web_search
+    search_payload:
+      tools:
+        - type: web_search
+          force_search: true
+          max_keyword: 3
+          limit: 5
+      tool_choice: auto
+
+  - id: mimo-v2.6-pro-ultraspeed
+    display_name: MiMo V2.6 Pro UltraSpeed（官方联网搜索）
+    capabilities: [chat, tool_call, reasoning, web_search]
+    context_length: 1000000
+    search_channel: mimo_chat_web_search
+    search_payload:
+      tools:
+        - type: web_search
+          force_search: true
+          max_keyword: 3
+          limit: 5
+      tool_choice: auto

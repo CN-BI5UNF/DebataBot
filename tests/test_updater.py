@@ -476,6 +476,48 @@ async def test_auto_check_failure_retries_in_six_hours(tmp_path):
     assert state["available"] is None
 
 
+@pytest.mark.asyncio
+async def test_probe_mirrors_is_read_only_and_reports_per_target(tmp_path, monkeypatch):
+    work, data, remote = _seed_repo(tmp_path)
+    service = UpdateService(
+        work,
+        data,
+        mirror=f"file://{remote}",
+        allow_local_remote=True,
+    )
+
+    async def fake_git(*args, timeout=None):
+        assert args[0] == "ls-remote"
+        if "bad.example" in args[-1]:
+            raise UpdateError("git_timeout", "timeout")
+        return ""
+
+    monkeypatch.setattr(service, "_git", fake_git)
+    import core.updater as updater
+
+    monkeypatch.setattr(
+        updater,
+        "mirror_presets",
+        lambda: [
+            {"id": "ok", "label": "OK", "value": f"file://{remote}", "note": ""},
+            {
+                "id": "bad",
+                "label": "BAD",
+                "value": "https://bad.example/CN-BI5UNF/DebataBot.git",
+                "note": "",
+            },
+        ],
+    )
+    result = await service.probe_mirrors(timeout_seconds=3)
+    by_id = {item["id"]: item for item in result["results"]}
+    assert by_id["ok"]["ok"] is True
+    assert by_id["ok"]["latency_ms"] >= 0
+    assert by_id["bad"]["ok"] is False
+    assert by_id["bad"]["error_code"] == "git_timeout"
+    assert service._plan is None
+    assert not (data / "update_state.json").exists()
+
+
 def test_build_service_cache_and_http_error_mapping(tmp_path):
     from types import SimpleNamespace
 

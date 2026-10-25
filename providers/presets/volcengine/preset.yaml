@@ -8,6 +8,14 @@ image_detail_supported: false
 reasoning_style: thinking_extra_body
 
 models:
+  - id: doubao-seed-2-1-pro-260915
+    display_name: 豆包 Seed 2.1 Pro（官方联网搜索）
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
+    context_length: 256000
+    search_channel: openai_responses
+    search_payload:
+      tool_type: web_search
+
   - id: doubao-seed-2-0-lite-260428
     display_name: 豆包 Seed 2.0 Lite（推荐 · 多模态）
     capabilities: [chat, tool_call, reasoning, vision]

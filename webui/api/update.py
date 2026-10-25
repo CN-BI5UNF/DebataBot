@@ -49,6 +49,10 @@ class UpdateNotificationPayload(BaseModel):
     suppress_badge: bool | None = None
 
 
+class UpdateProbePayload(BaseModel):
+    timeout_seconds: float = Field(default=8.0, ge=1.0, le=30.0)
+
+
 def build_service(host: Any, rt: Any | None = None) -> UpdateService | None:
     """从 RuntimeHost 构造/复用更新服务。
 
@@ -143,6 +147,20 @@ async def status(request: Request) -> dict[str, Any]:
         **data,
         "notification": notification,
     }
+
+
+@router.post("/probe")
+async def probe(
+    request: Request, payload: Annotated[UpdateProbePayload, Body()]
+) -> dict[str, Any]:
+    """只读测速 GitHub 官方与镜像站，不执行更新。"""
+    service = _service(request)
+    try:
+        return await service.probe_mirrors(
+            timeout_seconds=payload.timeout_seconds
+        )
+    except UpdateError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.get("/available")

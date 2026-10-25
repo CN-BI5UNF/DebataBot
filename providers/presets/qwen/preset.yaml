@@ -10,28 +10,43 @@ reasoning_style: qwen_enable_thinking
 models:
   - id: qwen3.7-max
     display_name: Qwen3.7 Max（推荐 · 最新旗舰）
-    capabilities: [chat, tool_call, reasoning]
+    capabilities: [chat, tool_call, reasoning, web_search]
     context_length: 1000000
+    search_channel: qwen_enable_search
+    search_payload:
+      enable_search: true
 
   - id: qwen3.6-plus
     display_name: Qwen3.6 Plus（推荐 · 1M · 多模态）
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1000000
+    search_channel: qwen_enable_search
+    search_payload:
+      enable_search: true
 
   - id: qwen3.6-flash
     display_name: Qwen3.6 Flash（1M · 多模态）
-    capabilities: [chat, tool_call, vision]
+    capabilities: [chat, tool_call, vision, web_search]
     context_length: 1000000
+    search_channel: qwen_enable_search
+    search_payload:
+      enable_search: true
 
   - id: qwen3-max
     display_name: Qwen3 Max
-    capabilities: [chat, tool_call, reasoning]
+    capabilities: [chat, tool_call, reasoning, web_search]
     context_length: 262144
+    search_channel: qwen_enable_search
+    search_payload:
+      enable_search: true
 
   - id: qwen-plus
     display_name: Qwen Plus（1M · thinking）
-    capabilities: [chat, tool_call, reasoning]
+    capabilities: [chat, tool_call, reasoning, web_search]
     context_length: 1000000
+    search_channel: qwen_enable_search
+    search_payload:
+      enable_search: true
 
   - id: qwen3-turbo
     display_name: Qwen3 Turbo

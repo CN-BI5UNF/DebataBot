@@ -21,6 +21,19 @@ const VISION_FIELD_PATHS = new Set([
   'features.vision.image_limits.max_images_per_request',
 ]);
 
+const SEARCH_FIELD_PATHS = new Set([
+  'features.web_search.enabled',
+  'features.web_search.free_enabled',
+  'features.web_search.provider',
+  'features.web_search.searxng_base_url',
+  'features.web_search.max_results',
+  'features.web_search.timeout_seconds',
+  'features.web_search.official.enabled',
+  'features.web_search.official.provider',
+  'features.web_search.official.model',
+  'features.web_search.official.timeout_seconds',
+]);
+
 export async function render(container, ctx) {
   let payload;
   try {
@@ -548,6 +561,311 @@ export async function render(container, ctx) {
   }
 
   // ============================================================
+  // 联网搜索（专用面板）
+  // ============================================================
+
+  async function appendSearchPanel(nodes, group) {
+    const byPath = new Map(group.fields.map((spec) => [spec.path, spec]));
+    const enabledSpec = byPath.get('features.web_search.enabled');
+    const freeEnabledSpec = byPath.get('features.web_search.free_enabled');
+    const providerSpec = byPath.get('features.web_search.provider');
+    const searxngSpec = byPath.get('features.web_search.searxng_base_url');
+    const maxSpec = byPath.get('features.web_search.max_results');
+    const timeoutSpec = byPath.get('features.web_search.timeout_seconds');
+    const officialEnabledSpec = byPath.get('features.web_search.official.enabled');
+    const officialProviderSpec = byPath.get('features.web_search.official.provider');
+    const officialModelSpec = byPath.get('features.web_search.official.model');
+    const officialTimeoutSpec = byPath.get(
+      'features.web_search.official.timeout_seconds');
+    if (!enabledSpec || !freeEnabledSpec || !providerSpec || !searxngSpec
+        || !maxSpec || !timeoutSpec || !officialEnabledSpec
+        || !officialProviderSpec || !officialModelSpec || !officialTimeoutSpec) {
+      return;
+    }
+
+    let providerPayload = { providers: [], agents: {} };
+    let presets = [];
+    let loadError = '';
+    try {
+      providerPayload = await endpoints.providers();
+    } catch (e) {
+      loadError = e.message;
+    }
+    try {
+      const data = await endpoints.providerPresets();
+      presets = Array.isArray(data.presets) ? data.presets : [];
+    } catch {
+      // 预设只用于官方通道下拉；失败时仍可配置免费搜索。
+    }
+    const providerList = Array.isArray(providerPayload.providers)
+      ? providerPayload.providers : [];
+
+    function presetOf(provider) {
+      const presetId = String(provider?.preset || '').toLowerCase();
+      return presets.find((item) => item.id === presetId) || null;
+    }
+
+    const officialOptions = [];
+    for (const provider of providerList) {
+      const preset = presetOf(provider);
+      if (!preset) continue;
+      if (preset.search_channel) {
+        officialOptions.push({
+          value: `${provider.id}::`,
+          label: `${provider.display_name || provider.id} · `
+            + `${preset.search_label || '官方搜索'}（provider 级）`,
+        });
+      }
+      for (const model of preset.models || []) {
+        if (!model.search_channel
+            || !(model.capabilities || []).includes('web_search')) {
+          continue;
+        }
+        officialOptions.push({
+          value: `${provider.id}::${model.id}`,
+          label: `${provider.display_name || provider.id} / `
+            + `${model.display_name || model.id}`,
+        });
+      }
+    }
+    const currentOfficial = `${String(officialProviderSpec.value || '')}::`
+      + `${String(officialModelSpec.value || '')}`;
+    if (currentOfficial !== '::'
+        && !officialOptions.some((item) => item.value === currentOfficial)) {
+      officialOptions.push({
+        value: currentOfficial,
+        label: `当前配置：${currentOfficial}（不在预设搜索列表）`,
+      });
+    }
+
+    const masterInput = h('input', {
+      type: 'checkbox', checked: Boolean(enabledSpec.value),
+      dataset: { searchMaster: '1' },
+    });
+    const masterRow = h('label', { class: 'switch' }, masterInput,
+      '启用联网搜索 web_search');
+
+    // ---- 免费搜索 ---------------------------------------------
+    const freeInput = h('input', {
+      type: 'checkbox', checked: Boolean(freeEnabledSpec.value),
+      dataset: { searchFree: '1' },
+    });
+    const freeRow = h('label', { class: 'switch' }, freeInput,
+      '启用免费搜索（优先）');
+    const engineSelect = h('select', {
+      dataset: { searchEngine: '1' },
+    });
+    for (const [value, label] of providerSpec.options || []) {
+      engineSelect.append(h('option', {
+        value, selected: value === providerSpec.value,
+      }, label));
+    }
+    engineSelect.value = providerSpec.value || 'bing_rss';
+    const searxngInput = h('input', {
+      value: String(searxngSpec.value || ''),
+      placeholder: 'https://searx.example.com',
+      dataset: { searchSearxng: '1' },
+    });
+    const searxngRow = field('SearXNG 地址', searxngInput,
+      '需要实例开启 JSON 输出；自建实例更适合长期使用。');
+    const maxInput = h('input', {
+      type: 'number', min: '1', max: '20',
+      value: maxSpec.value ?? 5,
+    });
+    const timeoutInput = h('input', {
+      type: 'number', min: '1', max: '60', step: '1',
+      value: timeoutSpec.value ?? 10,
+    });
+    const probeBtn = h('button', {
+      class: 'btn', dataset: { searchProbe: '1' },
+    }, '测速免费搜索');
+    const probeStatus = h('p', { class: 'field-help' });
+    const freeDetails = h('div', {
+      dataset: { searchFreeDetails: '1' },
+    },
+      freeRow,
+      field('免费搜索后端', engineSelect,
+        'Bing RSS 国内可直连且 RSS 无广告；百度国内可直连，页面较大时会稍慢；'
+        + 'SearXNG 需要自建实例并开启 JSON。'),
+      searxngRow,
+      field('最多结果数', maxInput, '1–20，建议 5。'),
+      field('免费搜索超时（秒）', timeoutInput, '测速和单次请求都会受此限制。'),
+      h('div', { class: 'row row-wrap' }, probeBtn),
+      probeStatus,
+      h('p', { class: 'field-help' },
+        'Bing RSS 受 Microsoft 的 RSS 个人非商业使用条款约束；百度网页解析'
+        + '请自行确认目标站点条款；商业部署建议自建 SearXNG、使用官方搜索 API '
+        + '或取得授权。'),
+    );
+
+    // ---- 官方搜索 ---------------------------------------------
+    const officialInput = h('input', {
+      type: 'checkbox', checked: Boolean(officialEnabledSpec.value),
+      dataset: { searchOfficial: '1' },
+    });
+    const officialRow = h('label', { class: 'switch' }, officialInput,
+      '启用官方搜索（仅在免费搜索不可用时回退）');
+    const channelSelect = h('select', {
+      dataset: { searchChannel: '1' },
+    });
+    channelSelect.append(h('option', { value: '' }, '未选择官方搜索通道'));
+    for (const option of officialOptions) {
+      channelSelect.append(h('option', {
+        value: option.value, selected: option.value === currentOfficial,
+      }, option.label));
+    }
+    channelSelect.value = officialOptions.some(
+      (item) => item.value === currentOfficial) ? currentOfficial : '';
+    const officialTimeoutInput = h('input', {
+      type: 'number', min: '5', max: '180', step: '1',
+      value: officialTimeoutSpec.value ?? 45,
+    });
+    const officialDetails = h('div', {
+      dataset: { searchOfficialDetails: '1' },
+    },
+      officialRow,
+      field('官方搜索通道', channelSelect,
+        '只列出预设中已确认存在官方搜索 API 的 provider / 模型。'),
+      field('官方搜索超时（秒）', officialTimeoutInput,
+        '官方搜索可能包含模型生成与搜索，通常比免费搜索慢。'),
+      loadError
+        ? h('p', { class: 'field-help' }, `读取 provider/预设失败：${loadError}`)
+        : null,
+      !officialOptions.length
+        ? h('p', { class: 'field-help' },
+          '当前已添加的 provider 没有已确认的官方搜索通道；'
+          + '可以先到「模型」页添加对应预设。')
+        : null,
+      h('p', { class: 'field-help' },
+        '官方搜索会调用模型/搜索 API，可能产生额外 token 或按次搜索费用，'
+        + '具体以 provider 官方账单为准。两者都开时免费搜索优先；'
+        + '只有免费搜索测速或本次请求失败才回退到官方；只开一个时只用该通道。'),
+    );
+
+    // ---- 保存 -------------------------------------------------
+    const saveBtn = h('button', {
+      class: 'btn btn-primary', dataset: { searchSave: '1' },
+    }, '保存搜索设置');
+    const saveStatus = h('p', { class: 'field-help' });
+
+    function syncVisibility() {
+      const master = masterInput.checked;
+      freeInput.disabled = !master;
+      officialInput.disabled = !master;
+      freeDetails.style.display = master && freeInput.checked ? '' : 'none';
+      officialDetails.style.display = master && officialInput.checked ? '' : 'none';
+      searxngRow.style.display = engineSelect.value === 'searxng' ? '' : 'none';
+      probeBtn.disabled = !freeInput.checked;
+    }
+
+    engineSelect.addEventListener('change', syncVisibility);
+    freeInput.addEventListener('change', syncVisibility);
+    officialInput.addEventListener('change', syncVisibility);
+    masterInput.addEventListener('change', syncVisibility);
+
+    probeBtn.addEventListener('click', async () => {
+      const provider = engineSelect.value;
+      const searxng = searxngInput.value.trim();
+      if (provider === 'searxng' && !searxng) {
+        probeStatus.textContent = '请先填写 SearXNG 地址。';
+        return;
+      }
+      probeBtn.disabled = true;
+      probeStatus.textContent = '测速中…';
+      try {
+        const result = await endpoints.probeSearch({
+          provider,
+          searxng_base_url: searxng,
+          timeout_seconds: Number(timeoutInput.value) || 10,
+        });
+        probeStatus.textContent = result.ok
+          ? `可用：${result.latency_ms} ms（${result.engine}）`
+          : `不可用：${result.error || result.error_code || '未知错误'}`
+            + `（${result.latency_ms || 0} ms）`;
+      } catch (e) {
+        probeStatus.textContent = `测速失败：${e.message}`;
+      } finally {
+        probeBtn.disabled = false;
+      }
+    });
+
+    saveBtn.addEventListener('click', async () => {
+      const master = masterInput.checked;
+      const freeEnabled = freeInput.checked;
+      const officialEnabled = officialInput.checked;
+      const provider = engineSelect.value;
+      const searxng = searxngInput.value.trim();
+      if (master && !freeEnabled && !officialEnabled) {
+        saveStatus.textContent = '至少开启免费搜索或官方搜索。';
+        return;
+      }
+      if (master && freeEnabled && provider === 'searxng' && !searxng) {
+        saveStatus.textContent = '选择 SearXNG 时需要填写实例地址。';
+        return;
+      }
+      const rawChannel = channelSelect.value;
+      if (master && officialEnabled && !rawChannel) {
+        saveStatus.textContent = '开启官方搜索前请选择一个官方搜索通道。';
+        return;
+      }
+      const sep = rawChannel.indexOf('::');
+      const officialProvider = sep >= 0 ? rawChannel.slice(0, sep) : '';
+      const officialModel = sep >= 0 ? rawChannel.slice(sep + 2) : '';
+      const payload = {
+        enabled: master,
+        free_enabled: freeEnabled,
+        provider,
+        searxng_base_url: searxng,
+        max_results: Number(maxInput.value) || 5,
+        timeout_seconds: Number(timeoutInput.value) || 10,
+        official_enabled: officialEnabled,
+        official_provider: officialProvider,
+        official_model: officialModel,
+        official_timeout_seconds: Number(officialTimeoutInput.value) || 45,
+      };
+      saveBtn.disabled = true;
+      saveStatus.textContent = '正在保存…';
+      try {
+        const result = await endpoints.patchSearch(payload);
+        const saved = result.value || {};
+        enabledSpec.value = Boolean(saved.enabled);
+        freeEnabledSpec.value = Boolean(saved.free_enabled);
+        providerSpec.value = saved.provider || 'bing_rss';
+        searxngSpec.value = saved.searxng_base_url || '';
+        maxSpec.value = saved.max_results ?? 5;
+        timeoutSpec.value = saved.timeout_seconds ?? 10;
+        officialEnabledSpec.value = Boolean(saved.official_enabled);
+        officialProviderSpec.value = saved.official_provider || '';
+        officialModelSpec.value = saved.official_model || '';
+        officialTimeoutSpec.value = saved.official_timeout_seconds ?? 45;
+        saveStatus.textContent = '搜索设置已保存；重启 Runtime 后生效。';
+        markRestart();
+        ctx.toast('搜索设置已保存', 'ok');
+      } catch (e) {
+        saveStatus.textContent = `保存失败：${e.message}`;
+        ctx.toast(`搜索设置保存失败：${e.message}`, 'error');
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    syncVisibility();
+    nodes.push(card('联网搜索',
+      '免费搜索优先；官方搜索只在免费通道测速/请求失败时回退，且需要显式开启。',
+      masterRow,
+      freeDetails,
+    ));
+    nodes.push(card('官方搜索（可选）',
+      '调用模型或搜索服务的官方 API，可能产生额外费用。',
+      officialDetails,
+      h('div', { class: 'row' },
+        h('div', { class: 'spacer' }),
+        saveBtn),
+      saveStatus,
+    ));
+  }
+
+  // ============================================================
   // 模型分页
   // ============================================================
 
@@ -758,12 +1076,65 @@ export async function render(container, ctx) {
         saveBtn.disabled = false;
       }
     });
+    const probeBtn = h('button', {
+      class: 'btn', dataset: { updateProbe: '1' },
+    }, '测速 GitHub / 镜像');
+    const probeStatus = h('p', { class: 'field-help' });
+    const probeHost = h('div', {});
+    probeBtn.addEventListener('click', async () => {
+      probeBtn.disabled = true;
+      probeStatus.textContent = '正在测试连接…';
+      fill(probeHost);
+      try {
+        const result = await endpoints.updateProbe({ timeout_seconds: 8 });
+        const rows = (result.results || []).map((item) => {
+          const useBtn = h('button', { class: 'btn btn-sm' }, '使用');
+          useBtn.addEventListener('click', async () => {
+            const preset = presets.find(
+              (entry) => (entry.value || '') === (item.mirror || ''));
+            select.value = preset ? preset.id : 'custom';
+            custom.value = item.mirror || '';
+            sync();
+            try {
+              await endpoints.patchSetting('update.mirror', item.mirror || '');
+              status.mirror = item.mirror || '';
+              saveStatus.textContent = status.mirror
+                ? `已保存：${status.mirror}`
+                : '已保存：使用 GitHub 官方直连';
+              onSaved();
+            } catch (e) {
+              saveStatus.textContent = `保存失败：${e.message}`;
+            }
+          });
+          return h('tr', {},
+            h('td', {}, item.label || item.id),
+            h('td', { class: 'mono' }, `${item.latency_ms || 0} ms`),
+            h('td', { class: item.ok ? 'ok' : 'bad' },
+              item.ok ? '可用' : (item.error || item.error_code || '失败')),
+            h('td', {}, item.ok ? useBtn : null));
+        });
+        probeStatus.textContent = '测速完成；只执行 git ls-remote，不下载代码、不更新。';
+        fill(probeHost, rows.length
+          ? table(['源', '延迟', '状态', ''], rows)
+          : empty('没有可测试的源'));
+      } catch (e) {
+        probeStatus.textContent = `测速失败：${e.message}`;
+      } finally {
+        probeBtn.disabled = false;
+      }
+    });
+
     return card('更新镜像',
       '预设几个常用源，也可以在下方填写自定义镜像。第三方源会看到代码请求，只使用你信任的源。',
       field('预设镜像', select, ''),
       field('自定义镜像站', custom, ''),
       note,
-      h('div', { class: 'row' }, h('div', { class: 'spacer' }), saveBtn),
+      h('div', { class: 'row row-wrap' },
+        probeBtn,
+        h('div', { class: 'spacer' }),
+        saveBtn),
+      probeStatus,
+      probeHost,
       saveStatus,
     );
   }
@@ -1061,7 +1432,9 @@ export async function render(container, ctx) {
 
     const nodes = [h('p', { class: 'card-sub' }, group.desc || '')];
     const visibleFields = group.fields.filter(
-      (spec) => !spec.hidden && !VISION_FIELD_PATHS.has(spec.path));
+      (spec) => !spec.hidden
+        && !VISION_FIELD_PATHS.has(spec.path)
+        && !SEARCH_FIELD_PATHS.has(spec.path));
     if (!visibleFields.length) {
       if (group.fields.length) {
         nodes.push(empty('这个分页的选项在下方专用面板中设置'));
@@ -1077,6 +1450,7 @@ export async function render(container, ctx) {
     }
     if (key === 'features') {
       await appendVisionPanel(nodes, group);
+      await appendSearchPanel(nodes, group);
     }
     if (key === 'update') {
       await appendUpdatePanel(nodes);

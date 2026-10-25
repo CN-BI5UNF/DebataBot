@@ -68,7 +68,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 - **看懂图片**（[Vision](feature_guides/vision.md)）：主聊天模型本身支持图片时，开启「主模型原生图片输入」即可；主模型不能看图时，再配置独立视觉（GLM-4V / Qwen-VL 等）。
 - **查天气**（[和风天气](feature_guides/weather.md)）：需要去和风控制台申请 API Key
 - **用声音说话**（[TTS](feature_guides/tts_voxcpm.md)）：本地 VoxCPM2 或云端 TTS
-- **联网搜索**（[DuckDuckGo](feature_guides/web_search.md)）：免费，不需要密钥，建议开启
+- **联网搜索**（[Bing RSS / 百度 / SearXNG](feature_guides/web_search.md)）：免费，不需要密钥，建议开启
 
 ### 第四步：记忆方式
 

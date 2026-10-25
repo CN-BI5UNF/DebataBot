@@ -9,6 +9,12 @@ reasoning_effort_options: [low, high, max]
 image_token_reserve: 384
 image_detail_supported: false
 # 官方视觉文档只展示 image_url.url；每图按 384 token 预算预留。
+# 官方 Search API 是 provider 级独立接口，不绑定聊天模型。
+search_channel: deepseek_tools_search
+search_label: DeepSeek Search（provider 级）
+search_payload:
+  request:
+    need_content: true
 
 models:
   - id: deepseek-flash

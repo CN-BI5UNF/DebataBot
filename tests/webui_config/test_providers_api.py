@@ -112,7 +112,12 @@ async def test_list_presets(req, presets):
     mimo = by_id["mimo"]
     assert mimo["protocol"] == "openai_compat"
     assert mimo["base_url"].startswith("https://api.xiaomimimo.com")
-    assert {m["id"] for m in mimo["models"]} == {"mimo-v2.5-pro", "mimo-v2.5"}
+    assert {m["id"] for m in mimo["models"]} == {
+        "mimo-v2.5-pro", "mimo-v2.5",
+        "mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.6-pro-ultraspeed",
+    }
+    v26 = next(m for m in mimo["models"] if m["id"] == "mimo-v2.6-pro")
+    assert v26["search_channel"] == "mimo_chat_web_search"
 
 
 # ============================================================

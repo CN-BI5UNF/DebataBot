@@ -6,6 +6,12 @@ registration_url: https://open.bigmodel.cn
 # GLM 视觉文档使用 image_url.url；不发送未声明的 detail。
 image_detail_supported: false
 reasoning_style: thinking_extra_body
+# 官方独立 Web Search API，不绑定聊天模型。
+search_channel: glm_standalone_web_search
+search_label: GLM 联网搜索（provider 级）
+search_payload:
+  request:
+    search_engine: search_std
 
 models:
   - id: glm-5.1

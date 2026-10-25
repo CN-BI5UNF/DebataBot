@@ -124,7 +124,7 @@ COPY: dict[str, str] = {
     "features.weather_title": "查天气",
     "features.weather_desc": "提供和风天气 API 密钥，Debata 就能查实时天气和未来预报。",
     "features.web_search_title": "联网搜索",
-    "features.web_search_desc": "走 DuckDuckGo 免费搜索，不需要额外密钥。建议开启。",
+    "features.web_search_desc": "走 Bing RSS / 百度免费搜索，不需要额外密钥。建议开启。",
     "features.long_term_memory_title": "长期记忆方式",
     "features.long_term_memory_desc": (
         "重要记忆始终启用。这里选择是否额外启用 RAG 历史向量召回增强："
@@ -188,7 +188,9 @@ COPY: dict[str, str] = {
     "adapter.manage_process_label": "由 Debata 托管 NapCat 进程",
     "adapter.manage_process_hint": (
         "打开后，启动 Debata 时自动拉起 NapCat，退出时自动关闭。\n"
-        "需要填 NapCat 启动脚本或可执行文件路径（.bat / .cmd / .exe）。"
+        "需要填 NapCat 启动脚本或可执行文件路径（.bat / .cmd / .exe），不要带引号。\n"
+        "如果 NapCat 已经由系统或手动启动，请关闭托管；Debata 也会先探测端口，"
+        "已有服务响应时跳过拉起。"
     ),
     "adapter.whitelist_title": "谁能跟 Debata 说话",
     "adapter.whitelist_mode_verify": "管理员审核",

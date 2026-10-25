@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -168,6 +168,20 @@ class NapCatAdapterConfig(StrictModel):
     process_path: str = ""
     process_args: list[str] = Field(default_factory=list)
     auto_restart: bool = True
+
+    @field_validator("process_path", mode="before")
+    @classmethod
+    def normalize_process_path(cls, value: Any) -> str:
+        """去掉 Windows 资源管理器“复制路径”带上的外层引号。"""
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        while len(text) >= 2 and (
+            (text[0] == text[-1] and text[0] in {'"', "'"})
+            or (text[0] in {"“", "‘"} and text[-1] in {"”", "’"})
+        ):
+            text = text[1:-1].strip()
+        return text
 
     # 重连参数
     reconnect_interval_seconds: float = 3.0
@@ -610,21 +624,56 @@ class WeatherFeatureConfig(StrictModel):
         return self
 
 
-class WebSearchFeatureConfig(StrictModel):
-    """DuckDuckGo 网页搜索。无需 API 密钥。
+class OfficialSearchConfig(StrictModel):
+    """模型官方搜索通道（会消耗模型 API 额度）。"""
 
-    enabled=True 时 Runtime 实例化 WebSearchService 并注册 web_search 工具。
-    """
+    enabled: bool = False
+    provider: str | None = None
+    """引用 providers 中的 ID。"""
+
+    model: str = ""
+    """使用该 provider 下带官方搜索能力的模型 ID。"""
+
+    timeout_seconds: float = 45.0
+
+    @model_validator(mode="after")
+    def validate_enabled_channel(self) -> OfficialSearchConfig:
+        if self.enabled and not (self.provider or "").strip():
+            raise ValueError(
+                "features.web_search.official.enabled=True 时必须选择 "
+                "official.provider"
+            )
+        return self
+
+
+class WebSearchFeatureConfig(StrictModel):
+    """联网搜索：免费后端优先，可选的模型官方搜索通道作为回退。"""
 
     enabled: bool = True
-    provider: Literal["ddg"] = "ddg"
-    """搜索后端。当前仅支持 DuckDuckGo。"""
+    free_enabled: bool = True
+    provider: Literal["bing_rss", "baidu", "searxng"] = "bing_rss"
+    """免费搜索后端。默认 Bing RSS；百度国内可直连；SearXNG 自建。"""
+
+    searxng_base_url: str = ""
+    """provider=searxng 时的实例地址。"""
+
+    official: OfficialSearchConfig = Field(default_factory=OfficialSearchConfig)
 
     max_results: int = 5
     """单次搜索返回的最大结果数。"""
 
     timeout_seconds: float = 10.0
-    """单次搜索的网络超时。"""
+    """单次免费搜索的网络超时。"""
+
+    @model_validator(mode="after")
+    def validate_search_channel(self) -> WebSearchFeatureConfig:
+        if not self.enabled:
+            return self
+        if not self.free_enabled and not self.official.enabled:
+            raise ValueError(
+                "features.web_search.enabled=True 时至少开启免费搜索或官方搜索"
+            )
+        return self
 
 
 class LongTermMemoryConfig(StrictModel):

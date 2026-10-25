@@ -9,30 +9,54 @@ reasoning_style: openai_native
 models:
   - id: anthropic/claude-sonnet-4-6
     display_name: Claude Sonnet 4.6（推荐 · via OpenRouter）
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1000000
+    search_channel: openrouter_web_plugin
+    search_payload:
+      plugins:
+        - id: web
 
   - id: anthropic/claude-opus-4-8
     display_name: Claude Opus 4.8（via OpenRouter）
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1000000
+    search_channel: openrouter_web_plugin
+    search_payload:
+      plugins:
+        - id: web
 
   - id: openai/gpt-5.4
     display_name: GPT-5.4（via OpenRouter）
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1050000
+    search_channel: openrouter_web_plugin
+    search_payload:
+      plugins:
+        - id: web
 
   - id: deepseek/deepseek-v4-flash
     display_name: DeepSeek V4 Flash（via OpenRouter）
-    capabilities: [chat, tool_call, reasoning]
+    capabilities: [chat, tool_call, reasoning, web_search]
     context_length: 1000000
+    search_channel: openrouter_web_plugin
+    search_payload:
+      plugins:
+        - id: web
 
   - id: google/gemini-2.5-flash
     display_name: Gemini 2.5 Flash（via OpenRouter）
-    capabilities: [chat, tool_call, vision]
+    capabilities: [chat, tool_call, vision, web_search]
     context_length: 1000000
+    search_channel: openrouter_web_plugin
+    search_payload:
+      plugins:
+        - id: web
 
   - id: meta-llama/llama-3.3-70b-instruct
     display_name: Llama 3.3 70B Instruct
-    capabilities: [chat, tool_call]
+    capabilities: [chat, tool_call, web_search]
     context_length: 128000
+    search_channel: openrouter_web_plugin
+    search_payload:
+      plugins:
+        - id: web

@@ -25,6 +25,7 @@ from adapters.types import (
     IncomingMessage,
     Target,
 )
+from app_config.schema import NapCatAdapterConfig
 from core.state import RateLimiter
 
 # ============================================================
@@ -1304,3 +1305,55 @@ async def test_send_voice_timeout_is_treated_as_possible_success(tmp_path):
     )
 
     assert mid is None
+
+
+def test_napcat_process_path_strips_windows_quotes():
+    cfg = NapCatAdapterConfig(
+        process_path='"D:\\Debata_Agent\\NapCat.Shell\\launcher.bat"',
+    )
+    assert cfg.process_path == "D:\\Debata_Agent\\NapCat.Shell\\launcher.bat"
+    cfg2 = NapCatAdapterConfig(
+        process_path="  “D:\\Debata_Agent\\NapCat.Shell\\launcher.bat”  ",
+    )
+    assert cfg2.process_path == "D:\\Debata_Agent\\NapCat.Shell\\launcher.bat"
+
+
+def test_process_manager_strips_quotes_from_path(tmp_path):
+    target = tmp_path / "launcher.bat"
+    manager = NapCatProcessManager(f'"{target}"')
+    assert manager.executable == target
+
+
+@pytest.mark.asyncio
+async def test_process_manager_skips_when_onebot_port_already_responds(
+    tmp_path, monkeypatch
+):
+    script = tmp_path / "launcher.bat"
+    script.write_text("@echo off\n", encoding="utf-8")
+    manager = NapCatProcessManager(script, probe_target=("127.0.0.1", 3001))
+    spawned = 0
+
+    async def reachable():
+        return True
+
+    async def fake_spawn():
+        nonlocal spawned
+        spawned += 1
+
+    monkeypatch.setattr(manager, "_target_reachable", reachable)
+    monkeypatch.setattr(manager, "_spawn_once", fake_spawn)
+    await manager.start()
+    assert spawned == 0
+    assert manager._monitor_task is None
+
+
+@pytest.mark.asyncio
+async def test_process_manager_missing_path_warns_without_blocking(tmp_path, caplog):
+    manager = NapCatProcessManager(
+        tmp_path / "missing" / "launcher.bat",
+        probe_target=("127.0.0.1", 1),
+    )
+    with caplog.at_level(logging.WARNING):
+        await manager.start()
+    assert manager._process is None
+    assert "跳过进程托管" in caplog.text

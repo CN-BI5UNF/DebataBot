@@ -376,11 +376,44 @@ class Runtime:
 
         if self.config.features.web_search.enabled:
             wscfg = self.config.features.web_search
-            self.web_search = WebSearchService(
-                max_results=wscfg.max_results,
-                timeout_seconds=wscfg.timeout_seconds,
-            )
-            logger.info("WebSearchService 已启用（DuckDuckGo）")
+            official_client = None
+            if wscfg.official.enabled:
+                try:
+                    from features.web_search.official import (
+                        build_official_search_client,
+                    )
+
+                    official_client = build_official_search_client(
+                        provider_id=str(wscfg.official.provider or ""),
+                        provider_config=(
+                            self.config.providers or {}
+                        ).get(str(wscfg.official.provider or "")),
+                        model=wscfg.official.model,
+                        secrets=self.secrets,
+                        provider_registry=self.provider_registry,
+                        timeout_seconds=wscfg.official.timeout_seconds,
+                    )
+                except Exception as exc:  # noqa: BLE001 - 不允许拖垮整个 Runtime
+                    logger.warning(
+                        "官方搜索通道构造失败，将仅使用免费搜索：%s", exc
+                    )
+            try:
+                self.web_search = WebSearchService(
+                    max_results=wscfg.max_results,
+                    timeout_seconds=wscfg.timeout_seconds,
+                    free_enabled=wscfg.free_enabled,
+                    free_provider=wscfg.provider,
+                    searxng_base_url=wscfg.searxng_base_url,
+                    official_enabled=bool(official_client),
+                    official_client=official_client,
+                )
+                logger.info(
+                    "WebSearchService 已启用（free=%s，official=%s）",
+                    wscfg.free_enabled,
+                    bool(official_client),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("WebSearchService 构造失败，联网搜索不可用：%s", exc)
 
         if self.config.features.weather.enabled:
             wcfg = self.config.features.weather

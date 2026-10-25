@@ -6,6 +6,12 @@ registration_url: https://platform.moonshot.cn
 # Kimi 视觉文档使用 image_url.url；detail 未声明。
 image_detail_supported: false
 reasoning_style: thinking_extra_body
+# 旧 $web_search 内置工具已退役；使用独立的 Search REST API。
+search_channel: kimi_tools_search
+search_label: Kimi Search（provider 级）
+search_payload:
+  query_field: text_query
+  include_count: false
 
 models:
   - id: kimi-k2.6

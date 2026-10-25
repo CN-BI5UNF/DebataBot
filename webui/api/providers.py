@@ -142,12 +142,15 @@ async def list_presets(request: Request) -> dict[str, Any]:
                 "reasoning_effort_style": getattr(
                     preset, "reasoning_effort_style", "none"
                 ),
+                "search_channel": getattr(preset, "search_channel", ""),
+                "search_label": getattr(preset, "search_label", ""),
                 "models": [
                     {
                         "id": m.id,
                         "display_name": m.display_name,
                         "capabilities": list(m.capabilities),
                         "context_length": m.context_length,
+                        "search_channel": m.search_channel,
                         "reasoning_effort_options": (
                             list(getattr(m, "reasoning_effort_options", []) or [])
                             or list(

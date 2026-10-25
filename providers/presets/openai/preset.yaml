@@ -11,9 +11,12 @@ image_detail_supported: true
 models:
   - id: gpt-5.5
     display_name: GPT-5.5（推荐 · 最新旗舰 · 1M 上下文）
-    capabilities: [chat, tool_call, reasoning, vision]
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
     context_length: 1050000
     reasoning_effort_options: [low, medium, high, xhigh]
+    search_channel: openai_responses
+    search_payload:
+      tool_type: web_search
 
   - id: gpt-5.4
     display_name: GPT-5.4（推荐 · 性价比 · 1M 上下文）

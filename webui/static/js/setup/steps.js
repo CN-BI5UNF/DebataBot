@@ -393,7 +393,7 @@ export function renderFeatures(host, ctx, state) {
   }
 
   // 联网搜索
-  nodes.push(toggleRow('web_search', '联网搜索', '让角色能查网上的信息（DuckDuckGo，免费）。'));
+  nodes.push(toggleRow('web_search', '联网搜索', '让角色能查网上的信息（Bing RSS / 百度，免费）。'));
 
   // 天气
   nodes.push(toggleRow('weather', '天气查询', '需要和风天气的 Key，免费额度够个人用。'));

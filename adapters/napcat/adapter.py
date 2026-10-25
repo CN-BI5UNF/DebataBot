@@ -190,6 +190,11 @@ class NapCatAdapter(IAdapter):
                 executable=cfg.process_path,
                 args=list(cfg.process_args),
                 auto_restart=cfg.auto_restart,
+                probe_target=(
+                    (cfg.host, int(cfg.port))
+                    if str(getattr(cfg, "mode", "")) == "client"
+                    else None
+                ),
             )
 
         return cls(

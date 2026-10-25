@@ -399,6 +399,84 @@ class UpdateService:
             "mirror_presets": mirror_presets(),
         }
 
+    async def probe_mirrors(self, *, timeout_seconds: float = 8.0) -> dict:
+        """只读测速：对 GitHub 官方和已配置镜像执行 ``git ls-remote``。
+
+        不获取 tag 内容、不创建 plan、不写 update_state.json，也不切换源码。
+        """
+        timeout = max(1.0, min(30.0, float(timeout_seconds)))
+        candidates = list(mirror_presets())
+        if self.mirror and not any(
+            str(item.get("value") or "") == self.mirror for item in candidates
+        ):
+            candidates.append(
+                {
+                    "id": "custom",
+                    "label": "当前自定义镜像",
+                    "value": self.mirror,
+                    "note": "",
+                }
+            )
+
+        async def probe(candidate: dict) -> dict:
+            started = time.perf_counter()
+            value = str(candidate.get("value") or "")
+            try:
+                if value.startswith("file://") and self.allow_local_remote:
+                    url = value
+                else:
+                    url = resolve_update_repo_url(value)
+                await self._git(
+                    "ls-remote", "--tags", url, timeout=timeout
+                )
+                return {
+                    "id": str(candidate.get("id") or ""),
+                    "label": str(candidate.get("label") or ""),
+                    "mirror": value,
+                    "url": url,
+                    "ok": True,
+                    "latency_ms": int(
+                        (time.perf_counter() - started) * 1000
+                    ),
+                    "error": "",
+                    "error_code": "",
+                }
+            except UpdateError as exc:
+                return {
+                    "id": str(candidate.get("id") or ""),
+                    "label": str(candidate.get("label") or ""),
+                    "mirror": value,
+                    "url": "",
+                    "ok": False,
+                    "latency_ms": int(
+                        (time.perf_counter() - started) * 1000
+                    ),
+                    "error": exc.message,
+                    "error_code": exc.code,
+                }
+            except Exception as exc:  # noqa: BLE001 - 单目标失败不影响其它目标
+                return {
+                    "id": str(candidate.get("id") or ""),
+                    "label": str(candidate.get("label") or ""),
+                    "mirror": value,
+                    "url": "",
+                    "ok": False,
+                    "latency_ms": int(
+                        (time.perf_counter() - started) * 1000
+                    ),
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "error_code": "probe_failed",
+                }
+
+        results = await asyncio.gather(
+            *(probe(candidate) for candidate in candidates)
+        )
+        return {
+            "checked_at": time.time(),
+            "timeout_seconds": timeout,
+            "results": results,
+        }
+
     async def releases(self, *, force: bool = False) -> dict:
         """列出远端 tag/Release 与更新日志；需要网络。"""
         async with self._lock:

@@ -51,9 +51,14 @@ class ModelInfo:
     reasoning_effort_options: list[str] = field(default_factory=list)
     image_token_reserve: int = 0
     image_detail_supported: bool = True
+    search_channel: str = ""
+    """官方搜索通道；空表示该模型没有已确认的官方搜索 API。"""
+    search_payload: dict[str, Any] = field(default_factory=dict)
+    """传给官方搜索请求的通道专属字段（仅 search_channel 非空时使用）。"""
 
     @classmethod
     def from_dict(cls, data: dict) -> ModelInfo:
+        search_payload = data.get("search_payload", {})
         return cls(
             id=str(data.get("id", "")),
             display_name=str(data.get("display_name", data.get("id", ""))),
@@ -66,6 +71,10 @@ class ModelInfo:
             ],
             image_token_reserve=int(data.get("image_token_reserve", 0) or 0),
             image_detail_supported=bool(data.get("image_detail_supported", True)),
+            search_channel=str(data.get("search_channel", "") or "").strip(),
+            search_payload=(
+                dict(search_payload) if isinstance(search_payload, dict) else {}
+            ),
         )
 
 
@@ -96,6 +105,12 @@ class ProviderPreset:
 
     image_detail_supported: bool = True
     """是否向 image_url 发送 detail 字段；DeepSeek 当前文档未声明该字段。"""
+
+    search_channel: str = ""
+    """provider 级官方搜索通道；独立于具体聊天模型（如 DeepSeek/Kimi Search）。"""
+
+    search_payload: dict[str, Any] = field(default_factory=dict)
+    search_label: str = ""
 
     tutorial_dir: Path | None = None
     icon: Path | None = None
@@ -130,6 +145,13 @@ class ProviderPreset:
             ],
             image_token_reserve=int(data.get("image_token_reserve", 0) or 0),
             image_detail_supported=bool(data.get("image_detail_supported", True)),
+            search_channel=str(data.get("search_channel", "") or "").strip(),
+            search_payload=(
+                dict(data.get("search_payload"))
+                if isinstance(data.get("search_payload"), dict)
+                else {}
+            ),
+            search_label=str(data.get("search_label", "") or ""),
             tutorial_dir=tutorial if tutorial.is_dir() else None,
             icon=icon if icon.exists() else None,
         )

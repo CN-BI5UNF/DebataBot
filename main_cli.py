@@ -237,16 +237,18 @@ def _cli_configure_features(paths, secrets, cfg, main_provider_id: str) -> None:
         TTSFeatureConfig,
         VisionFeatureConfig,
         WeatherFeatureConfig,
-        WebSearchFeatureConfig,
     )
 
     features = cfg.features
     print("\n[可选功能]")
-    features.web_search = WebSearchFeatureConfig(
-        enabled=_cli_yes_no("启用网页搜索 web_search？", features.web_search.enabled),
-        provider="ddg",
-        max_results=features.web_search.max_results,
-        timeout_seconds=features.web_search.timeout_seconds,
+    # 向导只切换总开关；免费引擎、官方通道和超时等细项保留设置页配置。
+    features.web_search = features.web_search.model_copy(
+        update={
+            "enabled": _cli_yes_no(
+                "启用网页搜索 web_search？",
+                features.web_search.enabled,
+            )
+        }
     )
 
     if _cli_yes_no("启用图片理解 describe_image？", features.vision.enabled):

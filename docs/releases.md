@@ -1,7 +1,7 @@
 # Releases 版本管理
 
 当前开发阶段暂不发布正式版本号。版本使用日期快照 tag，例如
-`snapshot-20261023`；GitHub Releases 与 tag 使用同一个名字。
+`snapshot-20261025`；GitHub Releases 与 tag 使用同一个名字。
 
 ## 发布仓库
 

@@ -179,6 +179,9 @@ export const endpoints = {
   settings: () => api.get('/api/settings'),
   patchSetting: (path, value) => api.patch('/api/settings', { path, value }),
   patchVision: (payload) => api.patch('/api/settings/vision', payload),
+  patchSearch: (payload) => api.patch('/api/settings/web-search', payload),
+  probeSearch: (payload) =>
+    api.post('/api/settings/web-search/probe', payload, { timeoutMs: 30000 }),
   providers: () => api.get('/api/settings/providers'),
   patchAgent: (name, payload) => api.patch(`/api/settings/agents/${name}`, payload),
   putSecret: (keyId, value) => api.put('/api/settings/secrets', { key_id: keyId, value }),
@@ -222,6 +225,8 @@ export const endpoints = {
   updateApply: (payload) =>
     api.post('/api/update/apply', payload, { timeoutMs: 330000 }),
   updatePreferences: (payload) => api.patch('/api/update/preferences', payload),
+  updateProbe: (payload = {}) =>
+    api.post('/api/update/probe', payload, { timeoutMs: 60000 }),
 
   backupStatus: () => api.get('/api/backup/status'),
   backupStart: (payload = {}) =>

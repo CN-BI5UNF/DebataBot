@@ -37,9 +37,17 @@ class NapCatProcessManager:
         graceful_shutdown_timeout: float = 5.0,
         cwd: str | Path | None = None,
         env: dict[str, str] | None = None,
+        probe_target: tuple[str, int] | None = None,
     ) -> None:
-        self.executable = Path(executable)
+        raw = os.path.expandvars(os.path.expanduser(str(executable).strip()))
+        while len(raw) >= 2 and (
+            (raw[0] == raw[-1] and raw[0] in {'"', "'"})
+            or (raw[0] in {"“", "‘"} and raw[-1] in {"”", "’"})
+        ):
+            raw = raw[1:-1].strip()
+        self.executable = Path(raw)
         self.args = args or []
+        self.probe_target = probe_target
         self.auto_restart = auto_restart
         self.restart_delay = restart_delay
         self.graceful_shutdown_timeout = graceful_shutdown_timeout
@@ -55,9 +63,27 @@ class NapCatProcessManager:
         return self._process is not None and self._process.returncode is None
 
     async def start(self) -> None:
-        """启动 NapCat 进程并开始监控。"""
+        """启动 NapCat 进程并开始监控。
+
+        如果目标 OneBot 端口已经有服务在响应，说明 NapCat 已由用户/系统
+        启动；此时跳过托管，避免重复拉起 QQ。路径不存在也只告警，不阻断
+        WS 连接（用户可能已经手动启动了 NapCat）。
+        """
+        if self.probe_target is not None and await self._target_reachable():
+            host, port = self.probe_target
+            logger.info(
+                "检测到 NapCat/OneBot 已在 %s:%s 响应，跳过进程托管",
+                host,
+                port,
+            )
+            return
         if not self.executable.exists():
-            raise FileNotFoundError(f"NapCat 启动文件不存在: {self.executable}")
+            logger.warning(
+                "NapCat 启动文件不存在，跳过进程托管: %s；"
+                "如果 NapCat 已手动启动，请关闭 manage_process",
+                self.executable,
+            )
+            return
         if self._process is not None:
             logger.warning("NapCat 进程已在运行")
             return
@@ -65,6 +91,25 @@ class NapCatProcessManager:
         self._stop_requested.clear()
         await self._spawn_once()
         self._monitor_task = asyncio.create_task(self._monitor_loop(), name="napcat-process-monitor")
+
+    async def _target_reachable(self) -> bool:
+        """只做一次短 TCP 探测，确认目标 OneBot 端口是否已有人监听。"""
+        if self.probe_target is None:
+            return False
+        host, port = self.probe_target
+        try:
+            _reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, int(port)),
+                timeout=0.8,
+            )
+        except (OSError, asyncio.TimeoutError, ValueError):
+            return False
+        try:
+            writer.close()
+            await asyncio.wait_for(writer.wait_closed(), timeout=0.5)
+        except (OSError, asyncio.TimeoutError):
+            pass
+        return True
 
     async def stop(self) -> None:
         """优雅停止 NapCat 进程。"""

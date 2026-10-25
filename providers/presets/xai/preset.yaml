@@ -8,6 +8,14 @@ image_detail_supported: false
 reasoning_style: none
 
 models:
+  - id: grok-4.7
+    display_name: Grok 4.7（官方联网搜索）
+    capabilities: [chat, tool_call, reasoning, vision, web_search]
+    context_length: 2000000
+    search_channel: openai_responses
+    search_payload:
+      tool_type: web_search
+
   - id: grok-4.3
     display_name: Grok 4.3（推荐 · 1M 上下文）
     capabilities: [chat, tool_call, reasoning, vision]
