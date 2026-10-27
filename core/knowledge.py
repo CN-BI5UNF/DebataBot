@@ -1411,7 +1411,9 @@ class KnowledgeService:
             placeholders = {
                 "{year}": str(now_dt.year),
                 "{month}": str(now_dt.month),
-                "{date}": now_dt.strftime("%Y年%m月"),
+                # 不要用 strftime 的本地化字面量：Windows Python 3.11 的
+                # locale codec 可能无法编码中文，会直接抛 UnicodeEncodeError。
+                "{date}": f"{now_dt.year}年{now_dt.month:02d}月",
             }
             queries: list[str] = []
             for item in getattr(self.config, "research_queries", None) or []:

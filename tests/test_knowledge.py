@@ -568,3 +568,14 @@ async def test_disabled_knowledge_is_not_injected_or_queryable(tmp_path):
     assert service.lookup()["ok"] is False
     result = await service.research("x")
     assert result["ok"] is False
+
+
+def test_trend_date_placeholder_is_locale_independent():
+    """Windows Python 3.11 的 locale codec 不能编码 strftime 里的中文。"""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "core/knowledge.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'strftime("%Y年%m月")' not in source
+    assert 'f"{now_dt.year}年{now_dt.month:02d}月"' in source
