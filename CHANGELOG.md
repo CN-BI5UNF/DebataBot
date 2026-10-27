@@ -47,7 +47,7 @@
 
 ### Verification
 
-- 全量测试 2364 passed（Linux/aarch64、Python 3.12，忽略 `tests/test_kv_cache_real.py`）；`ruff check .`、`git diff --check`、`compileall`、bun browser bundle 全部通过。本轮只验证了本地 Linux/aarch64 + Python 3.12，未声称覆盖远端 CI 的 Ubuntu/Windows × 3.11/3.12 矩阵。
+- 全量测试 2365 passed（Linux/aarch64、Python 3.12，忽略 `tests/test_kv_cache_real.py`）；`ruff check .`、`git diff --check`、`compileall`、bun browser bundle 全部通过。GitHub Actions `Test` 的 Ubuntu/Windows × Python 3.11/3.12 四个任务在 `main` 与 `refactor/main` 均已通过。
 - 知识/黑话改为按需查询：`task_context` 不再包含 `【群聊黑话表】` / `<network_knowledge>`；`lookup_slang` 和 `list_knowledge_notes` 返回 active/confirmed 条目、受查询上限约束，并带不可信内容提示。
 - 线上 compact profile 构建 53 个工具，`lookup_slang` / `list_knowledge_notes` 直接暴露（非 stub），写入类知识工具仍为 stub；浏览器验证知识页和设置页已显示“按需查询/查询返回上限”文案。
 - 知识查重实测：`deepseek` persona 从 79 条合并到 71 条，8 组保守重复被合并，“Phigros 基本介绍 / Phigros 基本资料”只保留一条；再次 dry-run 返回 0 条可合并，清理前已生成 `knowledge.json.dedupe-20261028-001451` 备份。
