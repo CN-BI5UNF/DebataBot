@@ -65,7 +65,7 @@ export async function render(container, ctx) {
     h('div', {},
       h('h1', { class: 'page-title' }, '表情包'),
       h('p', { class: 'page-desc' },
-        '角色在聊天中可以发送这些图片。名称就是 AI 调用时用的名字，别用太生僻的字。'),
+        '人格在聊天中可以发送这些图片。名称就是 AI 调用时用的名字，别用太生僻的字。'),
     ),
     h('div', { class: 'row' }, searchInput, refreshBtn, addBtn),
   );
@@ -110,7 +110,7 @@ export async function render(container, ctx) {
       fill(gridHost, state.items.length
         ? empty('没有匹配的表情包', { subtitle: '换个词试试', iconName: 'search' })
         : empty('还没有表情包', {
-            subtitle: '把常用的图片拖进来，角色聊天时就能用了',
+            subtitle: '把常用的图片拖进来，人格聊天时就能用了',
             iconName: 'emoji',
           }));
       return;

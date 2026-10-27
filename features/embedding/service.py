@@ -13,10 +13,15 @@ OpenAI 兼容协议示例端点：
 
 from __future__ import annotations
 
+import inspect
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
+
+from providers.base import Usage
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +74,18 @@ class OpenAICompatEmbeddingService(IEmbeddingService):
         api_key: str,
         model: str,
         timeout: float = 60.0,
+        *,
+        provider_id: str = "",
+        usage_recorder: (
+            Callable[[Usage, dict[str, Any]], Awaitable[None]] | None
+        ) = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.provider_id = provider_id
+        self.usage_recorder = usage_recorder
         self._client: httpx.AsyncClient | None = None
         self._dim: int = 0
 
@@ -104,9 +116,13 @@ class OpenAICompatEmbeddingService(IEmbeddingService):
                 json=payload,
             )
             resp.raise_for_status()
-            data = _normalize_embedding_data(resp.json().get("data"))
+            body = resp.json()
+            raw_data = body.get("data") if isinstance(body, dict) else None
+            data = _normalize_embedding_data(raw_data)
             if not data:
                 raise EmbeddingError(f"embedding 响应缺少 data 字段：{resp.text[:200]}")
+            if isinstance(body, dict):
+                await self._record_usage(body.get("usage"))
             # 缓存维度
             if self._dim == 0 and data:
                 self._dim = len(data[0]["embedding"])
@@ -120,6 +136,42 @@ class OpenAICompatEmbeddingService(IEmbeddingService):
             raise EmbeddingError(f"embedding 请求失败：{e}") from e
         except (KeyError, TypeError, ValueError) as e:
             raise EmbeddingError(f"embedding 响应解析失败：{e}") from e
+
+    async def _record_usage(self, raw: Any) -> None:
+        """Embedding endpoints usually report prompt tokens only; count them in V2."""
+        if self.usage_recorder is None or not isinstance(raw, dict):
+            return
+        try:
+            prompt = int(
+                raw.get("prompt_tokens")
+                or raw.get("input_tokens")
+                or raw.get("total_tokens")
+                or 0
+            )
+            total = int(raw.get("total_tokens") or prompt)
+        except (TypeError, ValueError):
+            return
+        if prompt <= 0 and total <= 0:
+            return
+        usage = Usage(
+            prompt_tokens=max(0, prompt),
+            completion_tokens=0,
+            total_tokens=max(0, total or prompt),
+        )
+        try:
+            outcome = self.usage_recorder(
+                usage,
+                {
+                    "provider": self.provider_id,
+                    "model": self.model,
+                    "agent": "embedding",
+                    "operation": "embedding",
+                },
+            )
+            if inspect.isawaitable(outcome):
+                await outcome
+        except Exception:  # noqa: BLE001 - 统计失败不能拖垮 RAG
+            logger.debug("记录 embedding usage 失败", exc_info=True)
 
     async def embed_one(self, text: str) -> list[float]:
         data = await self._request([text])

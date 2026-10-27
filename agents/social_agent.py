@@ -83,12 +83,16 @@ class SocialAgent:
         persona_agent=None,
         usage_recorder: UsageRecorder | None = None,
         status_callback: StatusCallback | None = None,
+        prompt_budget_tokens: int | None = None,
     ) -> None:
         self.provider = provider
         self.cfg = cfg
         self.persona_agent = persona_agent
         self.usage_recorder = usage_recorder
         self.status_callback = status_callback
+        self.prompt_budget_tokens = (
+            int(prompt_budget_tokens) if prompt_budget_tokens is not None else None
+        )
 
     async def should_act(self, messages: list[dict[str, Any]]) -> tuple[bool, str]:
         """兼容 ProactiveRouterAgent 的布尔判定接口。"""
@@ -254,6 +258,19 @@ class SocialAgent:
                     "content": "上一轮输出不是合法社交决策 JSON。请只返回符合字段要求的 JSON 对象。",
                 }
             )
+
+        if self.prompt_budget_tokens is not None:
+            from utils.token_budget import TokenEstimator
+            estimator = TokenEstimator(model=str(getattr(self.cfg, "model", "") or ""))
+            estimated = estimator.estimate_prompt(check_msgs, None)
+            if estimated > self.prompt_budget_tokens:
+                logger.warning(
+                    "社交决策输入超预算，跳过模型调用：estimated=%s budget=%s",
+                    estimated,
+                    self.prompt_budget_tokens,
+                )
+                self._emit_status("error", "社交决策超预算")
+                return None
 
         try:
             self._emit_status("thinking", "社交决策判断中")

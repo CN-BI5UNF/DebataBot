@@ -43,6 +43,20 @@ JSON 或长期可用，长期使用建议自建。
 只给预设中确认有官方搜索能力的模型显示通道；没有官方搜索能力的模型不会
 出现在官方搜索下拉框里。自定义 provider 不会自动猜测搜索接口。
 
+### DeepSeek Search / Fetch
+
+DeepSeek 的官方通道是 provider 级独立接口，不绑定聊天模型：
+
+- `POST /v1/tools/search`：`query` 1–128 字符，`count` 1–50，可传 `need_content`、
+  `ori_question`；返回 `results`，每项含 `title/url/snippet/summary/content/site_name/date/rerank_score/authority`。
+- `POST /v1/tools/fetch`：传入 `url`，返回 `title` + Markdown `content`。
+
+项目的 DeepSeek 预设会自动把 query 截到 128 字符、带上 `ori_question` 和
+`need_content`，并优先把 `summary`（约 600–800 字）交给模型，而不是较短的
+`snippet`。如果 provider 预设里有 `fetch_path`，LLM 还会获得 `web_fetch` 工具，
+可以继续读取搜索结果中的单页正文；`web_fetch` 只接受公开 http(s) 地址，
+拒绝账号密码、本机/内网字面量和非 http(s) 协议。
+
 ## 回退顺序
 
 - 免费 + 官方都开：先测速免费通道；免费不可用或本次请求失败，才回退官方。

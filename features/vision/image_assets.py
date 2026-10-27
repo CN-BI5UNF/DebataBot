@@ -40,6 +40,7 @@ import httpx
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from utils.image_contracts import (
+    MAX_IMAGE_BYTES,
     TRANSFORM_VERSION_V1,
     TRANSFORM_VERSION_V2,
     ImageAssetError,
@@ -352,6 +353,26 @@ async def _download_image(source: str, limits: ImageLimits) -> bytes:
             "图片下载失败或超时",
             code="image_source_unavailable",
         ) from None
+
+
+async def download_remote_image_bytes(
+    source: str,
+    *,
+    max_bytes: int | None = None,
+) -> bytes:
+    """Download one remote image with the same SSRF/redirect/size guards as vision.
+
+    Public entry point for non-vision callers (for example the LLM-facing sticker
+    tools). The bytes are returned untouched so callers can validate their own
+    format whitelist.
+    """
+    limits = ImageLimits(
+        max_image_bytes=min(
+            max(1, int(max_bytes or MAX_IMAGE_BYTES)),
+            MAX_IMAGE_BYTES,
+        )
+    )
+    return await _download_image(source, limits)
 
 
 def _local_path(source: str | Path) -> Path:
@@ -907,6 +928,7 @@ class ImageAssetStore:
 __all__ = [
     "ImageAssetError",
     "ImageAssetStore",
+    "download_remote_image_bytes",
     "prepare_image_data_url",
     "TRANSFORM_VERSION",
     "TRANSFORM_VERSION_V1",

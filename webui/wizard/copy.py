@@ -43,19 +43,19 @@ COPY: dict[str, str] = {
     # 欢迎页
     # ============================================================
     "welcome.title": "Debata_Agent",
-    "welcome.subtitle": "让虚拟角色活过来的通用框架",
+    "welcome.subtitle": "让虚拟人格活过来的通用框架",
     "welcome.intro": (
         "接下来用几分钟告诉 Debata 三件事：\n"
         "  · 用哪个模型说话\n"
         "  · 通过什么渠道收发消息\n"
-        "  · 想要什么样的角色\n\n"
+        "  · 想要什么样的人格\n\n"
         "你可以走推荐路径快速上手，也可以打开自定义逐一调校。"
     ),
     "welcome.choose_path": "选一条路",
     "welcome.path_recommended": "推荐路径",
-    "welcome.path_recommended_desc": "约 5 分钟。用 DeepSeek 主模型 + 一个内置示范角色，能跑起来。",
+    "welcome.path_recommended_desc": "约 5 分钟。用 DeepSeek 主模型 + 一个内置示范人格，能跑起来。",
     "welcome.path_custom": "自定义",
-    "welcome.path_custom_desc": "约 15 分钟。每个细节都可以选，包括子 Agent 模型、向量记忆、自创角色。",
+    "welcome.path_custom_desc": "约 15 分钟。每个细节都可以选，包括子 Agent 模型、向量记忆、自创人格。",
 
     # ============================================================
     # 主模型 - 推荐
@@ -207,7 +207,7 @@ COPY: dict[str, str] = {
     # ============================================================
     # 人格
     # ============================================================
-    "persona.source_title": "选个角色",
+    "persona.source_title": "选个人格",
     "persona.source_repo": "用仓库自带的（推荐）",
     "persona.source_repo_desc": "Debata 等仓库自带人格，开箱可用。先快速上手，之后再换。",
     "persona.source_create": "和我一起创造一个",
@@ -218,9 +218,9 @@ COPY: dict[str, str] = {
     # ============================================================
     # 人格创造对话框
     # ============================================================
-    "persona_create.name_label": "角色叫什么",
+    "persona_create.name_label": "人格叫什么",
     "persona_create.name_placeholder": "比如「林晚」，英文名也行",
-    "persona_create.personality_label": "这个角色是什么样的人",
+    "persona_create.personality_label": "这个人格是什么样的人",
     "persona_create.personality_placeholder": (
         "想到什么写什么——话多话少、急性子慢性子、有什么小怪癖、对什么人什么态度。"
         "不用全，AI 会帮你补。"
@@ -265,7 +265,7 @@ COPY: dict[str, str] = {
     "summary.section_model": "模型",
     "summary.section_features": "功能",
     "summary.section_adapter": "渠道",
-    "summary.section_persona": "角色",
+    "summary.section_persona": "人格",
     "summary.adjust_later_hint": "之后随时能在设置里调整。",
     "summary.start_button": "启动",
 

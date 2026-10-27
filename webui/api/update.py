@@ -14,12 +14,12 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
+from core.backend_restart import restart_backend_callback
 from core.updater import (
     UPDATE_REF,
     UPDATE_REPO_URL,
     UpdateError,
     UpdateService,
-    systemd_restart_callback,
 )
 
 from .deps import require_runtime
@@ -74,12 +74,16 @@ def build_service(host: Any, rt: Any | None = None) -> UpdateService | None:
     interval = int(
         getattr(update_cfg, "check_interval_days", 9) or 9
     )
+    auto_install_deps = bool(
+        getattr(update_cfg, "auto_install_dependencies", True)
+    )
     key = (
         str(getattr(runtime, "project_root", host.project_root).resolve()),
         str(paths.DATA_DIR.resolve()),
         mirror,
         timeout,
         interval,
+        auto_install_deps,
     )
     cached = getattr(host, "_update_service_cache", None)
     if cached is not None and cached[0] == key:
@@ -90,7 +94,8 @@ def build_service(host: Any, rt: Any | None = None) -> UpdateService | None:
         mirror=mirror,
         timeout_seconds=timeout,
         check_interval_days=interval,
-        restart_callback=systemd_restart_callback,
+        restart_callback=restart_backend_callback,
+        auto_install_dependencies=auto_install_deps,
     )
     host._update_service_cache = (key, service)
     return service

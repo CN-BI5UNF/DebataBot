@@ -14,6 +14,8 @@ import * as memory from './pages/memory.js';
 import * as mind from './pages/mind.js';
 import * as logs from './pages/logs.js';
 import * as personas from './pages/personas.js';
+import * as slang from './pages/slang.js';
+import * as knowledge from './pages/knowledge.js';
 import * as models from './pages/models.js';
 import * as emoji from './pages/emoji.js';
 import * as storage from './pages/storage.js';
@@ -28,7 +30,9 @@ const NAV_ITEMS = [
   { key: 'memory', title: '记忆', icon: 'memory', page: memory },
   { key: 'persona_mind', title: '人格后台', icon: 'persona_mind', page: mind },
   { key: 'logs', title: '日志', icon: 'logs', page: logs },
-  { key: 'personas', title: '角色', icon: 'personas', page: personas },
+  { key: 'personas', title: '人格', icon: 'personas', page: personas },
+  { key: 'slang', title: '黑话', icon: 'slang', page: slang },
+  { key: 'knowledge', title: '知识', icon: 'knowledge', page: knowledge },
   { key: 'models', title: '模型管理', icon: 'models', page: models },
   { key: 'emoji', title: '表情包', icon: 'emoji', page: emoji },
   { key: 'storage', title: '存储与缓存', icon: 'storage', page: storage },
@@ -41,6 +45,11 @@ const TOAST_MS = 3200;
 const state = {
   status: null,
   current: null,
+  // 正在渲染的页面。location.hash 赋值会异步触发 hashchange，
+  // 需要用它挡住“自己触发自己”的重入（否则深链分页会被二次渲染覆盖）。
+  navigating: null,
+  navigationSeq: 0,
+  pendingSettingsSection: null,
   cleanup: null,
   stream: null,
 };
@@ -82,7 +91,7 @@ function applyStatus(status) {
     adapterBadge.className = `badge ${connected ? 'ok' : 'idle'}`;
   }
 
-  qs('#persona-label').textContent = `当前角色：${status.persona || '—'}`;
+  qs('#persona-label').textContent = `当前人格：${status.persona || '—'}`;
 
   const dot = qs('#side-dot');
   const text = qs('#side-conn-text');
@@ -107,10 +116,16 @@ function currentRouteKey() {
   return NAV_ITEMS.some((x) => x.key === fromHash) ? fromHash : 'overview';
 }
 
-async function navigate(key, { force = false } = {}) {
+async function navigate(key, { force = false, section = null } = {}) {
   const item = NAV_ITEMS.find((x) => x.key === key);
   if (!item) return;
-  if (!force && state.current === key) return;
+  if (section && key === 'settings') {
+    state.pendingSettingsSection = String(section);
+  }
+  // navigating 期间允许切回上一页：此时 state.current 仍是上一页，
+  // 只看 current 会把“返回/再点旧页”误判成重复点击。
+  if (!force && state.navigating === null && state.current === key && !section) return;
+  if (!force && state.navigating === key && !section) return;
 
   if (typeof state.cleanup === 'function') {
     try { state.cleanup(); } catch (e) { console.error(e); }
@@ -123,28 +138,47 @@ async function navigate(key, { force = false } = {}) {
     btn.classList.toggle('active', btn.dataset.key === key);
   }
 
-  const container = qs('#content');
+  // 每次导航换一个新的 #content 节点：旧页面即使还在 await，
+  // 后续写 DOM 也只会写进已经脱离文档的旧节点，不会覆盖新页面。
+  const previousContainer = qs('#content');
+  const container = previousContainer.cloneNode(false);
+  previousContainer.replaceWith(container);
   fill(container);
 
+  const requestedSection = state.pendingSettingsSection;
+  state.pendingSettingsSection = null;
   const ctx = {
     toast,
     status: state.status,
     navigate,
+    section: requestedSection,
     onEvent: (handler) => state.stream.subscribe(handler),
   };
 
+  state.navigating = key;
+  const seq = ++state.navigationSeq;
   try {
     const result = await item.page.render(container, ctx);
     // 渲染成功才认账。之前是进函数就写 state.current，一旦某页渲染抛错，
     // state.current 已经等于该页 key，再点同一个导航项会被
     // `state.current === key` 提前 return，用户只能刷新页面才能重试。
+    if (seq !== state.navigationSeq) {
+      // 已被更新的导航取代：释放这一页的定时器/订阅，避免后台常驻。
+      if (result && typeof result.destroy === 'function') {
+        try { result.destroy(); } catch (e) { console.error(e); }
+      }
+      return;
+    }
     state.current = key;
     state.cleanup = result && result.destroy ? result.destroy : null;
   } catch (e) {
     console.error(e);
+    if (seq !== state.navigationSeq) return;
     state.current = null;
     state.cleanup = null;
     fill(container, h('div', { class: 'empty' }, `页面加载失败：${e.message}`));
+  } finally {
+    if (seq === state.navigationSeq) state.navigating = null;
   }
 }
 
@@ -267,7 +301,10 @@ function showLogin() {
       qs('#login-gate').classList.add('hidden');
       await enterApp();
     } catch (e) {
-      errorBox.textContent = e.message;
+      // enterApp 失败时 login-gate 已经隐藏、shell 又还没就绪；
+      // 不恢复登录界面的话三个顶层容器全是 hidden，页面直接空白。
+      showLogin();
+      qs('#login-error').textContent = e.message;
     }
   };
 }
@@ -280,8 +317,14 @@ function showSetup() {
   setup.render(qs('#setup-body'), {
     toast,
     onDone: async () => {
-      qs('#setup-gate').classList.add('hidden');
-      await enterApp();
+      // 不要提前隐藏 setup-gate：enterApp 失败时错误还要显示在向导里。
+      // enterApp 成功后会自己隐藏它；仍处于 setup_required 时它会重新显示。
+      try {
+        await enterApp();
+      } catch (e) {
+        qs('#setup-gate').classList.remove('hidden');
+        throw e;
+      }
     },
   });
 }

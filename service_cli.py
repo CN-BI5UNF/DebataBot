@@ -54,6 +54,7 @@ COMMANDS = (
     "start",
     "stop",
     "restart",
+    "restart-helper",
     "status",
     "log",
     "enable",
@@ -458,6 +459,37 @@ def cmd_restart() -> int:
     return return_code
 
 
+def cmd_restart_helper(old_pid: int) -> int:
+    """隐藏命令：等待旧后端退出后拉起新的 fallback 进程。
+
+    由 WebUI 的“重启后端”在非 systemd 环境下以独立 session 启动，因此
+    旧进程退出不会连带杀掉 helper。
+    """
+    deadline = time.monotonic() + 30.0
+    while (
+        old_pid > 0
+        and _process_alive(old_pid)
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.2)
+    if old_pid > 0 and _process_alive(old_pid):
+        try:
+            os.kill(old_pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        deadline = time.monotonic() + 10.0
+        while _process_alive(old_pid) and time.monotonic() < deadline:
+            time.sleep(0.2)
+    if old_pid > 0 and _process_alive(old_pid):
+        try:
+            os.kill(old_pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        time.sleep(0.5)
+    _clear_state()
+    return _fallback_start()
+
+
 def cmd_status() -> int:
     if not _systemd_available():
         return _fallback_status()
@@ -673,6 +705,12 @@ def main(argv: list[str] | None = None) -> int:
         print(HELP)
         return 0
     command = args[0]
+    if command == "restart-helper":
+        try:
+            old_pid = int(args[1])
+        except (IndexError, ValueError):
+            old_pid = 0
+        return cmd_restart_helper(old_pid)
     handler = _DISPATCH.get(command)
     if handler is None:
         print(f"未知命令: {command}\n")

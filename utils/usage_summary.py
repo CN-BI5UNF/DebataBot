@@ -280,6 +280,57 @@ def add_record_to_summary(summary: UsageSummary, record: dict) -> None:
     summary.unknown_semantics_total_tokens += total
 
 
+def summarize_breakdown(
+    records: list[dict],
+    range_name: UsageRange = "today",
+    *,
+    field: str = "operation",
+    limit: int = 20,
+) -> list[dict]:
+    """Group records by a metadata field for the overview usage breakdown.
+
+    The returned rows include both all-history totals and the V2-only bucket so
+    search/vision/embedding operations can be inspected without the offline
+    analysis CLI.
+    """
+    cutoff = cutoff_timestamp(range_name)
+    buckets: dict[str, UsageSummary] = {}
+    for record in records:
+        ts = float(record.get("ts") or 0)
+        if cutoff is not None and ts < cutoff:
+            continue
+        key = str(record.get(field) or "unknown").strip()[:80] or "unknown"
+        summary = buckets.setdefault(key, UsageSummary())
+        add_record_to_summary(summary, record)
+    rows = [
+        {
+            field: key,
+            "request_count": summary.request_count,
+            "prompt_tokens": summary.prompt_tokens,
+            "completion_tokens": summary.completion_tokens,
+            "total_tokens": summary.total_tokens,
+            "current_semantics_request_count": (
+                summary.current_semantics_request_count
+            ),
+            "current_prompt_tokens": summary.current_prompt_tokens,
+            "current_completion_tokens": summary.current_completion_tokens,
+            "current_total_tokens": summary.current_total_tokens,
+            "current_semantics_available": summary.has_current_semantics_data,
+        }
+        for key, summary in buckets.items()
+    ]
+    rows.sort(
+        key=lambda item: (
+            -int(item["current_total_tokens"]),
+            -int(item["total_tokens"]),
+            str(item[field]),
+        )
+    )
+    if limit > 0:
+        rows = rows[:limit]
+    return rows
+
+
 def cutoff_timestamp(range_name: UsageRange) -> float | None:
     now = time.time()
     if range_name == "today":
@@ -310,5 +361,6 @@ __all__ = [
     "UsageSummary",
     "add_record_to_summary",
     "cutoff_timestamp",
+    "summarize_breakdown",
     "usage_semantics_bucket",
 ]

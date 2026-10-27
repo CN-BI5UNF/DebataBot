@@ -348,6 +348,7 @@ class RuntimeHost:
             ProviderConfig,
             ReasoningConfig,
             RootConfig,
+            SlangFeatureConfig,
             TTSFeatureConfig,
             VisionFeatureConfig,
             WeatherFeatureConfig,
@@ -561,6 +562,7 @@ class RuntimeHost:
                     "web_search": WebSearchFeatureConfig,
                     "embedding": EmbeddingFeatureConfig,
                     "long_term_memory": LongTermMemoryConfig,
+                    "slang": SlangFeatureConfig,
                 },
             )
 
@@ -574,7 +576,7 @@ class RuntimeHost:
             ),
             features=features_cfg,
             behavior=BehaviorConfig(**_behavior_overrides(payload.get("behavior") or {})),
-            persona=PersonaConfig(active=payload.get("persona") or "debata"),
+            persona=PersonaConfig(active=payload.get("persona") or "大肥鱼"),
             adapters={"default": adapter},
         )
 

@@ -684,6 +684,80 @@ class WebSearchFeatureConfig(StrictModel):
         return self
 
 
+class SlangFeatureConfig(StrictModel):
+    """群聊黑话/网络热梗学习与按需查询。"""
+
+    enabled: bool = True
+    """总开关；只影响群聊，私聊不学习也不查询。"""
+
+    auto_learn: bool = True
+    """群消息达到阈值后自动调用学习模型提取候选。"""
+
+    extract_min_messages: int = Field(default=20, ge=3, le=80)
+    """自动提取所需的最小缓存消息数。"""
+
+    extract_cooldown_seconds: int = Field(default=600, ge=30, le=86400)
+    """同一会话两次自动提取之间的冷却时间。"""
+
+    inject_max: int = Field(default=8, ge=1, le=30)
+    """单次 lookup_slang 最多返回多少条已确认黑话。
+
+    字段名沿用旧配置；黑话已改为按需查询，不再自动注入 task_context。
+    """
+
+    max_prompt_chars: int = Field(default=1200, ge=100, le=4000)
+    """单次 lookup_slang 结果的最大字符数，避免工具结果过大。"""
+
+
+class KnowledgeFeatureConfig(StrictModel):
+    """联网考究后的知识/热梗笔记：LLM 整理、按 persona 保存、按需工具查询。"""
+
+    enabled: bool = True
+    """总开关；关闭后不接受新的写入/查询。"""
+
+    inject_max: int = Field(default=10, ge=1, le=30)
+    """单次 list_knowledge_notes 最多返回多少条知识笔记。
+
+    字段名沿用旧配置；知识库已改为按需查询，不再自动注入 task_context。
+    """
+
+    max_prompt_chars: int = Field(default=2000, ge=200, le=6000)
+    """单次 list_knowledge_notes 结果的最大字符数。"""
+
+    auto_research_enabled: bool = True
+    """是否允许后台定时让 LLM 上网考究热梗。"""
+
+    research_interval_hours: int = Field(default=24, ge=1, le=720)
+    """后台两次热梗考究之间的间隔（小时）。"""
+
+    research_search_provider: Literal[
+        "auto", "official", "bing_rss", "baidu", "searxng"
+    ] = "auto"
+    """后台热梗考究使用的搜索后端。
+
+    auto：官方搜索可用时优先用官方（DeepSeek Search 摘要更完整），否则用百度；
+    official：强制官方搜索；其余值走免费搜索后端。官方搜索会产生 API 费用。
+    """
+
+    research_queries: list[str] = Field(
+        default_factory=lambda: [
+            "site:zhihu.com {year} 网络热梗 盘点",
+            "{year} B站 热门梗 盘点",
+            "{year} 网络流行语 热词 盘点",
+            "{year} 抖音 热梗 盘点",
+            "{year} 微博 热词 梗 盘点",
+        ]
+    )
+    """后台考究使用的搜索词；支持 {year} / {month} / {date} 占位符。
+
+    服务端最多取前 5 条，单条最多 200 字。关键词尽量带年份和站点限定，
+    否则通用搜索后端容易只返回日历/字典等无关页面。
+    """
+
+    research_max_notes: int = Field(default=8, ge=1, le=8)
+    """每次搜索最多保存多少条笔记。"""
+
+
 class LongTermMemoryConfig(StrictModel):
     """长期记忆配置。"""
 
@@ -724,6 +798,8 @@ class FeaturesConfig(StrictModel):
     web_search: WebSearchFeatureConfig = Field(default_factory=WebSearchFeatureConfig)
     embedding: EmbeddingFeatureConfig = Field(default_factory=EmbeddingFeatureConfig)
     long_term_memory: LongTermMemoryConfig = Field(default_factory=LongTermMemoryConfig)
+    slang: SlangFeatureConfig = Field(default_factory=SlangFeatureConfig)
+    knowledge: KnowledgeFeatureConfig = Field(default_factory=KnowledgeFeatureConfig)
 
 
 # ============================================================
@@ -732,9 +808,9 @@ class FeaturesConfig(StrictModel):
 
 
 class PersonaConfig(StrictModel):
-    active: str = "debata"
+    active: str = "大肥鱼"
     """当前激活的人格目录名。从 personas/{name}/ 加载（所有人格平级，仓库自带 + 用户自创共存）。
-    仓库自带 debata（开箱即用），用户自创的人格放同级目录。"""
+    仓库自带大肥鱼（开箱即用默认）和 deepseek（完整群聊版）两个内置提示词；用户自创的人格放同级目录。"""
 
 
 # ============================================================
@@ -1567,6 +1643,12 @@ class UpdateConfig(StrictModel):
 
     check_interval_days: int = Field(default=9, ge=1, le=365)
     """后台自动检查更新的间隔（天）；失败后 6 小时重试。"""
+
+    auto_install_dependencies: bool = True
+    """目标版本修改了 pyproject/依赖文件时，是否用当前解释器自动安装依赖。
+
+    安装失败会回滚源码到更新前的提交。关闭后恢复旧行为：拒绝自动应用依赖变更。
+    """
 
 
 class BackupConfig(StrictModel):

@@ -319,7 +319,7 @@ export async function render(container, ctx) {
     switch (item.kind) {
       case 'inbound_message':
       case 'outbound_message': {
-        const who = item.speaker_label || (item.kind === 'inbound_message' ? '用户' : '角色');
+        const who = item.speaker_label || (item.kind === 'inbound_message' ? '用户' : '人格');
         return h('div', { class: `msg ${KIND_CLASS[item.kind]}`, dataset: { kind: item.kind } },
           h('div', { class: 'msg-head' },
             h('span', { class: 'msg-role' }, who),

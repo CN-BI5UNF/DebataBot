@@ -221,9 +221,9 @@ export async function render(container, ctx) {
           previewButton.disabled = false;
         }
       },
-    }, '预览影响');
+    }, '清除');
     fill(cleanupHost, card('安全清理',
-      '先预览影响，再确认执行。内存缓存与过期临时文件可重建；删除项本轮不提供恢复。',
+      '点击“清除”后会先显示影响并确认；内存缓存与过期临时文件可重建，删除项本轮不提供恢复。',
       table(['选择', '类别', '预计释放', '数量', '说明'], rows),
       h('div', { class: 'row' },
         h('div', { class: 'spacer' }),

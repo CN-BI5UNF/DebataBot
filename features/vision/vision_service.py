@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app_config.schema import VisionFeatureConfig
-from providers.base import IProvider, ProviderError
+from providers.base import IProvider, ProviderError, Usage
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +31,21 @@ class VisionService:
         provider: IProvider,
         model: str,
         *,
+        provider_id: str = "",
         max_tokens: int | None = None,
         timeout_seconds: float = 60.0,
+        usage_recorder: (
+            Callable[[Usage, dict[str, Any]], Awaitable[None]] | None
+        ) = None,
     ) -> None:
         self.provider = provider
         self.model = model
+        self.provider_id = provider_id
         self.max_tokens = (
             max_tokens if max_tokens is not None else VisionFeatureConfig().max_tokens
         )
         self.timeout_seconds = timeout_seconds
+        self.usage_recorder = usage_recorder
 
     async def describe(self, image_url: str, prompt: str = "") -> dict[str, str]:
         """返回图片摘要和完整描述。"""
@@ -76,6 +85,22 @@ class VisionService:
         except ProviderError:
             logger.warning("vision describe 失败: provider error")
             raise
+
+        if self.usage_recorder is not None:
+            try:
+                outcome = self.usage_recorder(
+                    result.usage,
+                    {
+                        "provider": self.provider_id,
+                        "model": self.model,
+                        "agent": "vision",
+                        "operation": "describe_image",
+                    },
+                )
+                if inspect.isawaitable(outcome):
+                    await outcome
+            except Exception:  # noqa: BLE001 - 统计失败不能拖垮看图
+                logger.debug("记录 vision usage 失败", exc_info=True)
 
         content = (result.content or "").strip() or "（模型未返回内容）"
         parsed = _parse_json_object(content)

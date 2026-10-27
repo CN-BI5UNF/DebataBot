@@ -29,7 +29,7 @@ def _payload(**overrides) -> dict:
             {"id": "deepseek_main", "preset": "deepseek", "api_key": "sk-test"},
         ],
         "chat": {"provider": "deepseek_main", "model": "deepseek-v4-flash"},
-        "persona": "debata",
+        "persona": "大肥鱼",
         "adapter": {"mode": "client", "host": "127.0.0.1", "port": 3000},
     }
     payload.update(overrides)

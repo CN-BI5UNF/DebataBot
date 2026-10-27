@@ -194,6 +194,7 @@ async def test_all_tools_have_clear_results_in_simulated_runtime(tmp_path, monke
         },
         "describe_image": {"image_url": "https://example.com/a.jpg", "question": "看图"},
         "web_search": {"query": "Debata"},
+        "web_fetch": {"url": "https://example.com/a"},
         "get_weather": {"city": "北京", "days": 1},
         "send_voice_message": {
             "target_type": "private",
@@ -291,6 +292,23 @@ async def test_all_tools_have_clear_results_in_simulated_runtime(tmp_path, monke
         },
         "sleep": {"duration_minutes": 90, "reason": "午休"},
         "tool_search": {"tool_name": "upload_file", "intent": "测试工具详情查询"},
+        "list_emoji": {},
+        "save_emoji_from_url": {
+            "name": "测试表情",
+            "url": "https://example.com/a.png",
+        },
+        "save_emoji_from_workspace": {"name": "测试表情", "path": "note.txt"},
+        "rename_emoji": {"name": "旧名", "new_name": "新名"},
+        "delete_emoji": {"name": "测试表情"},
+        "save_knowledge_note": {
+            "kind": "note",
+            "title": "测试笔记",
+            "content": "测试内容",
+        },
+        "research_web_to_prompt": {"query": "网络热梗"},
+        "list_knowledge_notes": {},
+        "lookup_slang": {"query": "难绷", "limit": 8},
+        "delete_knowledge_note": {"entry_id": "abcdef123456"},
     }
     assert set(calls) == {spec.name for spec in get_default_specs()}
 

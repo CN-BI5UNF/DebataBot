@@ -66,6 +66,31 @@ async def test_usage_stats_records_extra_kv_diagnostics(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_usage_stats_operation_breakdown_includes_auxiliary_tokens(tmp_path):
+    store = UsageStatsStore(tmp_path / "usage.jsonl")
+    await store.load()
+    await store.record(
+        Usage(prompt_tokens=100, completion_tokens=20, total_tokens=120),
+        operation="chat",
+    )
+    await store.record(
+        Usage(prompt_tokens=50, completion_tokens=10, total_tokens=60),
+        operation="web_search_official",
+    )
+    await store.record(
+        Usage(prompt_tokens=30, total_tokens=30),
+        operation="embedding",
+    )
+
+    rows = store.operation_breakdown("all")
+    by_operation = {row["operation"]: row for row in rows}
+    assert by_operation["web_search_official"]["current_prompt_tokens"] == 50
+    assert by_operation["web_search_official"]["current_total_tokens"] == 60
+    assert by_operation["embedding"]["current_total_tokens"] == 30
+    assert by_operation["chat"]["current_total_tokens"] == 120
+
+
+@pytest.mark.asyncio
 async def test_usage_stats_store_separates_legacy_v2_and_future(tmp_path):
     store = UsageStatsStore(tmp_path / "usage.jsonl")
     await store.load()

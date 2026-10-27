@@ -13,8 +13,14 @@ image_detail_supported: false
 search_channel: deepseek_tools_search
 search_label: DeepSeek Search（provider 级）
 search_payload:
+  # DeepSeek Search API 的 query 上限是 128 个 Unicode 字符。
+  query_max_chars: 128
+  # 官方 Fetch API 与 Search 同一 host，用于按需读取单个网页正文。
+  fetch_path: /tools/fetch
   request:
     need_content: true
+    # 原始问题有助于搜索意图理解；当前工具只有一个 query，直接复用。
+    ori_question: "{query}"
 
 models:
   - id: deepseek-flash

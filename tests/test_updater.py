@@ -259,9 +259,15 @@ async def test_dirty_worktree_blocks_check(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_dependency_change_blocks_apply(tmp_path):
+async def test_dependency_change_blocks_apply_when_auto_install_disabled(tmp_path):
     work, data, remote = _seed_repo(tmp_path, dependency_change=True)
-    service = UpdateService(work, data, mirror=f"file://{remote}", allow_local_remote=True)
+    service = UpdateService(
+        work,
+        data,
+        mirror=f"file://{remote}",
+        allow_local_remote=True,
+        auto_install_dependencies=False,
+    )
     checked = await service.check()
     assert checked["can_apply"] is False
     assert checked["reason"] == "dependency_change_requires_install"
@@ -273,6 +279,118 @@ async def test_dependency_change_blocks_apply(tmp_path):
             confirm_branch_switch=True,
         )
     assert exc.value.code == "dependency_change_requires_install"
+
+
+@pytest.mark.asyncio
+async def test_dependency_change_auto_installs_and_rolls_back_on_failure(tmp_path):
+    work, data, remote = _seed_repo(tmp_path, dependency_change=True)
+    service = UpdateService(
+        work,
+        data,
+        mirror=f"file://{remote}",
+        allow_local_remote=True,
+        auto_install_dependencies=True,
+    )
+    calls: list[list[str]] = []
+
+    async def fake_install(changes):
+        calls.append(changes)
+        return {"ok": True, "steps": [{"step": "project", "command": "pip ..."}]}
+
+    service._install_dependencies = fake_install  # type: ignore[method-assign]
+    checked = await service.check()
+    assert checked["can_apply"] is True
+    assert checked["dependency_install_required"] is True
+    assert "pyproject.toml" in checked["dependency_changes"]
+    applied = await service.apply(
+        confirmation_token=checked["confirmation_token"],
+        target_sha=checked["target_commit"],
+        confirm_branch_switch=True,
+        defer_restart=True,
+    )
+    assert applied["ok"] is True
+    assert applied["dependency_install"]["ok"] is True
+    assert calls == [["pyproject.toml"]]
+
+    # Same setup again, but the installer fails: source must go back to old HEAD.
+    rollback_root = tmp_path / "rollback"
+    rollback_root.mkdir()
+    work2, data2, remote2 = _seed_repo(rollback_root, dependency_change=True)
+    service2 = UpdateService(
+        work2,
+        data2,
+        mirror=f"file://{remote2}",
+        allow_local_remote=True,
+        auto_install_dependencies=True,
+    )
+    old_head = _git(work2, "rev-parse", "HEAD").strip()
+
+    async def fail_install(changes):
+        raise UpdateError("dependency_install_failed", "boom")
+
+    service2._install_dependencies = fail_install  # type: ignore[method-assign]
+    checked2 = await service2.check()
+    with pytest.raises(UpdateError) as exc:
+        await service2.apply(
+            confirmation_token=checked2["confirmation_token"],
+            target_sha=checked2["target_commit"],
+            confirm_branch_switch=True,
+        )
+    assert exc.value.code == "dependency_install_failed"
+    assert _git(work2, "rev-parse", "HEAD").strip() == old_head
+    assert (work2 / "app.py").read_text(encoding="utf-8") == "old\n"
+
+
+@pytest.mark.asyncio
+async def test_install_dependencies_falls_back_to_uv_without_pip(tmp_path, monkeypatch):
+    work, data, _remote = _seed_repo(tmp_path)
+    service = UpdateService(work, data, auto_install_dependencies=True)
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "core.updater.shutil.which",
+        lambda name: "/usr/bin/uv" if name == "uv" else None,
+    )
+
+    async def fake_run(command):
+        commands.append(command)
+        if len(commands) == 1:
+            return {
+                "returncode": 1,
+                "output_tail": "/python: No module named pip",
+            }
+        return {"returncode": 0, "output_tail": "ok"}
+
+    service._run_install_command = fake_run  # type: ignore[method-assign]
+    result = await service._install_dependencies(["pyproject.toml"])
+    assert result["ok"] is True
+    assert len(commands) == 2
+    assert commands[1][0] == "/usr/bin/uv"
+    assert "pip" in commands[1]
+    assert commands[1][-2:] == ["-e", "."]
+
+
+@pytest.mark.asyncio
+async def test_install_dependencies_uses_running_interpreter(tmp_path):
+    work, data, _remote = _seed_repo(tmp_path)
+    service = UpdateService(
+        work,
+        data,
+        auto_install_dependencies=True,
+    )
+    commands: list[list[str]] = []
+
+    async def fake_run(command):
+        commands.append(command)
+        return {"returncode": 0, "output_tail": "ok"}
+
+    service._run_install_command = fake_run  # type: ignore[method-assign]
+    result = await service._install_dependencies(["pyproject.toml"])
+    assert result["ok"] is True
+    assert result["interpreter"]
+    assert commands
+    assert commands[-1][-2:] == ["-e", "."]
+    assert "-m" in commands[-1] and "pip" in commands[-1]
 
 
 @pytest.mark.asyncio

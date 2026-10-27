@@ -40,6 +40,7 @@ _SERVICE_COMMANDS = frozenset(
         "start",
         "stop",
         "restart",
+        "restart-helper",
         "status",
         "log",
         "enable",

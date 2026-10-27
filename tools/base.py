@@ -88,6 +88,17 @@ class IWebSearchService(Protocol):
     async def search(self, query: str) -> str: ...
 
 
+class IWebFetchService(Protocol):
+    """官方网页抓取服务接口（DeepSeek Fetch 等）。"""
+
+    async def fetch(
+        self,
+        url: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, str]: ...
+
+
 class IWeatherService(Protocol):
     """天气查询服务接口。"""
 
@@ -160,6 +171,12 @@ class ToolContext:
 
     vision: IVisionService | None = None
     web_search: IWebSearchService | None = None
+    web_fetch: IWebFetchService | None = None
+    """官方网页抓取服务；仅当 provider 声明了 Fetch 通道时由 Runtime 注入。"""
+    knowledge_service: Any | None = None
+    """知识/热梗笔记本服务；由 Runtime 注入，用于 save/research/lookup 类工具。"""
+    slang_service: Any | None = None
+    """群聊黑话服务；由 Runtime 注入，用于 lookup_slang 按需查询。"""
     weather: IWeatherService | None = None
     tts: ITTSService | None = None
     """TTS 服务实例。启用本地 TTS 插件时由 Runtime 注入。"""

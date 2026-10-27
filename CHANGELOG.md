@@ -2,6 +2,66 @@
 
 本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] — 大肥鱼人格 / 联网知识 / 表情包工具 / 依赖自动安装
+
+### Added
+
+- 内置人格「大肥鱼」：DeepSeek 蓝色鲸鱼娘社区二创，成为默认内置人格；另内置 `deepseek` 完整群聊提示词，旧 `debata` 已移除。
+- LLM 表情包工具：`list_emoji`、`save_emoji_from_url`、`save_emoji_from_workspace`、`rename_emoji`、`delete_emoji`。网络下载复用视觉链路的 SSRF/重定向/大小限制，写入复用同一套文件名、符号链接和 magic 校验。
+- 联网考究知识库：`core/knowledge.py` + `data/knowledge.json`；LLM 可把 `web_search` 结果整理成短笔记，或调用 `research_web_to_prompt` 让后台小模型搜索、提炼、保存。只有 active 条目能被 `list_knowledge_notes` 按需查询，不再自动注入 `task_context`。
+- 后台热梗考究：按 `features.knowledge.research_interval_hours` 定时用 LLM 上网整理当前热梗；`research_search_provider=auto` 时官方搜索可用则优先 DeepSeek Search，否则回退百度。支持 `DEBATA_DISABLE_TREND_RESEARCH=1` 临时关闭。
+- WebUI「知识」页与 `/api/knowledge` 管理 API：搜索、筛选、手动添加、编辑、归档、删除、手动考究、获取当前热梗。
+- 知识跨人格共享：每条知识/热梗/笔记可勾选 `shared`，其他角色可只读查询并参与查重，所属人格保留编辑/删除权。
+- `web_fetch` 工具：按 DeepSeek 官方 Fetch API 读取单个网页的 Markdown 正文；只接受公开 http(s) URL，拒绝账号密码/本机/内网字面量，结果截断后交给模型。
+- DeepSeek Search 适配官方文档：query 截到 128 字符、count 限制 1–50、支持 `ori_question`，并优先把 600–800 字的 `summary` 交给模型（而不是短 `snippet`），同时保留站点/日期/相关度/权威度提示。
+
+### Changed
+
+- 「知识」和「黑话」改为按需知识库：新增 `lookup_slang`，`list_knowledge_notes` 只返回 active 条目并受查询上限约束；主对话不再每轮把词表/知识注入 `task_context`。这样模型需要时才查，动态上下文更小、更稳定，减少 KV cache 命中率被知识量拖累的问题。配置键 `inject_max` / `max_prompt_chars` 保留原名，含义改为“单次查询返回上限 / 字符上限”。
+- 知识保存前查重：同类型/跨类型同标题、以及去掉“基本介绍/基本资料/简介/盘点”等泛化词后主题相同的条目（如“Phigros基本介绍”与“Phigros基本资料”）不再重复写入；联网考究会把现有标题+短摘要加入考究 prompt，并在落盘前再次校验。新增 `POST /api/knowledge/dedupe`，默认 dry-run，确认后合并保守重复并生成 `knowledge.json.dedupe-*` 备份。
+- 知识条目新增 `shared` 共享标记：所属人格可勾选共享，其他角色只读查询并参与查重，不能跨人格编辑/删除。
+- 内置人格调整：移除旧版 `debata`，将 `deepseek` 加入内置提示词并纳入仓库；人格页/导航/设置文案统一从“角色”改为“人格”。
+- 界面文案调整：知识页“刷新当前热梗”→“获取当前热梗”；黑话页标题改为“群聊黑话”；存储“安全清理”按钮改为“清除”。
+- 官方搜索、独立视觉 `describe_image`、OpenAI 兼容 embedding 调用的 token 现在都写入同一个 V2 usage store；knowledge/slang 的辅助调用补充 provider/model/agent 归属。总览页新增「按用途（V2 口径）」分项表。
+- 知识考究更激进：默认 5 条查询（知乎/B站/流行语/抖音/微博）、单次最多 8 条笔记、查询返回上限 10 条/2000 字符；prompt 允许在搜索结果不足时用低置信度补全，不再轻易返回空数组。
+- 更新器在目标版本修改 `pyproject.toml` / `uv.lock` / `requirements*.txt` 时，默认用当前解释器执行 `pip install -e .`；解释器没有 pip 时回退到 `uv pip install --python <sys.executable> -e .`。安装失败会回滚源码到更新前提交。可在设置里关闭 `update.auto_install_dependencies`。
+- 备份包含 `knowledge.json` 与 `knowledge_state.json`。
+- 默认 `persona.active`、首次配置默认人格和 `BUILTIN_PERSONAS` 更新为「大肥鱼」。
+
+### Fixed
+
+- 黑话库内存索引未按 `max_entries` 截断，长期运行会无限增长。
+- 黑话学习在模型调用期间收到新消息时，可能把未发送的新消息一起从窗口删除；改为按对象身份移除已发送消息。
+- 「黑话」「知识」页的“设置”按钮只跳到设置页，但设置页硬编码 `await show('models')`，永远打开模型分页；现在通过 `ctx.section` 打开「功能」分页。另修复 `location.hash` 触发的 hashchange 重入：深链渲染期间会被一次无 `section` 的重复导航覆盖回默认分页，现在用导航序号挡住自身重入。
+- 非 systemd 的 fallback 模式下「重启后端」返回 400；现在由独立 `restart-helper` 等待旧进程退出、按当前启动参数拉起新进程，并保留日志。
+- 重启模式的 systemd 判定只看 `INVOCATION_ID`，从 VNC/桌面会话启动时会把外层服务的环境变量误当成自己受 systemd 管理，实际执行 `systemctl --user restart debata-agent.service` 静默失败（这正是「重启后端没反应」的根因）；现在按当前进程 cgroup 是否包含 `debata-agent.service` 判定，并区分用户/系统 unit。更新后的自动重启也复用同一套 systemd/fallback 逻辑。
+- `features.knowledge.research_queries` 已加入设置声明表：设置 →「功能」可用多行文本编辑 5 条热梗搜索词，保存后重启 Runtime 生效；`list_str` 字段改为 textarea，避免长搜索词/启动参数挤在单行输入框里。
+- 「重启后端」的等待逻辑只看第一次 HTTP 200，旧进程优雅退出期间仍会应答，页面可能在旧代码上提前 reload。现在后端在 `/api/auth/state` 和重启响应中返回每次进程启动生成的 `boot_id`，前端必须等到 `boot_id` 变化（或旧版本无 boot_id 时至少观察到一次断连）才认为重启完成。
+- 页面/设置分页的慢请求返回后会覆盖用户已经切换到的页面：导航改为每次使用新的 `#content` 节点，设置分页使用独立 body 节点；被取代的页面会调用 `destroy()` 释放定时器/订阅。同时修复在页面加载期间点回上一页被“重复点击”短路的问题。
+- 登录或首次配置完成后 `enterApp()` 失败会把三个顶层容器全部隐藏，留下空白页；现在失败时恢复登录/向导界面并显示错误。
+- 手动压缩活跃历史沿用 15 秒默认请求超时，摘要模型稍慢就会前端报超时但后端仍在跑；现在给 `/api/context/compact` 180 秒超时。
+- 清空数字设置会发送空字符串，后端 `int("")`/`float("")` 抛 ValueError 返回 500；前端现在校验数字并发送 Number，后端非法数字统一返回 400。
+- 知识页把 `last_trend_run_at` 的 Unix 秒当成毫秒，显示成 1970 年；现在按秒解析。
+- 更新页仍写着“依赖文件变化拒绝自动应用”，与实际自动安装/回滚行为不一致；文档和 UI 文案已同步。
+- 官方搜索失败回退成功时，知识考究可能把带“已回退”前缀的结果误判为错误；现在只把单行括号错误当成失败。
+
+### Verification
+
+- 全量测试 2364 passed（Linux/aarch64、Python 3.12，忽略 `tests/test_kv_cache_real.py`）；`ruff check .`、`git diff --check`、`compileall`、bun browser bundle 全部通过。本轮只验证了本地 Linux/aarch64 + Python 3.12，未声称覆盖远端 CI 的 Ubuntu/Windows × 3.11/3.12 矩阵。
+- 知识/黑话改为按需查询：`task_context` 不再包含 `【群聊黑话表】` / `<network_knowledge>`；`lookup_slang` 和 `list_knowledge_notes` 返回 active/confirmed 条目、受查询上限约束，并带不可信内容提示。
+- 线上 compact profile 构建 53 个工具，`lookup_slang` / `list_knowledge_notes` 直接暴露（非 stub），写入类知识工具仍为 stub；浏览器验证知识页和设置页已显示“按需查询/查询返回上限”文案。
+- 知识查重实测：`deepseek` persona 从 79 条合并到 71 条，8 组保守重复被合并，“Phigros 基本介绍 / Phigros 基本资料”只保留一条；再次 dry-run 返回 0 条可合并，清理前已生成 `knowledge.json.dedupe-20261028-001451` 备份。
+- 新增查重/去重测试：跨类型近义标题、同标题相同内容不重写、泛化标题不同主题不误合并、手动添加拒绝重复、research 跳过重复并返回数量、dedupe dry-run/合并/备份。
+- 跨人格共享测试：共享条目其他人格可查询、非共享不可见、所属人格可写、其他人格修改/删除被拒绝、共享条目参与保存查重。
+- 内置人格与文案测试：`BUILTIN_PERSONAS` 为大肥鱼/deepseek、debata 已移除；侧栏/人格页/设置/向导统一“人格”；知识“获取当前热梗”、黑话“群聊黑话”、存储“清除”按钮。
+- 真实 Baidu + DeepSeek 整理写入 13 条热梗笔记；随后用官方通道连续跑 5 条查询，45 秒内 5/5 成功、保存 40 条笔记，`/api/knowledge` 总计 49 条。
+- DeepSeek 官方 Search/Fetch 用真实 API 实测：Search 返回带 `summary`/权威度的结果，Fetch 返回 Markdown 正文。
+- V2 按用途统计实测出现 `knowledge_research`（18 次、40319 tokens）和 `embedding`（86 次、13412 tokens）记录。
+- Playwright 真实浏览器验证：黑话/知识页“设置”按钮均打开设置「功能」分页；热梗考究搜索词为 5 行 textarea；知识页上次考究时间显示为 2026 年而非 1970；慢请求期间切换设置分页不会被旧分页覆盖。
+- Playwright 完整点击“更新 → 重启后端 → 立即重启后端”：57.1 秒后页面自动 reload 并显示登录门，`/api/auth/state` 的 `boot_id` 已改变；旧进程退出、新进程 PID 312004、WebUI 200、Runtime running、NapCat 重连，且只有一个 `main.py` 进程。
+- `uv pip install --dry-run --python .venv/bin/python -e .` 解析 76 个包成功。
+- 后端已重启加载本轮代码；活跃人格为用户当前的「大肥鱼」，可在人格页切换到大肥鱼或 deepseek。
+
 ## [snapshot-20261025] — 开发快照：备份/兼容/账本与视觉设置 UI
 
 开发快照，不发布正式版本号。详见 `releases/snapshot-20261025.md`。

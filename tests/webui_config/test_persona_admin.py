@@ -91,7 +91,10 @@ def persona_root(tmp_path):
 # ============================================================
 
 
-@pytest.mark.parametrize("good", ["linwan", "LinWan", "a", "lin_wan-2", "x.y", "a" * 64])
+@pytest.mark.parametrize(
+    "good",
+    ["linwan", "LinWan", "a", "lin_wan-2", "中文名", "小堡", "a" * 64],
+)
 def test_validate_name_accepts(good):
     assert pa.validate_persona_name(good) == good
 
@@ -99,10 +102,10 @@ def test_validate_name_accepts(good):
 @pytest.mark.parametrize(
     "bad",
     ["", "  ", "../escape", "a/b", "a\\b", ".hidden", "-lead", "_lead",
-     "中文名", "a b", "a" * 65, "__pycache__"],
+     "a b", "x.y", "a" * 65, "__pycache__", "con", "NUL"],
 )
 def test_validate_name_rejects(bad):
-    """角色名同时是目录名——路径成分与非 ASCII 一律拒绝。"""
+    """角色名同时是目录名——路径成分、空格、点和 Windows 保留名一律拒绝。"""
     with pytest.raises(pa.PersonaAdminError):
         pa.validate_persona_name(bad)
 
@@ -126,7 +129,7 @@ def test_brief_from_payload_keeps_known_fields():
 
 
 def test_brief_from_payload_requires_name():
-    with pytest.raises(pa.PersonaAdminError, match="角色名"):
+    with pytest.raises(pa.PersonaAdminError, match="人格名"):
         pa.brief_from_payload({"personality": "没有名字"})
 
 
@@ -347,3 +350,102 @@ def test_duplicate_rejects_existing_target(persona_root):
 def test_duplicate_missing_source(persona_root):
     with pytest.raises(pa.PersonaAdminError, match="没有"):
         pa.duplicate_persona(persona_root, "nobody", "x")
+
+
+# ============================================================
+# 直接写提示词（raw）
+# ============================================================
+
+
+def test_save_raw_prompt_round_trips_arbitrary_text(persona_root):
+    content = (
+        "第一行\n第二行包含 ''' 和 \\\\ 反斜杠\n"
+        "以及 \"双引号\" 和 {大括号}\n\n最后一行"
+    )
+    result = pa.save_persona(
+        persona_root,
+        "小晚",
+        content,
+        raw=True,
+        display_name="小晚",
+        gender="female",
+        age=24,
+        admins=[{"qq": 12345, "name": "老王", "role": "owner"}],
+    )
+    assert result["created"] is True
+    assert result["size"] == len(content)
+    text = (persona_root.PERSONAS_DIR / "小晚" / "persona_prompt.py").read_text("utf-8")
+    assert pa.extract_prompt_source(text) == content
+    variables = pa.extract_persona_vars(text)
+    assert variables["name"] == "小晚"
+    assert variables["gender"] == "female"
+    assert variables["age"] == 24
+    assert variables["admins"] == [{"qq": 12345, "name": "老王", "role": "owner"}]
+
+
+def test_save_raw_overwrite_preserves_unrelated_existing_vars(persona_root):
+    target = persona_root.PERSONAS_DIR / "linwan" / "persona_prompt.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        '"""old"""\n\nPERSONA_PROMPT = "旧提示词"\n\n'
+        'PERSONA_VARS = {"name": "林晚", "admins": [{"qq": 1}], "custom": "keep-me"}\n',
+        encoding="utf-8",
+    )
+    pa.save_persona(
+        persona_root,
+        "linwan",
+        "新提示词",
+        raw=True,
+        overwrite=True,
+        preserve_vars=True,
+    )
+    text = target.read_text("utf-8")
+    variables = pa.extract_persona_vars(text)
+    assert pa.extract_prompt_source(text) == "新提示词"
+    assert variables["name"] == "林晚"
+    assert variables["admins"] == [{"qq": 1, "role": "owner"}]
+    assert variables["custom"] == "keep-me"
+
+
+def test_save_raw_rejects_over_limit(persona_root):
+    with pytest.raises(pa.PersonaAdminError, match="太长"):
+        pa.save_persona(
+            persona_root,
+            "linwan",
+            "x" * (pa.MAX_PERSONA_PROMPT_CHARS + 1),
+            raw=True,
+        )
+
+
+def test_save_raw_rejects_bad_admin_qq(persona_root):
+    with pytest.raises(pa.PersonaAdminError, match="QQ"):
+        pa.save_persona(
+            persona_root,
+            "linwan",
+            "提示词",
+            raw=True,
+            admins=[{"qq": "not-a-number"}],
+        )
+
+
+def test_save_ai_brief_persists_age_and_display_name(persona_root):
+    brief = pa.brief_from_payload({
+        "name": "林晚",
+        "personality": "安静",
+        "age": "24",
+        "gender": "female",
+    })
+    pa.save_persona(persona_root, "linwan", FULL_XML, brief=brief)
+    text = (persona_root.PERSONAS_DIR / "linwan" / "persona_prompt.py").read_text("utf-8")
+    variables = pa.extract_persona_vars(text)
+    assert variables["name"] == "林晚"
+    assert variables["age"] == 24
+    assert variables["gender"] == "female"
+
+
+def test_builtin_personas_are_dafiyu_and_deepseek():
+    from webui.api.personas import BUILTIN_PERSONAS
+
+    assert "大肥鱼" in BUILTIN_PERSONAS
+    assert "deepseek" in BUILTIN_PERSONAS
+    assert "debata" not in BUILTIN_PERSONAS

@@ -20,6 +20,9 @@ from utils.usage_summary import (
 from utils.usage_summary import (
     cutoff_timestamp as _cutoff_timestamp,
 )
+from utils.usage_summary import (
+    summarize_breakdown as _summarize_breakdown,
+)
 
 
 class UsageStatsStore:
@@ -63,6 +66,8 @@ class UsageStatsStore:
         operation: str = "",
         extra: dict[str, Any] | None = None,
     ) -> None:
+        if usage is None:
+            return
         if usage.total_tokens <= 0 and usage.prompt_tokens <= 0 and usage.completion_tokens <= 0:
             return
         record = {
@@ -104,6 +109,20 @@ class UsageStatsStore:
                 continue
             _add_record_to_summary(summary, record)
         return summary
+
+    def operation_breakdown(
+        self,
+        range_name: UsageRange = "today",
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """按 operation 分组，供总览页展示搜索/看图/embedding 等用量。"""
+        return _summarize_breakdown(
+            self._records or [],
+            range_name,
+            field="operation",
+            limit=limit,
+        )
 
     @property
     def count(self) -> int:

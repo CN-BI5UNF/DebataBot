@@ -36,7 +36,7 @@ export function render(container, ctx) {
       access_token: '', manage_process: false, process_path: '', auto_restart: true,
       whitelist: { mode: 'verify', qq_ids: [], group_ids: [] },
     },
-    persona: 'debata',
+    persona: '大肥鱼',
     persona_source: 'builtin',
     persona_brief: '',
     // UI
@@ -94,7 +94,7 @@ export function render(container, ctx) {
       state.personas = options.personas || [];
       for (const step of options.steps || []) state.stepsMeta[step.id] = step;
       const defaults = options.defaults || {};
-      state.persona = defaults.persona || 'debata';
+      state.persona = defaults.persona || '大肥鱼';
       state.provider.timeout_seconds = 120;
       if (defaults.preset) {
         state.provider.preset = defaults.preset;

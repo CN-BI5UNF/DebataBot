@@ -37,23 +37,54 @@ def admin_entries_from_brief(brief: PersonaBrief | None) -> list[dict[str, objec
     return admin_entries(brief.admin_qq, brief.admin_name)
 
 
+def render_persona_file(
+    name: str,
+    xml: str,
+    *,
+    display_name: str = "",
+    admins: list[dict[str, object]] | None = None,
+    gender: str = "",
+    age: int | None = None,
+    extra_vars: dict[str, Any] | None = None,
+) -> str:
+    """Render a persona file with lossless string serialization.
+
+    ``repr()`` is used instead of triple-quoted literals: direct-prompt mode may
+    contain backslashes, quotes, newlines, or ``'''`` and must round-trip
+    byte-for-byte through the loader.  ``PERSONA_VARS`` stays a normal Python
+    dict so existing persona files keep working.
+    """
+    persona_vars: dict[str, Any] = dict(extra_vars or {})
+    persona_vars["name"] = (display_name or "").strip() or name
+    persona_vars["admins"] = list(admins or [])
+    if gender.strip():
+        persona_vars["gender"] = gender.strip()
+    if age is not None:
+        persona_vars["age"] = int(age)
+    return (
+        '"""人格档案（支持直接编写的长提示词）。"""\n\n'
+        f"PERSONA_PROMPT = {repr(xml)}\n\n"
+        f"PERSONA_VARS = {format_python_literal(persona_vars)}\n"
+    )
+
+
 def render_minimal_persona(
     name: str,
     xml: str,
     admins: list[dict[str, object]] | None = None,
     gender: str = "",
+    *,
+    display_name: str = "",
+    age: int | None = None,
 ) -> str:
-    safe = xml.replace("'''", "\\'\\'\\'")
-    persona_vars: dict[str, object] = {"name": name, "admins": admins or []}
-    if gender:
-        persona_vars["gender"] = gender
-    vars_text = format_python_literal(persona_vars)
-    return (
-        '"""自动生成的人格档案。"""\n\n'
-        "PERSONA_PROMPT = '''\n"
-        f"{safe}\n"
-        "'''\n\n"
-        f"PERSONA_VARS = {vars_text}\n"
+    """Backward-compatible wrapper used by the AI-draft save path."""
+    return render_persona_file(
+        name,
+        xml,
+        display_name=display_name,
+        admins=admins,
+        gender=gender,
+        age=age,
     )
 
 
@@ -68,4 +99,5 @@ __all__ = [
     "admin_entries_from_brief",
     "format_python_literal",
     "render_minimal_persona",
+    "render_persona_file",
 ]

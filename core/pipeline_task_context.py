@@ -10,6 +10,7 @@ import asyncio
 import inspect
 import json
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -35,6 +36,9 @@ class PipelineTaskContextMixin:
             parts.append(f"现在是{now}。")
         if conversation_id:
             parts.append(f"当前会话：{conversation_id}。")
+            age_hint = self._message_age_hint(conversation_id)
+            if age_hint:
+                parts.append(age_hint)
             lookup_hint = self._context_lookup_hint(conversation_id)
             if lookup_hint:
                 parts.append(lookup_hint)
@@ -47,7 +51,35 @@ class PipelineTaskContextMixin:
         if persona_context:
             parts.append(persona_context)
 
+        # 黑话/知识库不再自动注入 task_context。模型通过 lookup_slang /
+        # list_knowledge_notes 按需查询，避免每轮把整张表塞进动态上下文，
+        # 也让稳定前缀和后续历史更容易命中 KV cache。
         return "\n".join(parts)
+
+    def _message_age_hint(self, conversation_id: str) -> str:
+        """qq-bridge 式时间感：旧消息不要当成实时对话。"""
+        timeline = getattr(self, "chat_timeline", None)
+        if timeline is None:
+            return ""
+        try:
+            recent = timeline.recent(conversation_id, 1)
+            timestamp = float(recent[-1].timestamp) if recent else 0.0
+        except Exception:
+            return ""
+        if timestamp <= 0:
+            return ""
+        age = max(0.0, time.time() - timestamp)
+        if age < 600:
+            return ""
+        if age < 7200:
+            return (
+                f"最近一条消息约 {int(age / 60)} 分钟前；不要用“刚刚”，"
+                "先判断这个话题是否还值得接。"
+            )
+        return (
+            f"最近一条消息约 {int(age / 3600)} 小时前；默认不要把它当成实时对话。"
+            "只有对方在认真问一个仍然有用的问题时，才自然说明“刚看到/隔了挺久”。"
+        )
 
     def _persona_context_for_chat(self, conversation_id: str | None) -> str:
         if not conversation_id:

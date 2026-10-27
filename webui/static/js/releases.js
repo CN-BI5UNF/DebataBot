@@ -20,7 +20,10 @@ const RELATION_TEXT = {
 
 const REASON_TEXT = {
   up_to_date: '当前已经是最新版本',
-  dependency_change_requires_install: '目标版本修改了依赖文件，需要手动安装依赖',
+  dependency_change_requires_install: '目标版本修改了依赖文件；自动安装已关闭，需要手动安装依赖',
+  dependency_install_failed: '依赖安装失败，源码已回滚',
+  dependency_install_failed_rollback_failed: '依赖安装失败，且源码回滚失败；请检查工作树',
+  dependency_install_timeout: '依赖安装超时，源码已回滚',
   worktree_dirty: '工作树有未提交改动',
   data_dir_inside_project: '用户数据目录位于代码工作树内',
   git_timeout: '连接远端超时',
@@ -275,7 +278,8 @@ export async function renderReleaseList(
       if (onApplied) onApplied(payload);
       if (payload.restart_scheduled) {
         setMessage('更新完成；服务正在自动重启，请稍候…', 'ok');
-        await waitForBackendReady();
+        const previousBootId = await currentBootId();
+        await waitForBackendReady(90000, previousBootId);
         window.location.reload();
         return;
       }
@@ -331,15 +335,44 @@ export async function renderReleaseList(
   };
 }
 
-async function waitForBackendReady(timeoutMs = 90000) {
-  const deadline = Date.now() + timeoutMs;
+async function currentBootId() {
+  try {
+    const response = await fetch('/api/auth/state', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => null);
+    return data && typeof data.boot_id === 'string' ? data.boot_id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForBackendReady(timeoutMs = 90000, previousBootId = null) {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  let sawDown = false;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     try {
       const response = await fetch('/api/auth/state', { cache: 'no-store' });
-      if (response.ok) return true;
+      if (!response.ok) {
+        sawDown = true;
+        continue;
+      }
+      const data = await response.json().catch(() => null);
+      const bootId = data && typeof data.boot_id === 'string' ? data.boot_id : '';
+      if (previousBootId) {
+        // 同一 boot_id 说明旧进程还在优雅退出，不能提前 reload。
+        if (bootId && bootId !== previousBootId) return true;
+        // 目标版本没有 boot_id（回退到旧版本）时，至少观察到一次断连。
+        if (!bootId && sawDown && Date.now() - started >= 3000) return true;
+        continue;
+      }
+      // 旧后端没有 boot_id；新后端第一次带回 boot_id 即证明已换进程。
+      if (bootId) return true;
+      if (sawDown && Date.now() - started >= 3000) return true;
     } catch {
       // 后端正在重启，端口尚未恢复。
+      sawDown = true;
     }
   }
   return false;
@@ -389,8 +422,9 @@ export function promptBackendRestart(ctx, {
       confirm.disabled = true;
       later.disabled = true;
       status.textContent = '正在重启后端…';
+      let restartResponse = null;
       try {
-        await endpoints.restartBackend();
+        restartResponse = await endpoints.restartBackend();
       } catch (e) {
         status.textContent = `重启失败：${e.message}`;
         confirm.disabled = false;
@@ -398,7 +432,10 @@ export function promptBackendRestart(ctx, {
         restarting = false;
         return;
       }
-      const ready = await waitForBackendReady();
+      const ready = await waitForBackendReady(
+        90000,
+        restartResponse && restartResponse.boot_id,
+      );
       if (!ready) {
         status.textContent = '等待后端起超时，请手动刷新页面或检查服务日志。';
         confirm.disabled = false;

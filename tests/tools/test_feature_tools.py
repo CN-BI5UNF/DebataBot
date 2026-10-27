@@ -458,6 +458,37 @@ async def test_web_search_condenses_long_results():
 
 
 @pytest.mark.asyncio
+async def test_web_fetch_without_service():
+    cfg = _make_config(web_search_enabled=True)
+    reg = build_default_registry(cfg)
+    ctx = ToolContext()
+    executor = reg.get_executor(ctx)
+    result = await executor("web_fetch", {"url": "https://example.com/a"})
+    assert result["ok"] is False
+    assert "未启用" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_returns_truncated_markdown():
+    class FakeFetch:
+        async def fetch(self, url: str, *, timeout_seconds=None):
+            assert url == "https://example.com/a"
+            return {"title": "示例", "url": url, "content": "x" * 2000}
+
+    cfg = _make_config(web_search_enabled=True)
+    reg = build_default_registry(cfg)
+    ctx = ToolContext(web_fetch=FakeFetch())
+    executor = reg.get_executor(ctx)
+    result = await executor(
+        "web_fetch", {"url": "https://example.com/a", "max_chars": 500}
+    )
+    assert result["ok"] is True
+    assert result["title"] == "示例"
+    assert len(result["content"]) == 500
+    assert result["truncated"] is True
+
+
+@pytest.mark.asyncio
 async def test_weather_without_service():
     cfg = _make_config(weather_enabled=True)
     reg = build_default_registry(cfg)

@@ -31,13 +31,16 @@ from dataclasses import replace
 from . import (  # noqa: F401
     agent_task_tools,
     control_tools,
+    emoji_tools,
     feature_tools,
     group_admin_tools,
+    knowledge_tools,
     memory_tools,
     messaging,
     persona_tools,
     platform_tools,
     qq_action_tools,
+    slang_tools,
     tool_search_tools,
     workspace_tools,
 )
@@ -134,6 +137,7 @@ PLATFORM_OPTIONAL_TOOLS: set[str] = {
 FEATURE_TOOL_FEATURES: dict[str, str] = {
     "describe_image": "vision",
     "web_search": "web_search",
+    "web_fetch": "web_search",
     "get_weather": "weather",
     "send_voice_message": "tts",
 }
@@ -169,7 +173,10 @@ FULL_SCHEMA_TOOLS: set[str] = {
     "delete_file",
     "run_python",
     "web_search",
+    "web_fetch",
     "get_weather",
+    "lookup_slang",
+    "list_knowledge_notes",
     "eat",
     "sleep",
 }
@@ -187,12 +194,15 @@ COMPACT_SCHEMA_TOOLS: set[str] = {
     "get_recent_chat_messages",
     "describe_image",
     "web_search",
+    "lookup_slang",
+    "list_knowledge_notes",
     "tool_search",
 }
 """compact profile 下直接暴露核心字段的工具。
 
 其余工具全部降为 stub，模型需要时先 tool_search。依据真实调用频率选择：
-这 11 个覆盖了绝大多数主流程调用，低频/高风险工具按需展开。
+这些覆盖了绝大多数主流程调用，低频/高风险工具按需展开。知识/黑话现在改为
+按需查询，所以 lookup_slang 和 list_knowledge_notes 直接暴露。
 """
 
 
@@ -207,6 +217,8 @@ _COMPACT_SHORT_DESCRIPTIONS: dict[str, str] = {
     "get_recent_chat_messages": "读取当前会话最近的真实消息窗口。",
     "describe_image": "理解图片内容或提取图中文字。",
     "web_search": "联网搜索实时/最新信息。",
+    "lookup_slang": "查询当前群已确认的黑话/缩写/群梗。",
+    "list_knowledge_notes": "按需查询知识库中的热梗/事实笔记。",
     "tool_search": "查询低频工具的参数摘要、完整 schema 和风险约束。",
 }
 
@@ -264,8 +276,20 @@ STUB_SCHEMA_TOOLS: set[str] = {
     "set_group_ban",
     "set_group_whole_ban",
     "set_group_leave",
+    "list_emoji",
+    "save_emoji_from_url",
+    "save_emoji_from_workspace",
+    "rename_emoji",
+    "delete_emoji",
+    "save_knowledge_note",
+    "research_web_to_prompt",
+    "delete_knowledge_note",
 }
-"""低频/高风险/大 schema 工具：常驻名称与简述，调用前通过 tool_search 查询参数摘要。"""
+"""低频/高风险/大 schema 工具：常驻名称与简述，调用前通过 tool_search 查询参数摘要。
+
+``lookup_slang`` / ``list_knowledge_notes`` 是核心按需查询工具，直接暴露完整/紧凑
+schema，不走 tool_search，否则模型要为了查一条知识多花一轮调用。
+"""
 
 
 _STUB_SHORT_DESCRIPTIONS: dict[str, str] = {
@@ -300,6 +324,15 @@ _STUB_SHORT_DESCRIPTIONS: dict[str, str] = {
     "get_weather": "查询天气。先用 tool_search 查询参数摘要。",
     "eat": "人格进食动作。先用 tool_search 查询参数摘要。",
     "sleep": "人格睡眠动作。先用 tool_search 查询参数摘要。",
+    "list_emoji": "列出表情包名称。先用 tool_search 查询参数摘要。",
+    "save_emoji_from_url": "把网络图片保存为表情包。先用 tool_search 查询参数摘要。",
+    "save_emoji_from_workspace": "把消息图片保存为表情包。先用 tool_search 查询参数摘要。",
+    "rename_emoji": "给表情包改名。先用 tool_search 查询参数摘要。",
+    "delete_emoji": "删除表情包。先用 tool_search 查询参数摘要。",
+    "save_knowledge_note": "保存已核对的知识/热梗笔记。先用 tool_search 查询参数摘要。",
+    "research_web_to_prompt": "联网考究并整理成知识笔记。先用 tool_search 查询参数摘要。",
+    "delete_knowledge_note": "删除知识笔记。先用 tool_search 查询参数摘要。",
+    "web_fetch": "读取单个网页正文（官方 Fetch）。先用 tool_search 查询参数摘要。",
 }
 
 
@@ -315,6 +348,14 @@ _STUB_RISK_LEVELS: dict[str, str] = {
     "delete_file": "medium",
     "run_python": "medium",
     "schedule_wakeup": "medium",
+    "save_emoji_from_url": "medium",
+    "save_emoji_from_workspace": "medium",
+    "rename_emoji": "medium",
+    "delete_emoji": "high",
+    "save_knowledge_note": "medium",
+    "research_web_to_prompt": "medium",
+    "delete_knowledge_note": "medium",
+    "web_fetch": "medium",
 }
 
 

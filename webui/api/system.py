@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import shutil
+import secrets
 import sys
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from core.updater import systemd_restart_callback
+from core.backend_restart import request_backend_restart, systemd_managed
 from webui.auth import COOKIE_NAME, SESSION_TTL_SECONDS
 from webui.runtime_host import STATE_SETUP_REQUIRED
 
@@ -24,6 +23,9 @@ router = APIRouter(tags=["system"])
 
 COOKIE_MAX_AGE = SESSION_TTL_SECONDS
 BACKEND_RESTART_DELAY_SECONDS = 1.0
+# 每次进程启动生成一次；WebUI 用它在重启后确认自己连到的是新进程，
+# 而不是仍在优雅退出、还能响应请求的旧进程。
+BOOT_ID = secrets.token_hex(12)
 
 
 class LoginPayload(BaseModel):
@@ -37,6 +39,7 @@ async def auth_state(request: Request) -> dict[str, Any]:
     return {
         "auth_enabled": auth.enabled,
         "authenticated": auth.request_authorized(request),
+        "boot_id": BOOT_ID,
     }
 
 
@@ -118,42 +121,57 @@ async def restart_runtime(request: Request) -> dict[str, Any]:
     return {"ok": True, "message": "Runtime 已重启"}
 
 
+def _systemd_managed() -> bool:
+    return systemd_managed()
+
+
 def backend_restart_supported() -> bool:
-    """只有 systemd 用户服务才能安全地整进程重启。"""
-    return (
-        sys.platform.startswith("linux")
-        and shutil.which("systemctl") is not None
-        and bool(os.environ.get("INVOCATION_ID"))
-    )
+    """systemd 用户/系统服务或 Linux fallback 模式都可以整进程重启。"""
+    return _systemd_managed() or sys.platform.startswith("linux")
 
 
-async def _restart_backend_after_delay() -> None:
+async def _restart_backend_after_delay(
+    *,
+    server: Any = None,
+    host: Any = None,
+) -> None:
     await asyncio.sleep(BACKEND_RESTART_DELAY_SECONDS)
     try:
-        await systemd_restart_callback()
+        mode = request_backend_restart()
+        if mode == "fallback":
+            if host is not None:
+                host.request_stop()
+            if server is not None:
+                server.should_exit = True
     except Exception:  # noqa: BLE001
         logger.exception("重启后端失败")
 
 
 @router.post("/api/system/restart-backend")
-async def restart_backend() -> dict[str, Any]:
+async def restart_backend(request: Request) -> dict[str, Any]:
     """重启整个后端进程，用于加载磁盘上的新 Python 代码。
 
-    先返回响应，再由独立子进程执行 systemctl restart；进程切换期间
-    WebUI 会短暂无法连接，重启后会话 cookie 失效，需要重新登录。
+    先返回响应，再由独立子进程执行 systemctl restart 或 fallback helper；
+    进程切换期间 WebUI 会短暂无法连接，重启后会话 cookie 失效，需要重新登录。
     """
     if not backend_restart_supported():
         raise HTTPException(
             status_code=400,
-            detail="当前进程不是由 systemd 用户服务托管，无法自动重启后端；请手动重启服务",
+            detail="当前平台不支持自动重启后端；请手动重启服务",
         )
+    server = getattr(request.app.state, "server", None)
+    host = get_host(request)
     asyncio.create_task(
-        _restart_backend_after_delay(), name="restart-backend"
+        _restart_backend_after_delay(server=server, host=host),
+        name="restart-backend",
     )
     return {
         "ok": True,
         "restart_scheduled": True,
         "delay_seconds": BACKEND_RESTART_DELAY_SECONDS,
+        "mode": "systemd" if _systemd_managed() else "fallback",
+        # 这是“旧进程”的 boot_id。前端要等到它变化才算重启完成。
+        "boot_id": BOOT_ID,
         "message": "后端将在约 1 秒后重启；期间 WebUI 将无法连接",
     }
 
@@ -266,7 +284,7 @@ async def setup_options(request: Request) -> dict[str, Any]:
             "provider_id": default_provider or "main_provider",
             "preset": default_provider,
             "model": default_model,
-            "persona": "debata",
+            "persona": "大肥鱼",
             "adapter": {
                 "mode": "client",
                 "host": "127.0.0.1",

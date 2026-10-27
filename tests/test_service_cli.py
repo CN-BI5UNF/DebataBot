@@ -189,6 +189,35 @@ def _patch_fallback_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(service_cli.time, "sleep", lambda _seconds: None)
 
 
+def test_restart_helper_waits_for_old_pid_then_starts(monkeypatch):
+    calls: list[str] = []
+    alive = {123: True}
+
+    def fake_alive(pid):
+        return alive.get(pid, False)
+
+    def fake_sleep(_seconds):
+        alive[123] = False
+
+    monkeypatch.setattr(service_cli, "_process_alive", fake_alive)
+    monkeypatch.setattr(service_cli.time, "sleep", fake_sleep)
+    monkeypatch.setattr(service_cli, "_clear_state", lambda: calls.append("clear"))
+    monkeypatch.setattr(service_cli, "_fallback_start", lambda: calls.append("start") or 0)
+
+    assert service_cli.main(["restart-helper", "123"]) == 0
+    assert calls == ["clear", "start"]
+
+
+def test_restart_helper_starts_even_without_old_pid(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(service_cli, "_process_alive", lambda _pid: False)
+    monkeypatch.setattr(service_cli, "_clear_state", lambda: calls.append("clear"))
+    monkeypatch.setattr(service_cli, "_fallback_start", lambda: calls.append("start") or 0)
+
+    assert service_cli.main(["restart-helper", "bad-pid"]) == 0
+    assert calls == ["clear", "start"]
+
+
 def test_fallback_start_writes_pid_and_state(monkeypatch, tmp_path):
     _patch_fallback_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(service_cli, "_running_fallback_pid", lambda: None)

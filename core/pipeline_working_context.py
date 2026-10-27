@@ -30,7 +30,10 @@ from utils.token_budget import TokenBudget, TokenEstimator
 
 from .model_binding import (
     EffectiveModelBinding,
+    ModelCallSnapshot,
     build_binding_budget,
+    build_model_call_snapshot,
+    resolve_agent_binding,
 )
 from .model_view import ModelViewPolicy, ModelViewResult, build_model_view
 from .pipeline_context import _recommended_context_budget
@@ -53,6 +56,7 @@ class MainPromptBudgetResult:
     image_bytes: int = 0
     request_body_bytes: int = 0
     budget_basis: str = "text_only"
+    model_call_snapshot: ModelCallSnapshot | None = None
 
 
 @dataclass(slots=True)
@@ -82,23 +86,33 @@ class PipelineWorkingContextMixin:
             summary_token_budget=cfg.summary_token_budget,
         )
 
-    def _active_model_binding(self) -> EffectiveModelBinding:
-        cfg = self.chat_agent.cfg
-        reasoning = getattr(cfg, "reasoning", None)
+    def _active_model_binding(self, role: str = "chat") -> EffectiveModelBinding:
+        config = getattr(self, "config", None)
         limit = getattr(self, "model_context_length", None)
         try:
             limit = int(limit) if limit else None
         except (TypeError, ValueError):
             limit = None
+        if config is not None:
+            resolved = resolve_agent_binding(config, role, model_context_length=limit)
+            if resolved is not None:
+                return resolved
+
+        cfg = getattr(self.chat_agent, "cfg", None)
+        reasoning = getattr(cfg, "reasoning", None) if cfg else None
+        provider_name = str(getattr(cfg, "provider", "") or "")
+        protocol = "openai_compat"
+        if hasattr(self, "chat_agent") and hasattr(self.chat_agent, "provider"):
+            protocol = getattr(self.chat_agent.provider, "protocol", "openai_compat") or "openai_compat"
         return EffectiveModelBinding(
-            role="chat",
-            provider_id=str(getattr(cfg, "provider", "") or ""),
+            role=role,
+            provider_id=provider_name,
             model=str(getattr(cfg, "model", "") or ""),
-            protocol="",
+            protocol=protocol,
             context_limit=limit,
             context_source="runtime_model_meta" if limit else "unknown",
             context_verified=bool(limit),
-            max_output_tokens=max(1, int(getattr(cfg, "max_tokens", 1) or 1)),
+            max_output_tokens=max(1, int(getattr(cfg, "max_tokens", 1) or 1)) if cfg else 1,
             reasoning_enabled=bool(getattr(reasoning, "enabled", False)),
             reasoning_budget=getattr(reasoning, "budget", None),
             reasoning_max_tokens=getattr(reasoning, "max_tokens", None),
@@ -611,14 +625,39 @@ class PipelineWorkingContextMixin:
             )
         return "", ""
 
-    @staticmethod
     def _new_budget_result(
+        self,
         messages: list[dict[str, Any]],
         usage: MainPromptBudgetUsage,
         *,
         pre_summary_status: str = "",
         attempts: list[str] | None = None,
+        tools_schema: list[dict[str, Any]] | None = None,
     ) -> MainPromptBudgetResult:
+        call_snapshot: ModelCallSnapshot | None = None
+        try:
+            snapshot = self._active_budget_snapshot()
+            binding = self._active_model_binding()
+            guards = list(getattr(self, "_active_input_guards", []) or [])
+            protected_ids: list[str] = []
+            protected_seqs: list[int] = []
+            for g in guards:
+                protected_ids.extend(str(mid) for mid in getattr(g, "message_ids", ()))
+                protected_seqs.extend(int(s) for s in getattr(g, "inbound_seqs", ()))
+            call_snapshot = build_model_call_snapshot(
+                binding,
+                snapshot,
+                tools_schema=tools_schema,
+                estimator=self._token_estimator(),
+                image_limits=self._main_prompt_image_limits(),
+                request_body_limit_bytes=self._provider_request_body_limit_bytes(),
+                calib_ratio=getattr(self, "_token_calib_ratio", 1.0),
+                protected_message_ids=protected_ids,
+                protected_inbound_seqs=protected_seqs,
+            )
+        except Exception:
+            logger.debug("构建 ModelCallSnapshot 失败（忽略）", exc_info=True)
+
         return MainPromptBudgetResult(
             ok=True,
             messages=messages,
@@ -631,6 +670,7 @@ class PipelineWorkingContextMixin:
             image_bytes=usage.encoded_image_bytes,
             request_body_bytes=usage.request_body_bytes,
             budget_basis=usage.basis,
+            model_call_snapshot=call_snapshot,
         )
 
     async def _failed_budget_result(
@@ -877,6 +917,7 @@ class PipelineWorkingContextMixin:
                     usage,
                     pre_summary_status=pre_summary_status,
                     attempts=attempts,
+                    tools_schema=tools_schema,
                 ),
                 conversation_id=conversation_id,
                 phase=phase,
@@ -963,6 +1004,7 @@ class PipelineWorkingContextMixin:
                     usage,
                     pre_summary_status=pre_summary_status,
                     attempts=attempts,
+                    tools_schema=tools_schema,
                 ),
                 conversation_id=conversation_id,
                 phase=phase,

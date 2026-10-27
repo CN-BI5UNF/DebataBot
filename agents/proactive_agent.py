@@ -18,6 +18,7 @@ from providers.base import (
     ProviderError,
     ReasoningConfig,
 )
+from utils.token_budget import TokenEstimator
 
 from .base import StatusCallback, UsageRecorder
 
@@ -44,16 +45,32 @@ class ProactiveRouterAgent:
         *,
         usage_recorder: UsageRecorder | None = None,
         status_callback: StatusCallback | None = None,
+        prompt_budget_tokens: int | None = None,
     ) -> None:
         self.provider = provider
         self.cfg = cfg
         self.usage_recorder = usage_recorder
         self.status_callback = status_callback
+        self.prompt_budget_tokens = (
+            int(prompt_budget_tokens) if prompt_budget_tokens is not None else None
+        )
 
     async def should_act(self, messages: list[dict[str, Any]]) -> tuple[bool, str]:
         """判断当前是否值得主动发言。"""
         check_msgs = list(messages)
         check_msgs.append({"role": "system", "content": ROUTER_INSTRUCTION})
+
+        if self.prompt_budget_tokens is not None:
+            estimator = TokenEstimator(model=self.cfg.model)
+            estimated = estimator.estimate_prompt(check_msgs, None)
+            if estimated > self.prompt_budget_tokens:
+                logger.warning(
+                    "主动路由输入超预算，跳过模型调用：estimated=%s budget=%s",
+                    estimated,
+                    self.prompt_budget_tokens,
+                )
+                self._emit_status("error", "主动思考路由超预算")
+                return False, ""
 
         try:
             self._emit_status("thinking", "主动思考路由判断中")

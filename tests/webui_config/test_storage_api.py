@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import HTTPException
 
 from core.storage_maintenance import StorageMaintenanceError
@@ -41,3 +43,10 @@ def test_error_mapping_uses_machine_codes():
     error = _http_error(StorageMaintenanceError("confirmation_token_invalid", "bad"))
     assert isinstance(error, HTTPException)
     assert error.detail["code"] == "confirmation_token_invalid"
+
+
+def test_storage_cleanup_button_is_labelled_clear():
+    root = Path(__file__).resolve().parents[2]
+    js = (root / "webui/static/js/pages/storage.js").read_text(encoding="utf-8")
+    assert "}, '清除');" in js
+    assert "预览影响" not in js

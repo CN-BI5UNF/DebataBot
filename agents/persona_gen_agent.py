@@ -558,11 +558,15 @@ class PersonaGenAgent:
         *,
         usage_recorder: UsageRecorder | None = None,
         status_callback: StatusCallback | None = None,
+        prompt_budget_tokens: int | None = None,
     ) -> None:
         self.provider = provider
         self.cfg = cfg
         self.usage_recorder = usage_recorder
         self.status_callback = status_callback
+        self.prompt_budget_tokens = (
+            int(prompt_budget_tokens) if prompt_budget_tokens is not None else None
+        )
 
     async def generate(self, brief: PersonaBrief) -> PersonaGenResult:
         """根据用户简述生成初版人格档案。"""
@@ -575,6 +579,15 @@ class PersonaGenAgent:
             {"role": "system", "content": PERSONA_GEN_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
+
+        if self.prompt_budget_tokens is not None:
+            from utils.token_budget import TokenEstimator
+            estimator = TokenEstimator(model=self.cfg.model)
+            estimated = estimator.estimate_prompt(messages, None)
+            if estimated > self.prompt_budget_tokens:
+                raise ValueError(
+                    f"人格生成提示词超出预算: estimated={estimated} > budget={self.prompt_budget_tokens}"
+                )
 
         self._emit_status("thinking", "AI 生成人格中")
         result = await self.provider.chat_completion(
@@ -615,6 +628,15 @@ class PersonaGenAgent:
             *_normalize_edit_history(edit_history),
             {"role": "user", "content": user_content},
         ]
+
+        if self.prompt_budget_tokens is not None:
+            from utils.token_budget import TokenEstimator
+            estimator = TokenEstimator(model=self.cfg.model)
+            estimated = estimator.estimate_prompt(messages, None)
+            if estimated > self.prompt_budget_tokens:
+                raise ValueError(
+                    f"人格修订提示词超出预算: estimated={estimated} > budget={self.prompt_budget_tokens}"
+                )
 
         self._emit_status("thinking", "AI 修改人格中")
         result = await self.provider.chat_completion(

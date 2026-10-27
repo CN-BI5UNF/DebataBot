@@ -27,6 +27,7 @@ from utils.usage_summary import (
     UsageSummary,
     add_record_to_summary,
     cutoff_timestamp,
+    summarize_breakdown,
 )
 
 from .archive_sqlite_filters import (
@@ -2561,6 +2562,8 @@ class DebataUsageStatsStore:
         operation: str = "",
         extra: dict[str, Any] | None = None,
     ) -> None:
+        if usage is None:
+            return
         if usage.total_tokens <= 0 and usage.prompt_tokens <= 0 and usage.completion_tokens <= 0:
             return
 
@@ -2601,6 +2604,19 @@ class DebataUsageStatsStore:
                 continue
             add_record_to_summary(summary, record)
         return summary
+
+    def operation_breakdown(
+        self,
+        range_name: UsageRange = "today",
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        return summarize_breakdown(
+            self._records or [],
+            range_name,
+            field="operation",
+            limit=limit,
+        )
 
     @property
     def count(self) -> int:

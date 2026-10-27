@@ -49,8 +49,10 @@ export async function render(container, ctx) {
   let restartHint = null;
 
   const nav = h('div', { class: 'settings-nav' });
-  const body = h('div', {});
-  // 重启提示放在独立容器里：body 每次切分页都会被 fill() 清空，
+  const bodyHost = h('div', {});
+  let body = h('div', {});
+  bodyHost.append(body);
+  // 重启提示放在独立容器里：body 每次切分页都会被替换，
   // 提示挂在 body 里会被一起冲掉。
   const hintHost = h('div', {});
 
@@ -59,6 +61,9 @@ export async function render(container, ctx) {
     ...groups.map((g) => ({ key: g.key, title: g.title })),
     { key: 'paths', title: '路径与诊断' },
   ];
+  if (ctx.section && tabs.some((tab) => tab.key === ctx.section)) {
+    activeKey = ctx.section;
+  }
 
   function markRestart() {
     if (restartHint) return;
@@ -113,10 +118,10 @@ export async function render(container, ctx) {
       return field(fieldSpec.label, select, fieldSpec.help || '');
     }
 
-    if (kind === 'list_int' || kind === 'list_str') {
+    if (kind === 'list_int') {
       const input = h('input', {
         value: (value || []).join(', '),
-        placeholder: kind === 'list_int' ? '逗号分隔（中英文均可），留空表示不限制' : '逗号或换行分隔',
+        placeholder: '逗号分隔（中英文均可），留空表示不限制',
       });
       const commit = () => onSave(input.value);
       input.addEventListener('blur', commit);
@@ -124,6 +129,30 @@ export async function render(container, ctx) {
         if (event.key === 'Enter') { event.preventDefault(); commit(); }
       });
       return field(fieldSpec.label, input, fieldSpec.help || '');
+    }
+
+    if (kind === 'list_str') {
+      // 列表项可能是完整搜索词/启动参数，单行输入框放不下，用 textarea 换行编辑。
+      const area = h('textarea', {
+        rows: 4,
+        placeholder: '逗号或换行分隔',
+        value: (value || []).join('\n'),
+      });
+      let dirty = false;
+      const commit = () => {
+        dirty = false;
+        onSave(area.value);
+      };
+      area.addEventListener('input', () => { dirty = true; });
+      area.addEventListener('blur', () => { if (dirty) commit(); });
+      area.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          commit();
+        }
+      });
+      return field(fieldSpec.label, area,
+        (fieldSpec.help || '') + '（逗号或换行分隔；Ctrl+Enter 保存）');
     }
 
     if (kind === 'json') {
@@ -187,6 +216,22 @@ export async function render(container, ctx) {
     const commit = () => {
       const raw = input.value.trim();
       if (kind === 'int_or_none' && raw === '') return onSave(null);
+      if (kind === 'int' || kind === 'int_or_none') {
+        const number = Number(raw);
+        if (raw === '' || !Number.isInteger(number)) {
+          ctx.toast(`${fieldSpec.label} 需要整数`, 'error');
+          return;
+        }
+        return onSave(number);
+      }
+      if (kind === 'float') {
+        const number = Number(raw);
+        if (raw === '' || !Number.isFinite(number)) {
+          ctx.toast(`${fieldSpec.label} 需要数字`, 'error');
+          return;
+        }
+        return onSave(number);
+      }
       onSave(raw);
     };
     input.addEventListener('blur', commit);
@@ -869,19 +914,19 @@ export async function render(container, ctx) {
   // 模型分页
   // ============================================================
 
-  async function renderModels() {
+  async function renderModels(panelBody = body) {
     // 提供商增删改、测试连接、拉取模型列表都在 providers.js 里，
     // 首次向导也复用同一套表单，避免两处各写一份。
-    await renderModelsPanel(body, ctx, { markRestart });
+    await renderModelsPanel(panelBody, ctx, { markRestart });
   }
 
   // ============================================================
   // 路径与诊断
   // ============================================================
 
-  function renderPaths() {
+  function renderPaths(panelBody = body) {
     const secrets = payload.secrets_index || [];
-    fill(body,
+    fill(panelBody,
       card('运行路径', '', h('table', { class: 'table' },
         h('tbody', {}, ...Object.entries(pathsInfo).map(([key, value]) =>
           h('tr', {}, h('td', {}, key), h('td', { class: 'mono' }, value)))),
@@ -1001,7 +1046,7 @@ export async function render(container, ctx) {
       `版本来自 ${status.repo} 的 GitHub Releases/tag；只更新源码，不覆盖用户数据。`,
       table(['项目', '值'], rows),
       h('p', { class: 'field-help' },
-        '应用版本会备份当前提交并重启服务；依赖文件变化时会拒绝自动应用。'
+        '应用版本会备份当前提交并重启服务；依赖文件变化时会自动安装，失败则回滚源码。'
         + '镜像站会提供将执行的代码，请只使用可信 https 镜像。'),
       h('p', { class: 'field-help' },
         '“重启 Runtime”只重建运行时，不会重新导入 Python 代码；'
@@ -1423,7 +1468,9 @@ export async function render(container, ctx) {
       h('p', { class: 'field-help' }, line));
     const deps = checked.dependency_changes?.length
       ? h('p', { class: 'field-help' },
-        `依赖文件变化（需手动安装，禁止自动应用）：${checked.dependency_changes.join(', ')}`)
+        `依赖文件变化（${checked.auto_install_dependencies
+          ? '应用更新后自动安装，失败会回滚源码'
+          : '需手动安装，禁止自动应用'}）：${checked.dependency_changes.join(', ')}`)
       : null;
     return h('div', {},
       h('p', {}, `目标：${checked.target_name || checked.target_label || '—'}`
@@ -1436,14 +1483,20 @@ export async function render(container, ctx) {
 
   async function show(key) {
     activeKey = key;
+    // 每个分页使用独立的 body 节点。慢请求返回时若用户已切走，
+    // 它的 fill() 只会写进旧节点，不会覆盖新分页。
+    const panelBody = h('div', {});
+    bodyHost.replaceChildren(panelBody);
+    body = panelBody;
+    fill(panelBody, empty('加载中…'));
     for (const btn of nav.querySelectorAll('button')) {
       btn.classList.toggle('active', btn.dataset.key === key);
     }
-    if (key === 'models') return renderModels();
-    if (key === 'paths') return renderPaths();
+    if (key === 'models') return renderModels(panelBody);
+    if (key === 'paths') return renderPaths(panelBody);
 
     const group = groups.find((g) => g.key === key);
-    if (!group) return fill(body, empty('未知分页'));
+    if (!group) return fill(panelBody, empty('未知分页'));
 
     const nodes = [h('p', { class: 'card-sub' }, group.desc || '')];
     const visibleFields = group.fields.filter(
@@ -1550,7 +1603,7 @@ export async function render(container, ctx) {
         nodes.push(card('当前预算快照', '', empty(`读取失败：${e.message}`)));
       }
     }
-    fill(body, ...nodes);
+    fill(panelBody, ...nodes);
   }
 
   fill(nav, ...tabs.map((t) =>
@@ -1564,9 +1617,9 @@ export async function render(container, ctx) {
       ),
     ),
     hintHost,
-    h('div', { class: 'settings-layout' }, nav, body),
+    h('div', { class: 'settings-layout' }, nav, bodyHost),
   );
 
-  await show('models');
+  await show(activeKey);
   return {};
 }

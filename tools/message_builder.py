@@ -18,9 +18,13 @@ import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
+from utils.image_contracts import SUPPORTED_IMAGE_EXTS
+
 logger = logging.getLogger(__name__)
 
-SUPPORTED_IMAGE_EXTS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif"})
+# SUPPORTED_IMAGE_EXTS is imported above and re-exported for callers that
+# historically imported it from this module; the source of truth is
+# utils.image_contracts.
 
 
 class MessageBuildError(Exception):

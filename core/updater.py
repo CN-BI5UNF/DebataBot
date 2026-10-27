@@ -22,8 +22,10 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -112,6 +114,21 @@ def _safe_tag(tag: str) -> bool:
     )
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_CREDENTIAL_URL_RE = re.compile(r"(https?://)[^/\s@]+@", re.IGNORECASE)
+_SECRET_ASSIGN_RE = re.compile(
+    r"(?i)\b(token|password|passwd|secret|api[_-]?key)\s*=\s*([^\s&]+)"
+)
+
+
+def _sanitize_install_output(text: str) -> str:
+    """Keep install logs useful without leaking credential-bearing URLs."""
+    cleaned = _ANSI_RE.sub("", str(text or ""))
+    cleaned = _CREDENTIAL_URL_RE.sub(r"\1***@", cleaned)
+    cleaned = _SECRET_ASSIGN_RE.sub(r"\1=***", cleaned)
+    return cleaned.strip()
+
+
 def resolve_update_repo_url(mirror: str = "") -> str:
     """解析并校验镜像；只允许同一 DebataBot 仓库。"""
     mirror = str(mirror or "").strip()
@@ -184,6 +201,7 @@ class UpdateService:
         check_interval_days: int = DEFAULT_CHECK_INTERVAL_DAYS,
         restart_callback=None,
         allow_local_remote: bool = False,
+        auto_install_dependencies: bool = True,
     ) -> None:
         self.project_root = Path(project_root).resolve()
         self.data_dir = Path(data_dir).resolve()
@@ -192,6 +210,7 @@ class UpdateService:
         self.check_interval_days = max(1, min(365, int(check_interval_days)))
         self.restart_callback = restart_callback
         self.allow_local_remote = bool(allow_local_remote)
+        self.auto_install_dependencies = bool(auto_install_dependencies)
         self._lock = asyncio.Lock()
         self._state_io_lock = asyncio.Lock()
         self._plan: dict | None = None
@@ -693,7 +712,7 @@ class UpdateService:
             if target_sha == current_sha:
                 can_apply = False
                 reason = "up_to_date"
-            elif dependency_changes:
+            elif dependency_changes and not self.auto_install_dependencies:
                 can_apply = False
                 reason = "dependency_change_requires_install"
             elif relation == "older" and target_tag is None:
@@ -732,6 +751,20 @@ class UpdateService:
                 )
             if reason == "up_to_date":
                 warnings.append("当前已经是最新版本；没有可应用的更新。")
+            if dependency_changes:
+                if self.auto_install_dependencies:
+                    warnings.append(
+                        "目标版本修改了依赖文件（"
+                        + "、".join(dependency_changes)
+                        + "）；应用更新后将用当前 Python 解释器自动安装/更新依赖，"
+                        "安装失败会回滚源码。"
+                    )
+                else:
+                    warnings.append(
+                        "目标版本修改了依赖文件（"
+                        + "、".join(dependency_changes)
+                        + "）；自动安装已关闭，请手动安装依赖后再更新。"
+                    )
             if not compat_result["compatible"]:
                 warnings.append(compat_result["message"])
             if self.mirror:
@@ -787,6 +820,10 @@ class UpdateService:
                 "can_apply": bool(can_apply),
                 "reason": reason,
                 "dependency_changes": dependency_changes,
+                "auto_install_dependencies": self.auto_install_dependencies,
+                "dependency_install_required": bool(
+                    dependency_changes and self.auto_install_dependencies and can_apply
+                ),
                 "commits": commits,
                 "warnings": warnings,
                 "confirmation_token": token,
@@ -861,10 +898,13 @@ class UpdateService:
                 "--",
                 *DEPENDENCY_FILES,
             )
-            if [line for line in dep_text.splitlines() if line.strip()]:
+            dependency_changes = [
+                line for line in dep_text.splitlines() if line.strip()
+            ]
+            if dependency_changes and not self.auto_install_dependencies:
                 raise UpdateError(
                     "dependency_change_requires_install",
-                    "目标版本修改了依赖文件；请手动安装依赖后再更新",
+                    "目标版本修改了依赖文件；自动安装已关闭，请手动安装依赖后再更新",
                 )
 
             # 计划创建后本地数据可能已经变化；在切换源码前重新做兼容预检。
@@ -923,6 +963,34 @@ class UpdateService:
                     "post_apply_mismatch",
                     f"更新后 HEAD={new_head}，预期 {target_sha}",
                 )
+            install_result = None
+            if dependency_changes:
+                try:
+                    install_result = await self._install_dependencies(
+                        dependency_changes
+                    )
+                except UpdateError as exc:
+                    # A half-updated environment is worse than the old code:
+                    # put the source tree back and require a fresh check.
+                    self._plan = None
+                    try:
+                        await self._git(
+                            "switch",
+                            "--no-guess",
+                            "-C",
+                            UPDATE_LOCAL_BRANCH,
+                            old_head,
+                        )
+                    except UpdateError as rollback_exc:
+                        raise UpdateError(
+                            "dependency_install_failed_rollback_failed",
+                            "依赖安装失败，且源码回滚也失败："
+                            f"{exc.message}；回滚错误：{rollback_exc.message}",
+                        ) from exc
+                    raise UpdateError(
+                        "dependency_install_failed",
+                        f"依赖安装失败，源码已回滚到 {old_head[:10]}：{exc.message}",
+                    ) from exc
             await asyncio.to_thread(
                 self._append_history,
                 {
@@ -934,6 +1002,8 @@ class UpdateService:
                     "backup_ref": backup_ref,
                     "backup_branch_ref": backup_branch_ref,
                     "mirror": self.mirror,
+                    "dependency_changes": dependency_changes,
+                    "dependency_install": install_result,
                 },
             )
             self._plan = None
@@ -947,12 +1017,13 @@ class UpdateService:
                 self._restart_tasks.add(task)
                 task.add_done_callback(self._restart_tasks.discard)
             restart_required = self.restart_callback is not None and defer_restart
+            installed_note = "并已安装依赖" if install_result is not None else ""
             if restart_scheduled:
-                message = "更新完成；服务将在约 1 秒后重启"
+                message = f"更新完成{installed_note}；服务将在约 1 秒后重启"
             elif restart_required:
-                message = "更新完成；请重启后端加载新代码"
+                message = f"更新完成{installed_note}；请重启后端加载新代码"
             else:
-                message = "更新完成"
+                message = f"更新完成{installed_note}"
             return {
                 "ok": True,
                 "old_commit": old_head,
@@ -963,8 +1034,142 @@ class UpdateService:
                 "backup_branch_ref": backup_branch_ref,
                 "restart_scheduled": restart_scheduled,
                 "restart_required": restart_required,
+                "dependency_changes": dependency_changes,
+                "dependency_install": install_result,
                 "message": message,
             }
+
+    async def _install_dependencies(
+        self,
+        dependency_changes: list[str],
+    ) -> dict:
+        """Install/refresh dependencies with the *running* interpreter.
+
+        Only the repository's own dependency files are consulted. There is no
+        shell interpolation: commands are argv lists and run with the project
+        root as cwd. A failure is surfaced as ``UpdateError`` so ``apply`` can
+        roll the source tree back.
+        """
+        pip_base = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-input",
+        ]
+        steps: list[tuple[str, list[str]]] = []
+        requirements = self.project_root / "requirements.txt"
+        if "requirements.txt" in dependency_changes and requirements.is_file():
+            steps.append(("requirements.txt", [*pip_base, "-r", "requirements.txt"]))
+        steps.append(("project", [*pip_base, "-e", "."]))
+
+        uv = shutil.which("uv")
+        results: list[dict[str, str]] = []
+        for label, pip_cmd in steps:
+            command = pip_cmd
+            output = await self._run_install_command(command)
+            if self._pip_missing(output):
+                if not uv:
+                    raise UpdateError(
+                        "dependency_install_failed",
+                        "当前解释器没有 pip，也未找到 uv；无法自动安装依赖",
+                    )
+                uv_command = [
+                    uv,
+                    "pip",
+                    "install",
+                    "--python",
+                    sys.executable,
+                ]
+                if label == "requirements.txt":
+                    uv_command.extend(["-r", "requirements.txt"])
+                else:
+                    uv_command.extend(["-e", "."])
+                command = uv_command
+                output = await self._run_install_command(command)
+            if output.get("returncode") != 0:
+                raise UpdateError(
+                    "dependency_install_failed",
+                    f"{label} 安装失败（exit={output.get('returncode')}）："
+                    f"{output.get('output_tail') or '没有输出'}",
+                )
+            results.append(
+                {
+                    "step": label,
+                    "command": " ".join(command),
+                    "output_tail": str(output.get("output_tail") or ""),
+                }
+            )
+        return {
+            "ok": True,
+            "interpreter": sys.executable,
+            "changed_files": list(dependency_changes),
+            "steps": results,
+        }
+
+    @staticmethod
+    def _pip_missing(output: dict) -> bool:
+        text = f"{output.get('output_tail') or ''} {output.get('stderr') or ''}".lower()
+        return output.get("returncode") != 0 and (
+            "no module named pip" in text
+            or "pip: not found" in text
+            or "no module named 'pip'" in text
+        )
+
+    async def _run_install_command(self, command: list[str]) -> dict:
+        env = os.environ.copy()
+        env.update(
+            {
+                "PIP_NO_INPUT": "1",
+                "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+                "PYTHONUNBUFFERED": "1",
+                "GIT_TERMINAL_PROMPT": "0",
+            }
+        )
+        env.pop("PIP_REQUIRE_VIRTUALENV", None)
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=str(self.project_root),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=(os.name != "nt"),
+            )
+            stdout, _ = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=600,
+            )
+        except asyncio.TimeoutError as exc:
+            if proc is not None:
+                try:
+                    if os.name == "nt":
+                        proc.kill()
+                    else:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, AttributeError):
+                    try:
+                        proc.kill()
+                    except (ProcessLookupError, PermissionError):
+                        pass
+            raise UpdateError(
+                "dependency_install_timeout",
+                "依赖安装超过 600 秒，已终止",
+            ) from exc
+        except OSError as exc:
+            raise UpdateError(
+                "dependency_install_failed",
+                f"无法启动依赖安装进程：{exc}",
+            ) from exc
+        text = _sanitize_install_output(
+            (stdout or b"").decode("utf-8", errors="replace")
+        )
+        return {
+            "returncode": int(proc.returncode if proc is not None else -1),
+            "output_tail": text[-4000:],
+        }
 
     async def auto_check_if_due(self, *, now: float | None = None) -> dict:
         """后台调度入口：只在到期时联网，失败按 6 小时重试。"""
@@ -1151,14 +1356,10 @@ def _release_public(release: dict) -> dict:
 
 
 async def systemd_restart_callback() -> None:
-    """在响应返回后重启当前用户服务。"""
-    await asyncio.sleep(0.2)
-    subprocess.Popen(
-        ["systemctl", "--user", "restart", "debata-agent.service"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    """兼容旧名字：按当前运行模式（systemd 或内置后台）重启后端。"""
+    from .backend_restart import restart_backend_callback
+
+    await restart_backend_callback()
 
 
 __all__ = [

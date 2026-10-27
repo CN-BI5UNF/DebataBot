@@ -17,7 +17,7 @@
 
 > 「虚拟角色不只是个会回复消息的程序，而是一个**真实的，能和你聊天的，有个性、有内心的**人。」
 
-DebataBot 不绑定任何特定角色。你给它一个人格，它就活成那个人。框架名取自项目第一个被实现的角色 Debata。
+DebataBot 不绑定任何特定角色。你给它一个人格，它就活成那个人。框架名取自项目早期的人格 Debata（该内置目录已在当前快照移除）。
 
 - 仓库：<https://github.com/CN-BI5UNF/DebataBot>
 - 默认分支：`main`
@@ -282,7 +282,8 @@ DebataBot/
 - [图文教程](docs/getting_started.md) — 从零开始
 - [后台运行指南](docs/background_running.md) — systemd / tmux / screen / nohup
 - [功能列表](docs/features.md) — 聊天风格、记忆、人格、WebUI
-- [角色编写指南](docs/persona_writing_guide.md) — 怎么写会「活」的人格
+- [人格编写指南](docs/persona_writing_guide.md) — 怎么写会「活」的人格，也可以直接粘贴长提示词
+- [群聊黑话 / 网络热梗](docs/feature_guides/slang.md) — 按群学习梗，人工确认后由 LLM 按需查询
 - [架构总览](docs/architecture.md) — 模块依赖、模型视图、Token 计量
 - [WebUI 说明](docs/webui.md) — 页面结构、接口一览
 - [Releases 版本管理](docs/releases.md) — 发布、回退与兼容声明

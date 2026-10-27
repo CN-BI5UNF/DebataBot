@@ -52,13 +52,13 @@ export function renderWelcome(host, ctx, state) {
       id: 'recommended',
       title: '推荐',
       desc: '只要一个主模型就能跑起来，大约 3 分钟。',
-      detail: '主模型 → 功能 → 记忆 → 渠道 → 角色 → 完成',
+      detail: '主模型 → 功能 → 记忆 → 渠道 → 人格 → 完成',
     },
     {
       id: 'custom',
       title: '自定义',
       desc: '每个 Agent 用哪个模型、参数怎么调，都由你决定。',
-      detail: '主模型 → 子 Agent → 功能 → 记忆 → 渠道 → 角色 → 完成',
+      detail: '主模型 → 子 Agent → 功能 → 记忆 → 渠道 → 人格 → 完成',
     },
   ];
 
@@ -244,7 +244,7 @@ export function renderMainModelCustom(host, ctx, state) {
 const SUB_AGENTS = [
   ['proactive', '主动思考', '隔一段时间自己想想有没有话要说。想让它更主动就开着。', 0.3, 64],
   ['summary', '滚动摘要', '上下文快满时把旧对话压成摘要。长对话必备。', 0.1, 8192],
-  ['persona_gen', '人格生成', '后台按时间慢慢丰满角色设定。', 0.7, 8192],
+  ['persona_gen', '人格生成', '后台按时间慢慢丰满人格设定。', 0.7, 8192],
 ];
 
 export function renderOtherAgents(host, ctx, state) {
@@ -393,7 +393,7 @@ export function renderFeatures(host, ctx, state) {
   }
 
   // 联网搜索
-  nodes.push(toggleRow('web_search', '联网搜索', '让角色能查网上的信息（Bing RSS / 百度，免费）。'));
+  nodes.push(toggleRow('web_search', '联网搜索', '让人格能查网上的信息（Bing RSS / 百度，免费）。'));
 
   // 天气
   nodes.push(toggleRow('weather', '天气查询', '需要和风天气的 Key，免费额度够个人用。'));
@@ -412,7 +412,7 @@ export function renderFeatures(host, ctx, state) {
   }
 
   // 语音
-  nodes.push(toggleRow('tts', '语音合成', '让角色能发语音。edge-tts 免费且不用密钥。'));
+  nodes.push(toggleRow('tts', '语音合成', '让人格能发语音。edge-tts 免费且不用密钥。'));
   if (f.tts && f.tts.enabled) {
     const type = h('select', {
       onchange: (e) => { f.tts.type = e.target.value; rerender(ctx); },
@@ -457,14 +457,14 @@ export function renderEmbedding(host, ctx, state) {
     },
   });
   for (const [value, label, desc] of [
-    ['file', '重要记忆文件', '角色自己判断什么值得记，写进文件。够用且省钱。'],
+    ['file', '重要记忆文件', '人格自己判断什么值得记，写进文件。够用且省钱。'],
     ['rag', '向量检索', '把对话存进向量库按相似度检索。对话多时更聪明，要多配一个 embedding。'],
   ]) {
     mode.append(h('option', { value, selected: (mem.mode || 'file') === value }, label));
   }
 
   const nodes = [
-    h('p', { class: 'card-sub' }, '决定角色怎么"记住"以前的事。'),
+    h('p', { class: 'card-sub' }, '决定人格怎么"记住"以前的事。'),
     field('长期记忆方式', mode),
   ];
 
@@ -624,11 +624,11 @@ export function renderAdapter(host, ctx, state) {
 }
 
 // ============================================================
-// 7. 角色
+// 7. 人格
 // ============================================================
 
 export function renderPersona(host, ctx, state) {
-  const nodes = [h('p', { class: 'card-sub' }, '先挑一个角色。之后可以在「角色」页随时新建或换。')];
+  const nodes = [h('p', { class: 'card-sub' }, '先挑一个人格。之后可以在「人格」页随时新建或换。')];
 
   const select = h('select', {
     onchange: (e) => { state.persona = e.target.value; },
@@ -641,7 +641,7 @@ export function renderPersona(host, ctx, state) {
       value: persona.id, selected: state.persona === persona.id,
     }, persona.name));
   }
-  nodes.push(field('用哪个角色', select));
+  nodes.push(field('用哪个人格', select));
 
   const choices = h('div', { class: 'choice-grid' },
     ...PERSONA_SOURCE.map(([value, title, desc]) => {
@@ -667,8 +667,8 @@ export function renderPersona(host, ctx, state) {
       value: state.persona_brief || '',
       oninput: (e) => { state.persona_brief = e.target.value; },
     });
-    nodes.push(field('想要什么样的角色', desc,
-      '先写下来。配置完成后到「角色 → 新建角色」，这段描述会替你填好，'
+    nodes.push(field('想要什么样的人格', desc,
+      '先写下来。配置完成后到「人格 → 新建人格」，这段描述会替你填好，'
       + '再让 AI 生成完整人设——那里能预览、能反复重写。'));
   }
 
@@ -706,7 +706,7 @@ export function renderSummary(host, ctx, state) {
     ? '向量检索' : '重要记忆文件');
   add('渠道', `${state.adapter.mode}://${state.adapter.host}:${state.adapter.port}`);
   add('入站策略', state.adapter.whitelist.mode);
-  add('角色', state.persona);
+  add('人格', state.persona);
 
   const list = h('table', { class: 'table' }, h('tbody', {}, ...rows));
 
@@ -718,7 +718,7 @@ export function renderSummary(host, ctx, state) {
   return {
     validate() {
       if (!state.provider.api_key) {
-        return '还没有填 API Key —— 没有密钥角色无法说话';
+        return '还没有填 API Key —— 没有密钥人格无法说话';
       }
       return null;
     },
@@ -739,11 +739,11 @@ export function renderPersonaCreate(host, ctx, state) {
 
   fill(host,
     h('p', { class: 'card-sub' },
-      '写几句话描述你想要的角色。这一步先存下来——配置完成后到「角色 → 新建角色」，'
+      '写几句话描述你想要的人格。这一步先存下来——配置完成后到「人格 → 新建人格」，'
       + '这段描述会替你填好，再让 AI 生成完整人设，那里能预览、能改、能反复重写。'),
-    field('角色描述', brief),
+    field('人格描述', brief),
     h('div', { class: 'field-help' },
-      '现在跳过也没关系，之后随时能在「角色」页新建。'),
+      '现在跳过也没关系，之后随时能在「人格」页新建。'),
   );
 
   return { validate: () => null };
@@ -839,7 +839,7 @@ export function buildPayload(state) {
     // 不走 provider 的密钥，由后端统一写进密钥库
     secrets: collectSecrets(state),
     // 向导阶段调不了生成器（Runtime 还没起来），把描述存到数据目录，
-    // 配置完成后「角色 → 新建角色」会读它预填。不收的话用户就白填了。
+    // 配置完成后「人格 → 新建人格」会读它预填。不收的话用户就白填了。
     persona_brief: state.persona_source === 'create' && state.persona_brief
       ? { personality: state.persona_brief }
       : null,

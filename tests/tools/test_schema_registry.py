@@ -305,10 +305,16 @@ def test_all_expected_tools_registered():
         "no_action", "schedule_wakeup",
         "eat", "sleep",
         "tool_search",
-        "describe_image", "web_search", "get_weather",
+        "describe_image", "web_search", "web_fetch", "get_weather",
         "send_voice_message",
         # workspace tools
         "read_file", "write_file", "edit_file", "list_files", "delete_file", "run_python",
+        # emoji folder tools
+        "list_emoji", "save_emoji_from_url", "save_emoji_from_workspace",
+        "rename_emoji", "delete_emoji",
+        # knowledge / web research / slang lookup tools
+        "save_knowledge_note", "research_web_to_prompt",
+        "list_knowledge_notes", "delete_knowledge_note", "lookup_slang",
     }
     actual = {s.name for s in get_default_specs()}
     assert actual == expected, f"差异：{expected ^ actual}"
@@ -721,6 +727,19 @@ def test_compact_profile_reduces_tools_and_hides_advanced_fields():
         if schema["function"]["name"] == "upload_file"
     )
     assert "_tool_search_required" in upload["function"]["parameters"]["properties"]
+
+    # 知识/黑话改为按需查询：查询工具直接暴露，写入类仍是 stub。
+    for name in ("lookup_slang", "list_knowledge_notes"):
+        schema = next(
+            schema for schema in schemas
+            if schema["function"]["name"] == name
+        )
+        assert "_tool_search_required" not in schema["function"]["parameters"]["properties"]
+    save_note = next(
+        schema for schema in schemas
+        if schema["function"]["name"] == "save_knowledge_note"
+    )
+    assert "_tool_search_required" in save_note["function"]["parameters"]["properties"]
 
     import json
 

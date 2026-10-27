@@ -1,4 +1,4 @@
-// 角色页 —— 对应 ui/dashboard/personas_page.py。
+// 人格页 —— 对应 ui/dashboard/personas_page.py。
 // 列出 personas/ 下的人格目录，支持切换、导入 zip、导出 zip、删除。
 
 import { h, fill, card, empty } from '../dom.js';
@@ -6,6 +6,7 @@ import { icon } from '../icons.js';
 import { endpoints } from '../api.js';
 import {
   openPersonaCreator,
+  openPersonaDirectEditor,
   openPersonaDuplicate,
   openPersonaRefine,
 } from '../persona_dialogs.js';
@@ -24,7 +25,7 @@ export async function render(container, ctx) {
       active = data.active || '';
       renderList();
     } catch (e) {
-      fill(listBox, empty(`读取角色失败：${e.message}`));
+      fill(listBox, empty(`读取人格失败：${e.message}`));
     }
   }
 
@@ -35,7 +36,7 @@ export async function render(container, ctx) {
     }
     fill(listBox, h('table', { class: 'table' },
       h('thead', {}, h('tr', {},
-        h('th', {}, '角色'), h('th', {}, '说明'), h('th', {}, '状态'), h('th', {}, '操作'))),
+        h('th', {}, '人格'), h('th', {}, '说明'), h('th', {}, '状态'), h('th', {}, '操作'))),
       h('tbody', {}, ...personas.map((p) =>
         h('tr', {},
           h('td', {}, h('strong', {}, p.name)),
@@ -81,13 +82,18 @@ export async function render(container, ctx) {
               }, icon('edit', { size: 14 }), '修改'),
               h('button', {
                 class: 'btn btn-sm',
-                title: '以它为模板建一个新角色',
+                title: '直接编辑 PERSONA_PROMPT，不经过 AI',
+                onclick: () => openPersonaDirectEditor(ctx, p.name, { onDone: load }),
+              }, '直接编辑'),
+              h('button', {
+                class: 'btn btn-sm',
+                title: '以它为模板建一个新人格',
                 onclick: () => openPersonaDuplicate(ctx, p.name, { onDone: load }),
               }, '复制'),
               (p.builtin || p.active) ? null : h('button', {
                 class: 'btn btn-sm btn-danger',
                 onclick: async () => {
-                  if (!confirm(`删除角色 ${p.name}？该目录会被整体删除，无法撤销。`)) return;
+                  if (!confirm(`删除人格 ${p.name}？该目录会被整体删除，无法撤销。`)) return;
                   try {
                     await endpoints.deletePersona(p.name);
                     ctx.toast('已删除', 'ok');
@@ -145,7 +151,7 @@ export async function render(container, ctx) {
   fill(container,
     h('div', { class: 'page-head' },
       h('div', {},
-        h('h1', { class: 'page-title' }, '角色'),
+        h('h1', { class: 'page-title' }, '人格'),
         h('p', { class: 'page-desc' },
           '每套人设是 personas/<名字>/ 下的一个目录。切换后需要重启 Runtime 生效。'),
       ),
@@ -154,7 +160,11 @@ export async function render(container, ctx) {
         h('button', {
           class: 'btn btn-primary',
           onclick: () => openPersonaCreator(ctx, { onDone: load }),
-        }, icon('add', { size: 16 }), '新建角色'),
+        }, icon('add', { size: 16 }), '新建人格'),
+        h('button', {
+          class: 'btn',
+          onclick: () => openPersonaDirectEditor(ctx, null, { onDone: load }),
+        }, '直接写提示词'),
         h('button', {
           class: 'btn',
           onclick: () => fileInput.click(),

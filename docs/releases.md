@@ -58,10 +58,15 @@ git remote add bot https://github.com/CN-BI5UNF/DebataBot.git
   设置 → 更新 中再次点击「重启后端」。
 - 后端重启期间 WebUI 将无法连接（实测约 30–60 秒），会话 Cookie 会失效，
   恢复后可能需要重新输入访问令牌。
+- systemd 用户服务、系统服务和内置后台模式都支持整进程重启：systemd 模式按
+  当前进程 cgroup 确认 unit 后执行 `systemctl restart`；后台模式由独立
+  `restart-helper` 等待旧进程退出后按原启动参数拉起新进程，不依赖 systemd。
 
 - 设置 →「更新」列出远端 tag（按 tag 时间倒序），可展开/收起日志。
 - 选择任意版本：先检查脏工作树、依赖文件变化和数据目录位置，再创建
   `refs/backups/update/*` 备份并执行版本切换；回退/切换需要额外确认。
+  前向更新遇到依赖文件变化时，会用当前解释器执行 `pip install -e .`
+  （无 pip 时回退 `uv pip install`），安装失败会把源码回滚到更新前提交。
 - 自动检查默认每 9 天一次，配置项是 `update.check_interval_days`。
   检查失败后 6 小时重试；成功后排到 9 天后。
 - 状态保存在实例数据目录的 `update_state.json`（权限 0600），不保存聊天正文。
@@ -84,7 +89,7 @@ git remote add bot https://github.com/CN-BI5UNF/DebataBot.git
 回退只移动 `refactor/main` 到目标 tag 的提交，不会：
 
 - 回退数据库 schema 或执行迁移；
-- 自动安装依赖（依赖文件变化会拒绝自动应用）；
+- 自动安装依赖（回退本身不安装；前向更新遇到依赖变化会安装，失败回滚）；
 - 重放或撤销已发送的 QQ 消息、工具调用；
 - 覆盖用户数据目录。
 

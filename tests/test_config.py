@@ -653,3 +653,47 @@ def test_features_default_disabled():
 def test_default_asr_legacy_config_is_kept_for_migration():
     cfg = ASRFeatureConfig()
     assert cfg.local_model == "large-v3"
+
+
+def test_slang_feature_defaults():
+    cfg = _minimal_config()
+    slang = cfg.features.slang
+    assert slang.enabled is True
+    assert slang.auto_learn is True
+    assert slang.extract_min_messages == 20
+    assert slang.extract_cooldown_seconds == 600
+    assert slang.inject_max == 8
+    assert slang.max_prompt_chars == 1200
+
+
+def test_knowledge_feature_defaults():
+    cfg = _minimal_config()
+    knowledge = cfg.features.knowledge
+    assert knowledge.enabled is True
+    assert knowledge.inject_max == 10
+    assert knowledge.max_prompt_chars == 2000
+    assert knowledge.auto_research_enabled is True
+    assert knowledge.research_interval_hours == 24
+    assert knowledge.research_max_notes == 8
+    assert knowledge.research_search_provider == "auto"
+    assert knowledge.research_queries
+
+
+def test_default_persona_is_dafeiyu_and_loads():
+    from pathlib import Path
+
+    from agents.persona_loader import list_available_personas, load_persona
+
+    cfg = _minimal_config()
+    assert cfg.persona.active == "大肥鱼"
+    assert cfg.update.auto_install_dependencies is True
+
+    paths = type(
+        "Paths",
+        (),
+        {"PERSONAS_DIR": Path(__file__).resolve().parents[1] / "personas"},
+    )()
+    assert "大肥鱼" in list_available_personas(paths)
+    persona = load_persona(paths, "大肥鱼")
+    assert persona.display_name() == "大肥鱼"
+    assert "DeepSeek" in persona.prompt

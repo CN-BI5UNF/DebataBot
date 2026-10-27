@@ -1018,6 +1018,26 @@ class WebSearchArgs(_ToolArgs):
     )
 
 
+class WebFetchArgs(_ToolArgs):
+    """web_fetch 工具参数。"""
+
+    url: str = Field(
+        ...,
+        min_length=1,
+        max_length=8192,
+        description=(
+            "要读取的单个网页 http(s) 地址；通常来自 web_search 结果。"
+            "只支持公开网页，不支持登录、验证码或本地/内网地址。"
+        ),
+    )
+    max_chars: int = Field(
+        default=8000,
+        ge=500,
+        le=20000,
+        description="最多返回多少字符的 Markdown 正文，默认 8000。",
+    )
+
+
 class GetWeatherArgs(_ToolArgs):
     """get_weather 工具参数。"""
 
@@ -1156,6 +1176,198 @@ class RunPythonArgs(_ToolArgs):
     timeout_seconds: int = Field(
         default=30, ge=1, le=120, description="超时秒数（1-120）"
     )
+
+
+# ============================================================
+# Emoji（LLM 读写表情包目录）
+# ============================================================
+
+
+class ListEmojiArgs(_ToolArgs):
+    """list_emoji 工具参数。"""
+
+    query: str = Field(
+        default="",
+        max_length=64,
+        description="可选：按名称片段过滤，例如“猫”“笑哭”。留空列出全部。",
+    )
+    limit: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="最多返回多少个名称，默认 100。",
+    )
+
+
+class SaveEmojiFromUrlArgs(_ToolArgs):
+    """save_emoji_from_url 工具参数。"""
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="保存后的表情包名称（不含扩展名），要起得容易理解，例如“无语”“猫猫震惊”。",
+    )
+    url: str = Field(
+        ...,
+        min_length=8,
+        max_length=2048,
+        description="公开 http(s) 图片地址；只支持 png/jpg/gif，不能是本机或内网地址。",
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="同名文件已存在时是否覆盖。默认 false，会自动追加 _1、_2。",
+    )
+
+
+class SaveEmojiFromWorkspaceArgs(_ToolArgs):
+    """save_emoji_from_workspace 工具参数。"""
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="保存后的表情包名称（不含扩展名）。",
+    )
+    path: str = Field(
+        ...,
+        min_length=1,
+        max_length=512,
+        description="workspace 内的图片路径，通常来自消息里的 [图片 workspace=...]。",
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="同名文件已存在时是否覆盖。默认 false。",
+    )
+
+
+class RenameEmojiArgs(_ToolArgs):
+    """rename_emoji 工具参数。"""
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="现有表情包名称（不含扩展名）。",
+    )
+    new_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="新名称（不含扩展名），不能和已有名称重复。",
+    )
+
+
+class DeleteEmojiArgs(_ToolArgs):
+    """delete_emoji 工具参数。"""
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="要删除的表情包名称（不含扩展名）。删除不可恢复，确认是废图再调用。",
+    )
+
+
+# ============================================================
+# Slang（按需查询，不自动注入）
+# ============================================================
+
+
+class LookupSlangArgs(_ToolArgs):
+    """lookup_slang 工具参数。"""
+
+    query: str = Field(
+        default="",
+        max_length=40,
+        description="要查的词、缩写或谐音；留空则按出现次数返回本群常用词条。",
+    )
+    limit: int = Field(
+        default=8,
+        ge=1,
+        le=20,
+        description="最多返回多少条；服务端还会按配置上限截断。",
+    )
+
+
+# ============================================================
+# Knowledge（联网考究 → LLM 整理 → 按需查询）
+# ============================================================
+
+
+class SaveKnowledgeNoteArgs(_ToolArgs):
+    """save_knowledge_note 工具参数。"""
+
+    kind: Literal["meme", "fact", "note"] = Field(
+        default="note",
+        description="meme=网络热梗/流行语，fact=事实资料，note=其它短笔记。",
+    )
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=80,
+        description="简短标题，例如“city不city”“某版本发布时间”。",
+    )
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=1200,
+        description="经过你核对的含义/事实，不要照搬整段网页。",
+    )
+    usage: str = Field(default="", max_length=300, description="可选：在什么语境下使用。")
+    tags: list[str] = Field(default_factory=list, max_length=12, description="可选标签。")
+    sources: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="可选来源 URL；只填搜索结果里真实出现的链接。",
+    )
+
+
+class ResearchWebToPromptArgs(_ToolArgs):
+    """research_web_to_prompt 工具参数。"""
+
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="要考究的主题/热梗，关键词要具体。",
+    )
+    kind: Literal["meme", "fact", "note"] = Field(
+        default="note",
+        description="希望整理成哪类笔记；默认 note。",
+    )
+    max_notes: int = Field(
+        default=8,
+        ge=1,
+        le=8,
+        description="最多整理并保存几条笔记。",
+    )
+    save: bool = Field(
+        default=True,
+        description="是否写入知识库；只想看看可设 false。",
+    )
+
+
+class ListKnowledgeArgs(_ToolArgs):
+    """list_knowledge_notes 工具参数。"""
+
+    query: str = Field(default="", max_length=80, description="可选：按标题/内容/标签过滤。")
+    kind: Literal["", "meme", "fact", "note"] = Field(
+        default="",
+        description="可选：只看某一类。",
+    )
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=200,
+        description="最多返回多少条；服务端还会按配置上限截断。",
+    )
+
+
+class DeleteKnowledgeNoteArgs(_ToolArgs):
+    """delete_knowledge_note 工具参数。"""
+
+    entry_id: str = Field(..., min_length=4, max_length=40, description="知识条目的 id。")
 
 
 class EatArgs(_ToolArgs):

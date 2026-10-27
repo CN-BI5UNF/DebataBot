@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -34,10 +35,24 @@ logger = logging.getLogger(__name__)
 
 PERSONA_FILE = "persona_prompt.py"
 BACKUP_DIR = ".backups"
+MAX_PERSONA_PROMPT_CHARS = 20_000
+"""直接提示词的长度护栏；超过会显著挤占每轮历史预算。"""
 
-# 目录名要能安全地出现在路径里，同时不能用别人的名字覆盖内置角色
-_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
-_RESERVED_NAMES = frozenset({"__pycache__", "backups"})
+# 与 agents/persona_loader.py 的目录规则保持一致：支持中文人格名，但不允许
+# 路径分隔符、点、空格和 Windows 保留名。目录名同时会出现在 Python 模块路径里。
+_NAME_RE = re.compile(r"^[\w一-龥㐀-䶿＀-￯-]{1,64}$")
+_RESERVED_NAMES = frozenset(
+    {
+        "__pycache__",
+        "backups",
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{i}" for i in range(1, 10)),
+        *(f"lpt{i}" for i in range(1, 10)),
+    }
+)
 
 BRIEF_FIELDS = (
     "name",
@@ -67,16 +82,18 @@ class PersonaAdminError(Exception):
 
 
 def validate_persona_name(name: str) -> str:
-    """角色目录名。中文名不允许——它同时是 Python 包目录名。"""
+    """角色目录名：支持中文，但必须是安全、可加载的单段目录名。"""
     candidate = (name or "").strip()
     if not candidate:
-        raise PersonaAdminError("角色名不能为空")
+        raise PersonaAdminError("人格名不能为空")
     if not _NAME_RE.match(candidate):
         raise PersonaAdminError(
-            "角色名用字母开头，只能含字母、数字、下划线、点和短横线，最长 64 个字符"
-            "（它会同时作为目录名）"
+            "人格名只能含中文、字母、数字、下划线或短横线，最长 64 个字符"
+            "（它会同时作为目录名，不能包含空格、斜杠或点）"
         )
-    if candidate in _RESERVED_NAMES:
+    if candidate.startswith((".", "_", "-")):
+        raise PersonaAdminError("人格名不能以点、下划线或短横线开头")
+    if candidate.casefold() in _RESERVED_NAMES:
         raise PersonaAdminError(f"{candidate} 是保留名，换一个")
     return candidate
 
@@ -89,7 +106,7 @@ def brief_from_payload(payload: dict[str, Any]) -> PersonaBrief:
     admins = payload.get("admins")
     values["admins"] = [dict(x) for x in admins if isinstance(x, dict)] if isinstance(admins, list) else []
     if not str(values.get("name") or "").strip():
-        raise PersonaAdminError("角色名不能为空")
+        raise PersonaAdminError("人格名不能为空")
     return PersonaBrief(**values)
 
 
@@ -121,6 +138,25 @@ def _extract_by_regex(text: str) -> str:
     if match:
         return match.group(2)
     return text
+
+
+def extract_persona_vars(text: str) -> dict[str, Any]:
+    """Read PERSONA_VARS without executing the persona module."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "PERSONA_VARS":
+                try:
+                    value = ast.literal_eval(node.value)
+                except (ValueError, SyntaxError):
+                    return {}
+                return dict(value) if isinstance(value, dict) else {}
+    return {}
 
 
 # ============================================================
@@ -262,6 +298,58 @@ def backup_persona(paths: Any, name: str) -> Path | None:
     return target
 
 
+def _normalize_admins(admins: Any) -> list[dict[str, object]] | None:
+    """Accept a UI-shaped admin list; None means "preserve whatever exists"."""
+    if admins is None:
+        return None
+    if not isinstance(admins, list):
+        return []
+    out: list[dict[str, object]] = []
+    for item in admins:
+        if not isinstance(item, dict):
+            continue
+        qq = str(item.get("qq", "")).strip()
+        if not qq:
+            continue
+        try:
+            qq_value = int(qq)
+        except ValueError as exc:
+            raise PersonaAdminError(f"管理员 QQ 不是数字：{qq!r}") from exc
+        entry: dict[str, object] = {"qq": qq_value, "role": str(item.get("role") or "owner")}
+        for key in ("name", "relation"):
+            value = str(item.get(key, "") or "").strip()
+            if value:
+                entry[key] = value
+        out.append(entry)
+    return out
+
+
+def _normalize_age(age: Any) -> int | None:
+    if age in (None, ""):
+        return None
+    try:
+        value = int(age)
+    except (TypeError, ValueError) as exc:
+        raise PersonaAdminError("年龄必须是整数") from exc
+    if value < 0 or value > 1000:
+        raise PersonaAdminError("年龄需要在 0 到 1000 之间")
+    return value
+
+
+def _atomic_write_persona(target: Path, text: str) -> None:
+    """Write via a same-directory temp file so a crash cannot truncate a persona."""
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
 def save_persona(
     paths: Any,
     name: str,
@@ -269,17 +357,33 @@ def save_persona(
     *,
     brief: PersonaBrief | None = None,
     overwrite: bool = False,
+    raw: bool = False,
+    display_name: str = "",
+    gender: str = "",
+    age: Any = None,
+    admins: Any = None,
+    preserve_vars: bool = False,
 ) -> dict[str, Any]:
-    """把生成的人设写成 ``personas/<name>/persona_prompt.py``。
+    """把人格提示词写成 ``personas/<name>/persona_prompt.py``。
 
-    覆盖已有角色时**先备份**——改写是 AI 做的，没备份等于把用户的角色交出去了。
+    ``raw=True`` 用于“直接写提示词”：不经过 AI、不解析 XML，提示词原样保存。
+    覆盖已有角色时**先备份**。``preserve_vars=True`` 会保留现有 PERSONA_VARS
+    （例如手写角色里已有的 admins / age / 自定义字段），只更新用户明确改动的项。
     """
-    from webui.wizard.persona_render import admin_entries_from_brief, render_minimal_persona
+    from webui.wizard.persona_render import (
+        admin_entries_from_brief,
+        render_persona_file,
+    )
 
     safe_name = validate_persona_name(name)
-    content = (xml or "").strip()
-    if not content:
+    content = xml or ""
+    if not content.strip():
         raise PersonaAdminError("内容为空，没什么可保存的")
+    if len(content) > MAX_PERSONA_PROMPT_CHARS:
+        raise PersonaAdminError(
+            f"提示词太长（{len(content)} 字符），上限是 {MAX_PERSONA_PROMPT_CHARS} 字符。"
+            "长提示词会挤占每轮对话的历史预算。"
+        )
 
     target_dir = persona_dir(paths, safe_name)
     target = target_dir / PERSONA_FILE
@@ -291,36 +395,79 @@ def save_persona(
     if existed:
         backup = backup_persona(paths, safe_name)
 
+    existing_vars: dict[str, Any] = {}
+    if preserve_vars and existed:
+        try:
+            existing_vars = extract_persona_vars(target.read_text(encoding="utf-8"))
+        except OSError:
+            existing_vars = {}
+    vars_out = dict(existing_vars) if preserve_vars else {}
+
+    final_display = (
+        (display_name or "").strip()
+        or str(vars_out.get("name") or "").strip()
+        or ((brief.name or "").strip() if brief is not None else "")
+        or safe_name
+    )
+    final_gender = (gender or "").strip()
+    if not final_gender:
+        final_gender = str(vars_out.get("gender") or "").strip()
+    if not final_gender and brief is not None:
+        final_gender = (brief.gender or "").strip()
+
+    final_age = _normalize_age(age)
+    if final_age is None and "age" in vars_out:
+        final_age = _normalize_age(vars_out.get("age"))
+    if final_age is None and brief is not None:
+        final_age = _normalize_age(brief.age)
+
+    final_admins = _normalize_admins(admins)
+    if final_admins is None:
+        if brief is not None:
+            final_admins = admin_entries_from_brief(brief)
+        elif "admins" in vars_out:
+            final_admins = _normalize_admins(vars_out.get("admins")) or []
+        else:
+            final_admins = []
+
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            render_minimal_persona(
-                safe_name,
-                content,
-                admins=admin_entries_from_brief(brief),
-                gender=(brief.gender if brief else "") or "",
-            ),
-            encoding="utf-8",
+        rendered = render_persona_file(
+            safe_name,
+            content,
+            display_name=final_display,
+            admins=final_admins,
+            gender=final_gender,
+            age=final_age,
+            extra_vars={
+                key: value
+                for key, value in vars_out.items()
+                if key not in {"name", "admins", "gender", "age"}
+            },
         )
+        _atomic_write_persona(target, rendered)
     except OSError as e:
         raise PersonaAdminError(f"写入失败：{e}") from e
 
-    logger.info("人格已写入: %s（备份: %s）", target, backup or "无")
+    logger.info(
+        "人格已写入: %s（raw=%s，备份: %s）", target, raw, backup or "无"
+    )
     return {
         "ok": True,
         "id": safe_name,
         "path": str(target),
         "created": not existed,
+        "raw": bool(raw),
+        "size": len(content),
         "backup": str(backup) if backup else "",
-        "message": f"{'已更新' if existed else '已创建'}角色 {safe_name}",
+        "message": f"{'已更新' if existed else '已创建'}人格 {safe_name}",
     }
-
 
 def duplicate_persona(paths: Any, name: str, new_name: str) -> str:
     """复制一个角色（连同它的非备份资源）。"""
     source_dir = persona_dir(paths, name)
     if not (source_dir / PERSONA_FILE).is_file():
-        raise PersonaAdminError(f"没有 {name} 这个角色")
+        raise PersonaAdminError(f"没有 {name} 这个人格")
 
     safe_new = validate_persona_name(new_name)
     target_dir = persona_dir(paths, safe_new)

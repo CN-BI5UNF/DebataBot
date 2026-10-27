@@ -235,24 +235,26 @@ class PipelineTurnsMixin:
                 **self._build_messages_persona_tool_kwargs(build_messages),
             )
 
-        budget_result = await self._prepare_main_prompt_for_model(
-            conversation_id=record_conversation_id or conversation_id,
-            phase=f"run_one_turn:{task_phase}",
-            tools_schema=tools_schema,
-            rebuild_messages=_rebuild_messages,
-        )
-        if not budget_result.ok:
-            logger.error(
-                "run_one_turn 预算预检失败，跳过模型调用 conversation_id=%s "
-                "estimated=%s budget=%s",
-                conversation_id,
-                budget_result.estimated_tokens,
-                budget_result.budget_tokens,
-            )
-            return
-        messages = budget_result.messages
-
         async def _run_locked() -> None:
+            # R01: prepare_locked_turn —— 取得/复用 reply_lock 后完整 rebuild，
+            # 逐 origin 检查、planner 计量与必要摘要后二次 rebuild，避免锁外估算在锁内漂移。
+            budget_result = await self._prepare_main_prompt_for_model(
+                conversation_id=record_conversation_id or conversation_id,
+                phase=f"run_one_turn:{task_phase}",
+                tools_schema=tools_schema,
+                rebuild_messages=_rebuild_messages,
+            )
+            if not budget_result.ok:
+                logger.error(
+                    "run_one_turn 预算预检失败，跳过模型调用 conversation_id=%s "
+                    "estimated=%s budget=%s",
+                    conversation_id,
+                    budget_result.estimated_tokens,
+                    budget_result.budget_tokens,
+                )
+                return
+            messages = budget_result.messages
+
             active_budget = self._active_budget_snapshot()
             if (
                 not active_budget.valid

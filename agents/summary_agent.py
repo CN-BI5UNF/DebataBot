@@ -96,26 +96,34 @@ class SummaryAgent:
             f"<待归档对话>\n{history_text}\n</待归档对话>"
         )
 
-        if self.prompt_budget_tokens is not None:
-            summary_messages = [
-                {
-                    "role": "system",
-                    "content": "你是当前角色的记忆管理系统。负责滚动压缩旧对话。",
-                },
-                {"role": "user", "content": prompt},
-            ]
-            estimated = TokenEstimator(model=self.cfg.model).estimate_prompt(
-                summary_messages,
-                None,
+        budget = self.prompt_budget_tokens
+        if budget is None:
+            from providers.model_capabilities import model_capability
+            cap = model_capability(str(getattr(self.cfg, "provider", "")), str(self.cfg.model))
+            if cap and cap.context_length:
+                budget = max(1024, int(cap.context_length) - int(getattr(self.cfg, "max_tokens", 4096) or 4096))
+            else:
+                budget = 32768
+
+        summary_messages = [
+            {
+                "role": "system",
+                "content": "你是当前角色的记忆管理系统。负责滚动压缩旧对话。",
+            },
+            {"role": "user", "content": prompt},
+        ]
+        estimated = TokenEstimator(model=self.cfg.model).estimate_prompt(
+            summary_messages,
+            None,
+        )
+        if estimated > budget:
+            logger.warning(
+                "滚动摘要输入超预算，拒绝调用 provider：estimated=%s budget=%s",
+                estimated,
+                budget,
             )
-            if estimated > self.prompt_budget_tokens:
-                logger.warning(
-                    "滚动摘要输入超预算，拒绝调用 provider：estimated=%s budget=%s",
-                    estimated,
-                    self.prompt_budget_tokens,
-                )
-                self._emit_status("error", "滚动摘要输入超预算")
-                return None
+            self._emit_status("error", "滚动摘要输入超预算")
+            return None
 
         try:
             self._emit_status("thinking", "滚动摘要生成中")

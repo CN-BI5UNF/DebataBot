@@ -83,6 +83,31 @@ def test_overview_usage_real_zero_v2_rate_stays_zero():
     assert data["uncached_prompt_tokens"] == 100
 
 
+def test_overview_usage_includes_operation_breakdown():
+    summary = _summary(
+        {
+            "prompt_tokens": 50,
+            "completion_tokens": 10,
+            "total_tokens": 60,
+            "usage_semantics_version": 2,
+        }
+    )
+    rows = [
+        {
+            "operation": "web_search_official",
+            "request_count": 1,
+            "current_prompt_tokens": 50,
+            "current_total_tokens": 60,
+        }
+    ]
+    store = SimpleNamespace(
+        summarize=lambda _range: summary,
+        operation_breakdown=lambda _range: rows,
+    )
+    data = _usage_dict(SimpleNamespace(usage_stats=store), "all")
+    assert data["by_operation"] == rows
+
+
 def test_overview_js_uses_current_fields_and_preserves_null():
     source = (
         Path(__file__).resolve().parents[2]
@@ -96,3 +121,5 @@ def test_overview_js_uses_current_fields_and_preserves_null():
     assert "unknown_semantics_request_count" in source
     assert "legacy_prompt_tokens" in source
     assert "V2 缓存命中率" in source
+    assert "按用途" in source
+    assert "by_operation" in source

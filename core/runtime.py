@@ -104,6 +104,7 @@ class Runtime:
         self.vision: Any = None
         self._vision_provider: Any = None
         self.web_search: Any = None
+        self.web_fetch: Any = None
         self.weather: Any = None
         self.embedding_service: Any = None
         self.rag_store: Any = None
@@ -311,11 +312,15 @@ class Runtime:
                 raise RuntimeError(
                     f"agents.proactive.provider={pcfg.provider!r} 不在 providers 中"
                 )
+            proactive_input_budget = int(
+                getattr(self.config.behavior, "proactive_context_token_budget", 8192) or 8192
+            )
             self.proactive_agent = ProactiveRouterAgent(
                 self.providers[pcfg.provider],
                 pcfg,
                 usage_recorder=self._record_model_usage,
                 status_callback=self._update_model_activity,
+                prompt_budget_tokens=proactive_input_budget,
             )
 
         if self.config.agents.summary is not None:
@@ -392,11 +397,21 @@ class Runtime:
                         secrets=self.secrets,
                         provider_registry=self.provider_registry,
                         timeout_seconds=wscfg.official.timeout_seconds,
+                        usage_recorder=self._record_model_usage,
                     )
                 except Exception as exc:  # noqa: BLE001 - 不允许拖垮整个 Runtime
                     logger.warning(
                         "官方搜索通道构造失败，将仅使用免费搜索：%s", exc
                     )
+            if (
+                official_client is not None
+                and getattr(official_client, "supports_fetch", lambda: False)()
+            ):
+                self.web_fetch = official_client
+                logger.info(
+                    "官方网页抓取（Fetch）已启用：provider=%s",
+                    wscfg.official.provider,
+                )
             try:
                 self.web_search = WebSearchService(
                     max_results=wscfg.max_results,
@@ -414,6 +429,71 @@ class Runtime:
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("WebSearchService 构造失败，联网搜索不可用：%s", exc)
+
+            # 热梗考究单独选后端：Bing RSS 对中文长查询经常只返回日历/字典
+            # 页面；官方 DeepSeek Search 的 summary/content 更完整，百度移动页
+            # 在没有官方通道时更稳。主搜索保持不变。
+            self.knowledge_search = self.web_search
+            knowledge_cfg = self.config.features.knowledge
+            research_provider = str(
+                getattr(knowledge_cfg, "research_search_provider", "") or "auto"
+            ).strip().lower()
+            if bool(getattr(knowledge_cfg, "enabled", True)) and research_provider == "auto":
+                research_provider = "official" if official_client is not None else "baidu"
+            if (
+                bool(getattr(knowledge_cfg, "enabled", True))
+                and research_provider == "official"
+                and official_client is not None
+            ):
+                try:
+                    self.knowledge_search = WebSearchService(
+                        max_results=wscfg.max_results,
+                        timeout_seconds=wscfg.timeout_seconds,
+                        free_enabled=False,
+                        official_enabled=True,
+                        official_client=official_client,
+                    )
+                    logger.info(
+                        "知识考究搜索使用官方通道 provider=%s",
+                        wscfg.official.provider,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "知识考究官方搜索构造失败，回退百度：%s", exc
+                    )
+                    research_provider = "baidu"
+            if (
+                research_provider == "official"
+                and official_client is None
+            ):
+                research_provider = "baidu"
+            if (
+                self.web_search is not None
+                and bool(getattr(knowledge_cfg, "enabled", True))
+                and wscfg.free_enabled
+                and research_provider in {"bing_rss", "baidu", "searxng"}
+                and research_provider != wscfg.provider
+            ):
+                try:
+                    self.knowledge_search = WebSearchService(
+                        max_results=wscfg.max_results,
+                        timeout_seconds=wscfg.timeout_seconds,
+                        free_enabled=True,
+                        free_provider=research_provider,
+                        searxng_base_url=wscfg.searxng_base_url,
+                        official_enabled=bool(official_client),
+                        official_client=official_client,
+                    )
+                    logger.info(
+                        "知识考究搜索使用 %s（主搜索使用 %s）",
+                        research_provider,
+                        wscfg.provider,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "知识考究搜索构造失败，回退主搜索：%s", exc
+                    )
+                    self.knowledge_search = self.web_search
 
         if self.config.features.weather.enabled:
             wcfg = self.config.features.weather
@@ -498,8 +578,31 @@ class Runtime:
         self.wakeup_scheduler = WakeupScheduler(on_fire=_wakeup_placeholder)
 
         # ----- 11. Pipeline -----
+        from .knowledge import KnowledgeService
         from .message_pipeline import MessagePipeline
+        from .slang import SlangService
         from .token_calibration import TokenCalibrationStore
+
+        def _slang_provider() -> tuple[Any, Any]:
+            if self.summary_agent is not None:
+                return self.summary_agent.provider, self.summary_agent.cfg
+            return self.chat_agent.provider, self.chat_agent.cfg
+
+        self.slang_service = SlangService(
+            self.paths.DATA_DIR,
+            persona_id=self.persona.name,
+            config=self.config.features.slang,
+            provider_resolver=_slang_provider,
+            usage_recorder=self._record_model_usage,
+        )
+        self.knowledge_service = KnowledgeService(
+            self.paths.DATA_DIR,
+            persona_id=self.persona.name,
+            config=self.config.features.knowledge,
+            web_search=getattr(self, "knowledge_search", None) or self.web_search,
+            provider_resolver=_slang_provider,
+            usage_recorder=self._record_model_usage,
+        )
 
         self.token_calibration = TokenCalibrationStore(
             self.paths.TOKEN_CALIBRATION_FILE
@@ -555,7 +658,10 @@ class Runtime:
             "image_budget_profile": image_budget_profile,
             "image_token_reserve": image_token_reserve,
             "web_search": self.web_search,
+            "web_fetch": self.web_fetch,
             "weather": self.weather,
+            "slang_service": self.slang_service,
+            "knowledge_service": self.knowledge_service,
             "asr": self.asr,
             "tts": self.tts,
             "rag_memory": self.rag_memory,
@@ -618,6 +724,9 @@ class Runtime:
 
         logger.info("Runtime 启动完成（耗时 %.1fs）", time.monotonic() - start_t0)
         self._schedule_provider_health_check()
+        knowledge_service = getattr(self, "knowledge_service", None)
+        if knowledge_service is not None:
+            knowledge_service.start_background(startup_delay=20.0)
 
     def _provider_protocol(self, provider_id: str) -> str:
         """解析 provider 实际协议：配置显式值优先，其次 preset。"""
@@ -748,9 +857,16 @@ class Runtime:
             return
         try:
             service = VisionService(
-                provider=provider,
-                model=vcfg.model,
-                max_tokens=vcfg.max_tokens,
+                **self._accepted_kwargs(
+                    VisionService,
+                    {
+                        "provider": provider,
+                        "model": vcfg.model,
+                        "provider_id": vcfg.provider,
+                        "max_tokens": vcfg.max_tokens,
+                        "usage_recorder": self._record_model_usage,
+                    },
+                )
             )
         except Exception:  # noqa: BLE001
             try:
@@ -877,6 +993,12 @@ class Runtime:
             await _close("wakeup_scheduler", self.wakeup_scheduler.cancel_all)
         if self.pipeline is not None:
             await _close("pipeline", self.pipeline.shutdown)
+        slang_service = getattr(self, "slang_service", None)
+        if slang_service is not None:
+            await _close("slang_service", slang_service.aclose)
+        knowledge_service = getattr(self, "knowledge_service", None)
+        if knowledge_service is not None:
+            await _close("knowledge_service", knowledge_service.aclose)
         storage_service = getattr(self, "_storage_maintenance_service", None)
         if storage_service is not None:
             await _close("storage_maintenance", storage_service.shutdown)
@@ -1301,9 +1423,16 @@ class Runtime:
                 if not api_key:
                     api_key = getattr(provider, "api_key", "") or ""
                 self.embedding_service = OpenAICompatEmbeddingService(
-                    base_url=base_url,
-                    api_key=api_key or "",
-                    model=ecfg.api_model or "text-embedding-v1",
+                    **self._accepted_kwargs(
+                        OpenAICompatEmbeddingService,
+                        {
+                            "base_url": base_url,
+                            "api_key": api_key or "",
+                            "model": ecfg.api_model or "text-embedding-v1",
+                            "provider_id": ecfg.provider,
+                            "usage_recorder": self._record_model_usage,
+                        },
+                    )
                 )
                 from memory import RagMemoryService, SqliteVectorStore
 
@@ -1666,7 +1795,7 @@ class Runtime:
             logger.debug("Provider 健康检查后台任务失败：%s", e, exc_info=True)
 
     async def _record_model_usage(self, usage: Any, metadata: dict[str, Any]) -> None:
-        if self.usage_stats is None:
+        if self.usage_stats is None or usage is None:
             return
         await self.usage_stats.record(
             usage,

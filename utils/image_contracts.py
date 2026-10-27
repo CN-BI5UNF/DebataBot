@@ -15,6 +15,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+SUPPORTED_IMAGE_EXTS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".gif"})
+"""表情包/发送链路共同支持的图片扩展名；管理端与 AI 工具必须同源。"""
+
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_IMAGE_PIXELS = 20_000_000
 MAX_IMAGE_SIDE = 2048

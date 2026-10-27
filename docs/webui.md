@@ -54,7 +54,7 @@ WebUI 能读到全部聊天记录、改配置、换 API Key，所以**默认必�
 | 记忆 | `webui/api/memory.py` | `ui/dashboard/memory_page.py` |
 | 人格后台 | `webui/api/mind.py` | `ui/dashboard/persona_mind_page.py` |
 | 日志 | `webui/api/logs.py` | `ui/dashboard/logs_page.py` |
-| 角色 | `webui/api/personas.py` | `ui/dashboard/personas_page.py` |
+| 人格 | `webui/api/personas.py` | `ui/dashboard/personas_page.py` |
 | 模型管理 | `webui/api/models.py` | `ui/dashboard/models_page.py` |
 | **表情包** | `webui/api/emoji.py` | `ui/dashboard/emoji_section.py`（WebUI 独立成页） |
 | **存储与缓存** | `webui/api/storage.py` | 无（WebUI 新增；见 `docs/storage_maintenance.md`） |
@@ -179,7 +179,7 @@ DELETE /api/emoji/{name}          删除
 - 单文件 5MB、单请求 50 个、Windows 保留名（`CON`/`NUL`/`COM1`…）一律拒绝。
 
 扩展名以 `tools/message_builder.py` 的 `SUPPORTED_IMAGE_EXTS` 为**唯一真源**——
-那里是 AI 实际能发送的集合。两边漂移会出现"上传成功但角色从不使用它"，
+那里是 AI 实际能发送的集合。两边漂移会出现"上传成功但人格从不使用它"，
 `tests/webui_config/test_emoji_store.py` 有一条断言锁死这个恒等关系。
 
 ## 对话页的显示项管线
@@ -205,7 +205,7 @@ runtime 事件折叠。前端只按 `kind` 渲染，不猜记录之间的关系�
 
 `limit` 的档位是 300（`DEFAULT_VISIBLE_RECORD_LIMIT`），「加载更早」每次加 300。
 
-## 角色生成
+## 人格生成
 
 `webui/api/personas.py` + `webui/persona_admin.py`，底层是
 `agents/persona_gen_agent.py` 的 `PersonaGenAgent`。
@@ -220,13 +220,13 @@ runtime 事件折叠。前端只按 `kind` 渲染，不猜记录之间的关系�
 | `POST /api/personas/refine` | 按反馈出修订版。同样不落盘，可反复调用 |
 | `POST /api/personas` | 落盘。覆盖已有时**先自动备份**到 `.backups/` |
 | `GET /api/personas/{name}/source` | 取出 `PERSONA_PROMPT` 字面量，作为改写底稿 |
-| `POST /api/personas/{name}/duplicate` | 复制角色（不带对方的备份） |
-| `GET`/`DELETE /api/personas/brief` | 向导暂存的角色描述 |
+| `POST /api/personas/{name}/duplicate` | 复制人格（不带对方的备份） |
+| `GET`/`DELETE /api/personas/brief` | 向导暂存的人格描述 |
 
 三条设计约束：
 
 1. **草稿不落盘。** 用户会反复重生成，落盘会产生一堆半成品。采用才写。
-2. **覆盖前一定备份。** 改写是 AI 做的，没备份等于把用户的角色交出去了。
+2. **覆盖前一定备份。** 改写是 AI 做的，没备份等于把用户的人格交出去了。
    同一秒内连续覆盖会加序号，不会互相盖掉。
 3. **用哪个模型由后端决定**：`agents.persona_gen` 优先，缺省回落 `agents.chat`。
    原桌面端是自己持有一份"当前主模型"的临时状态，那会导致"设置页改了模型、
@@ -234,19 +234,19 @@ runtime 事件折叠。前端只按 `kind` 渲染，不猜记录之间的关系�
 
 `extract_prompt_source()` 用 `ast` 取 `PERSONA_PROMPT` 常量而不是 `exec`——
 人格文件是用户/AI 写的代码，这里只需要那个字符串，没理由把整个模块执行一遍。
-解析不出来时退回正则，保证「修改角色」至少能看到原文。
+解析不出来时退回正则，保证「修改人格」至少能看到原文。
 
 **改写支持片段合并**：模型只回一个顶层标签（如 `<personality>…</personality>`）时，
 `PersonaGenAgent.refine` 会把它合并进当前文档，其余字段原样保留。
 
-角色目录在仓库的 `personas/` 下（不是数据目录），`.gitignore` 用 `personas/*`
-排除用户自创的角色，只有内置的 `debata` 入 git。
+人格目录在仓库的 `personas/` 下（不是数据目录），`.gitignore` 用 `personas/*`
+排除用户自创的人格，内置的 `大肥鱼`、`deepseek` 入 git。
 
 ## 首次配置向导
 
 向导步骤里的选择卡、开关和下拉一旦改变条件渲染，统一调用 `setup.js` 注入的
 `ctx.rerender()`；不要在 `steps.js` 里直接调用未定义的 `render()`。向导在
-“角色”步骤可切换内置人格/生成新人格，并在主模型步骤开启思考模式后选择
+“人格”步骤可切换内置人格/生成新人格，并在主模型步骤开启思考模式后选择
 思考强度。预设内模型使用该模型文档声明的档位（例如 DeepSeek `low/high/max`、
 GPT-5.5 `low/medium/high/xhigh`）；预设外自定义模型只提供低/中/高三档。
 
@@ -286,7 +286,7 @@ Anthropic 映射为 thinking budget；其他未声明支持的供应商只保存
 `refactor/main`、生效远程与数据目录。版本列表来自远端 tag/Releases，每个版本
 的更新日志来自仓库内 `releases/<tag>.md`，可展开/收起；可以选择更新、回退或
 切换到任意版本。应用前必须检查并确认，创建 `refs/backups/update/*` 备份，
-只切代码工作树，不读取或覆盖用户数据目录；依赖文件变化时拒绝自动应用。
+只切代码工作树，不读取或覆盖用户数据目录；依赖文件变化时自动安装，失败回滚源码。
 版本还会读取 `compatibility.json`：旧 tag 无声明、需要数据迁移或本地数据版本
 超出目标支持范围时，显示“兼容性未通过”并禁用自动应用按钮。
 
@@ -296,8 +296,8 @@ https 输入。更新器只接受同一 `CN-BI5UNF/DebataBot` 仓库，拒绝 ht
 从该入口关闭窗口会询问是否“之后不再提示”，可在设置页重新开启提醒。右下角
 保留浅灰色“开发版”版本占位，当前不发布正式版本号。
 
-向导里填的角色描述同理也调不了生成器（要真发一次模型请求），但**不能就这么丢掉**：
-它被写进 `<数据目录>/persona_brief.json`，配置完成后「角色 → 新建角色」会读它预填，
+向导里填的人格描述同理也调不了生成器（要真发一次模型请求），但**不能就这么丢掉**：
+它被写进 `<数据目录>/persona_brief.json`，配置完成后「人格 → 新建人格」会读它预填，
 用过即删。
 
 ## 黑名单

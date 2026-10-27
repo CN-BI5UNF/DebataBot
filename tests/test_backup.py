@@ -40,6 +40,8 @@ def _seed(paths: AppPaths) -> None:
     paths.RSA_PUBLIC_KEY_FILE.write_text("PUBLIC-PEM", encoding="utf-8")
     paths.TOKEN_CALIBRATION_FILE.write_text('{"factor": 1.0}\n', encoding="utf-8")
     (paths.DATA_DIR / "persona_brief.json").write_text('{"name": "x"}\n', encoding="utf-8")
+    (paths.DATA_DIR / "knowledge.json").write_text("[]\n", encoding="utf-8")
+    (paths.DATA_DIR / "knowledge_state.json").write_text("{}\n", encoding="utf-8")
 
     memory_dir = paths.MEMORY_DIR / "test"
     memory_dir.mkdir(parents=True)
@@ -136,6 +138,8 @@ async def test_backup_contents_manifest_and_permissions(tmp_path):
             "data/rsa_private.pem",
             "data/token_calibration.json",
             "data/persona_brief.json",
+            "data/knowledge.json",
+            "data/knowledge_state.json",
             "data/memory/test/chat.db",
             "data/vector/test/rag.sqlite3",
             "data/workspace/incoming/image.jpg",

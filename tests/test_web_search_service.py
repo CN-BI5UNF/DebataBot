@@ -256,16 +256,49 @@ async def test_deepseek_tools_search_parses_results(monkeypatch):
                 {
                     "title": "结果一",
                     "url": "https://example.com/1",
-                    "snippet": "摘要一",
+                    "snippet": "短摘要",
+                    "summary": "长摘要一",
                     "content": "正文",
+                    "site_name": "示例站",
+                    "date": "2026-10-20T10:00:00+00:00",
+                    "rerank_score": 1.8,
+                    "authority": 3,
                 }
             ]
         }
 
     monkeypatch.setattr(client, "_post", fake_post)
     result = await client.search("DeepSeek", max_results=5, timeout_seconds=10)
-    assert "结果一" in result and "摘要一" in result
+    assert "结果一" in result and "长摘要一" in result
+    assert "短摘要" not in result
+    assert "示例站" in result and "2026-10-20" in result
+    assert "相关度 1.8" in result and "权威度 3" in result
     assert "https://example.com/1" in result
+
+
+@pytest.mark.asyncio
+async def test_deepseek_tools_search_clips_query_and_fills_ori_question(monkeypatch):
+    client = OfficialSearchClient(
+        provider_id="deepseek",
+        base_url="https://api.deepseek.com/v1",
+        api_key="k",
+        model="",
+        channel="deepseek_tools_search",
+        payload={
+            "query_max_chars": 128,
+            "request": {"ori_question": "{query}"},
+        },
+    )
+    long_query = "热梗" * 100
+
+    async def fake_post(url, payload, *, timeout, headers):
+        assert len(payload["query"]) == 128
+        assert payload["ori_question"] == payload["query"]
+        return {"results": []}
+
+    monkeypatch.setattr(client, "_post", fake_post)
+    result = await client.search(long_query, max_results=5, timeout_seconds=10)
+    assert "无相关结果" in result
 
 
 @pytest.mark.asyncio
@@ -299,6 +332,142 @@ async def test_mimo_chat_search_parses_annotations(monkeypatch):
     result = await client.search("天气", max_results=5, timeout_seconds=10)
     assert "回答" in result
     assert "来源" in result and "https://example.com/s" in result
+
+
+@pytest.mark.asyncio
+async def test_official_search_records_v2_usage(monkeypatch):
+    recorded = []
+
+    async def recorder(usage, metadata):
+        recorded.append((usage, metadata))
+
+    client = OfficialSearchClient(
+        provider_id="mimo",
+        base_url="https://api.xiaomimimo.com/v1",
+        api_key="k",
+        model="mimo-v2.6-pro",
+        channel="mimo_chat_web_search",
+        payload={},
+        usage_recorder=recorder,
+    )
+
+    async def fake_post(url, payload, *, timeout, headers):
+        return {
+            "choices": [{"message": {"content": "回答"}}],
+            "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 30,
+                "total_tokens": 150,
+                "prompt_tokens_details": {"cached_tokens": 20},
+            },
+        }
+
+    monkeypatch.setattr(client, "_post", fake_post)
+    await client.search("天气", max_results=5, timeout_seconds=10)
+
+    assert len(recorded) == 1
+    usage, metadata = recorded[0]
+    assert usage.prompt_tokens == 120
+    assert usage.completion_tokens == 30
+    assert usage.cached_tokens == 20
+    assert metadata["operation"] == "web_search_official"
+    assert metadata["provider"] == "mimo"
+    assert metadata["model"] == "mimo-v2.6-pro"
+
+
+def test_extract_usage_anthropic_adds_cache_to_prompt():
+    from features.web_search.official import _extract_usage
+
+    usage = _extract_usage(
+        {
+            "usage": {
+                "input_tokens": 100,
+                "cache_read_input_tokens": 50,
+                "cache_creation_input_tokens": 20,
+                "output_tokens": 10,
+                "total_tokens": 180,
+            }
+        },
+        "anthropic",
+    )
+    assert usage is not None
+    assert usage.prompt_tokens == 170
+    assert usage.cached_tokens == 50
+    assert usage.cache_creation_tokens == 20
+    assert usage.completion_tokens == 10
+
+
+def test_extract_usage_gemini_maps_thought_tokens():
+    from features.web_search.official import _extract_usage
+
+    usage = _extract_usage(
+        {
+            "usageMetadata": {
+                "promptTokenCount": 90,
+                "candidatesTokenCount": 15,
+                "thoughtsTokenCount": 5,
+                "cachedContentTokenCount": 30,
+                "totalTokenCount": 110,
+            }
+        },
+        "gemini",
+    )
+    assert usage is not None
+    assert usage.prompt_tokens == 90
+    assert usage.completion_tokens == 20
+    assert usage.reasoning_tokens == 5
+    assert usage.cached_tokens == 30
+    assert usage.total_tokens == 110
+
+
+@pytest.mark.asyncio
+async def test_deepseek_fetch_parses_title_and_markdown(monkeypatch):
+    client = OfficialSearchClient(
+        provider_id="deepseek",
+        base_url="https://api.deepseek.com/v1",
+        api_key="k",
+        model="",
+        channel="deepseek_tools_search",
+        payload={"fetch_path": "/tools/fetch"},
+    )
+
+    async def fake_post(url, payload, *, timeout, headers):
+        assert url.endswith("/v1/tools/fetch")
+        assert payload == {"url": "https://example.com/page"}
+        return {"title": "示例页面", "content": "# 标题\n\n正文内容"}
+
+    monkeypatch.setattr(client, "_post", fake_post)
+    result = await client.fetch("https://example.com/page")
+    assert result["title"] == "示例页面"
+    assert "正文内容" in result["content"]
+    assert result["url"] == "https://example.com/page"
+    assert client.supports_fetch() is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///etc/passwd",
+        "ftp://example.com/x",
+        "http://127.0.0.1/x",
+        "http://localhost/x",
+        "http://192.168.1.2/x",
+        "https://user:pass@example.com/x",
+        "https://example.com/a b",
+    ],
+)
+async def test_fetch_rejects_unsafe_urls(url):
+    client = OfficialSearchClient(
+        provider_id="deepseek",
+        base_url="https://api.deepseek.com/v1",
+        api_key="k",
+        model="",
+        channel="deepseek_tools_search",
+        payload={"fetch_path": "/tools/fetch"},
+    )
+    with pytest.raises(OfficialSearchError):
+        await client.fetch(url)
 
 
 def _fake_registry(preset: ProviderPreset):

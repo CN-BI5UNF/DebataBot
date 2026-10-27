@@ -137,6 +137,12 @@ def _usage_dict(rt: Any, range_name: str) -> dict[str, Any]:
         getattr(summary, "has_current_semantics_data", False)
     )
     data["legacy_cache_rate_available"] = False
+    try:
+        breakdown = getattr(store, "operation_breakdown", None)
+        data["by_operation"] = breakdown(range_name) if breakdown else []
+    except Exception:  # noqa: BLE001 - 分项失败不能拖垮总览
+        logger.debug("读取用量分项失败", exc_info=True)
+        data["by_operation"] = []
     return data
 
 

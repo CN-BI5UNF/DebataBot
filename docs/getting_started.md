@@ -93,6 +93,8 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 - **仓库自带**：直接用 Debata，开箱即用
 - **AI 辅助创建**：描述你想要的角色，配置完成后到「角色 → 新建角色」，AI 帮你写完整的 [人格档案](persona_writing_guide.md)
+- **直接写提示词**：已经有完整人设时，用「角色 → 直接写提示词」粘贴即可，不经过 AI；
+  已有角色也可以用「直接编辑」修改并自动备份
 - **导入**：你已经写好了 `persona_prompt.py`，从磁盘导入
 
 > 向导里选「生成一个新人格」时填的那段描述**不会丢**——它先存到数据目录，
@@ -193,11 +195,14 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ## 6.一份默认人格的快速演示
 
-`personas/debata/`, 一个完整人格档案: 17岁女孩、慢热又毒舌、对长辈尊敬、对死党随便、对陌生人冷淡.这是项目最初的样品, 也是「关系矩阵 + 真人聊天」方法论的验证.你可以:
+`personas/大肥鱼/` 是新的开箱即用默认人格：DeepSeek 蓝色鲸鱼 logo 的社区二创「大肥鱼」，贪吃、爱面子、嘴硬心软，日常短句聊天，能接梗也会认真帮忙。它不是 DeepSeek 官方产品，底层模型可以按你的 provider 配置接入 DeepSeek。
 
-- **直接用 debata**: 首次配置时选默认人格
-- **AI 现场捏一个**: 向导里描述「我想要一个 25 岁的程序员、嘴硬心软、爱猫」, 等几秒看 AI 写出来
-- **手写**: 照 `personas/debata/persona_prompt.py` 葫芦画瓢, 放到 `personas/{你的名字}/`
+`personas/deepseek/` 是另一个内置示例：更长的 DeepSeek 鲸鱼娘群聊提示词，适合想直接参考完整行为约束的用户。你可以：
+
+- **直接用大肥鱼**：首次配置时就是默认人格
+- **切换到 deepseek**：人格页里切换，或在配置里把 `persona.active` 改成 `deepseek`
+- **AI 现场捏一个**：向导里描述「我想要一个 25 岁的程序员、嘴硬心软、爱猫」，等几秒看 AI 写出来
+- **手写**：照 `personas/大肥鱼/persona_prompt.py` 或 `personas/deepseek/persona_prompt.py` 的结构写，放到 `personas/{你的名字}/`
 
 #### 每个 persona 都有自己独立的 `memory/{name}/` 目录存历史与重要记忆（默认数据目录 `~/.local/share/Debata_Agent/instances/default/`），互不干扰.
 
@@ -253,6 +258,7 @@ NapCat 需要单独保持运行。
 
 - [架构总览](architecture.md)
 - [角色编写指南](persona_writing_guide.md)
+- [群聊黑话 / 网络热梗](feature_guides/slang.md)
 - [KV 缓存实测报告](kv_cache_benchmark.md)
 - [提供商开发指南](provider_development.md)
 - [适配器开发指南](adapter_development.md)

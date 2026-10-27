@@ -258,6 +258,28 @@ def test_coerce_list_str_splits_on_comma_and_newline():
     assert _coerce(["x", "y"], spec) == ["x", "y"]
 
 
+def test_coerce_rejects_invalid_numbers_with_400():
+    from fastapi import HTTPException
+
+    from webui.api.settings import _coerce
+
+    for spec, value in (
+        ({"type": "int"}, ""),
+        ({"type": "int"}, "abc"),
+        ({"type": "int"}, 1.5),
+        ({"type": "float"}, ""),
+        ({"type": "list_int"}, "1,x"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            _coerce(value, spec)
+        assert exc.value.status_code == 400
+
+    assert _coerce("10", {"type": "int"}) == 10
+    assert _coerce("0.5", {"type": "float"}) == 0.5
+    assert _coerce("", {"type": "int_or_none"}) is None
+    assert _coerce("1, 2", {"type": "list_int"}) == [1, 2]
+
+
 def test_coerce_json_parses_string():
     from webui.api.settings import _coerce
 

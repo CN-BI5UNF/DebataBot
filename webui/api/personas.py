@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/personas", tags=["personas"])
 
-BUILTIN_PERSONAS = {"debata"}
+BUILTIN_PERSONAS = {"大肥鱼", "deepseek"}
 
 
 def _fail(error: Exception) -> HTTPException:
@@ -155,8 +155,13 @@ async def save_persona(request: Request, payload: Annotated[dict, Body()]) -> di
     rt = require_runtime(request)
     name = str(payload.get("name") or "").strip()
     xml = str(payload.get("xml") or "")
+    raw = bool(payload.get("raw") or payload.get("mode") == "raw")
     try:
-        brief = persona_admin.brief_from_payload(payload) if payload.get("personality") else None
+        brief = (
+            persona_admin.brief_from_payload(payload)
+            if (not raw and payload.get("personality"))
+            else None
+        )
         result = await asyncio.to_thread(
             persona_admin.save_persona,
             rt.paths,
@@ -164,6 +169,12 @@ async def save_persona(request: Request, payload: Annotated[dict, Body()]) -> di
             xml,
             brief=brief,
             overwrite=bool(payload.get("overwrite")),
+            raw=raw,
+            display_name=str(payload.get("display_name") or ""),
+            gender=str(payload.get("gender") or ""),
+            age=payload.get("age"),
+            admins=payload.get("admins"),
+            preserve_vars=raw or (bool(payload.get("overwrite")) and brief is None),
         )
     except PersonaAdminError as e:
         raise _fail(e) from e
@@ -201,7 +212,11 @@ async def read_prompt_source(request: Request, name: str) -> dict[str, Any]:
         text = await asyncio.to_thread(path.read_text, "utf-8", "replace")
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"读取失败：{e}") from e
-    return {"id": name, "xml": persona_admin.extract_prompt_source(text)}
+    return {
+        "id": name,
+        "xml": persona_admin.extract_prompt_source(text),
+        "vars": persona_admin.extract_persona_vars(text),
+    }
 
 
 @router.post("/{name}/activate")

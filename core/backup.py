@@ -1700,6 +1700,9 @@ class BackupService:
             (paths.RSA_PUBLIC_KEY_FILE, "data/rsa_public.pem"),
             (paths.TOKEN_CALIBRATION_FILE, "data/token_calibration.json"),
             (paths.DATA_DIR / "persona_brief.json", "data/persona_brief.json"),
+            (paths.DATA_DIR / "slang.json", "data/slang.json"),
+            (paths.DATA_DIR / "knowledge.json", "data/knowledge.json"),
+            (paths.DATA_DIR / "knowledge_state.json", "data/knowledge_state.json"),
         ):
             add_file(Path(path), arcname)
         if not Path(paths.CONFIG_FILE).is_file():

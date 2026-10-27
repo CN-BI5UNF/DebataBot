@@ -207,7 +207,10 @@ class MessagePipeline(
         model_context_length: int | None = None,
         vision: IVisionService | None = None,
         web_search: IWebSearchService | None = None,
+        web_fetch: Any = None,
         weather: IWeatherService | None = None,
+        slang_service: Any = None,
+        knowledge_service: Any = None,
         asr: Any = None,
         tts: Any = None,
         rag_memory: Any = None,
@@ -251,7 +254,10 @@ class MessagePipeline(
         self.model_context_length = model_context_length
         self.vision = vision
         self.web_search = web_search
+        self.web_fetch = web_fetch
         self.weather = weather
+        self.slang_service = slang_service
+        self.knowledge_service = knowledge_service
         self.asr = asr
         self.tts = tts
         self.rag_memory = rag_memory
@@ -393,6 +399,16 @@ class MessagePipeline(
         stage_t0 = time.monotonic()
         await self.history.add_records([user_record], conversation_id=conversation_id)
         _log_slow_batch_stage("history_add_user", stage_t0, conversation_id=conversation_id)
+        if self.slang_service is not None and conversation_id.startswith("group:"):
+            for item in items:
+                try:
+                    self.slang_service.feed(
+                        conversation_id,
+                        sender=str(getattr(item, "nickname", "") or getattr(item, "user_id", "") or ""),
+                        text=str(getattr(item, "text", "") or ""),
+                    )
+                except Exception:  # noqa: BLE001 - 黑话学习不能影响主消息
+                    logger.debug("黑话窗口入队失败", exc_info=True)
         logger.info(f"合并处理 {len(items)} 条消息")
         if resting_before_main:
             logger.info(
@@ -535,37 +551,7 @@ class MessagePipeline(
             )
             return rebuilt_messages
 
-        stage_t0 = time.monotonic()
-        budget_result = await self._prepare_main_prompt_for_model(
-            conversation_id=conversation_id,
-            phase="main_reply",
-            tools_schema=tools_schema,
-            rebuild_messages=_rebuild_messages,
-        )
-        if not budget_result.ok:
-            _log_slow_batch_stage(
-                "main_prompt_budget_failed",
-                stage_t0,
-                conversation_id=conversation_id,
-                extra=(
-                    f"estimated={budget_result.estimated_tokens} "
-                    f"budget={budget_result.budget_tokens}"
-                ),
-            )
-            return False
-        messages = budget_result.messages
-        estimated_prompt_tokens = budget_result.estimated_tokens
-        _log_slow_batch_stage(
-            "main_prompt_budget_preflight",
-            stage_t0,
-            conversation_id=conversation_id,
-            extra=(
-                f"estimated={estimated_prompt_tokens} "
-                f"budget={budget_result.budget_tokens}"
-            ),
-        )
-
-        # 只串行模型轮；Phase 0 后台发送不占 reply_lock。
+        # R01: prepare_locked_turn —— 只串行模型轮；reply_lock 取得后才进行完整 rebuild 与预算复核。
         stage_t0 = time.monotonic()
         async with self.reply_lock:
             _log_slow_batch_stage(
@@ -573,6 +559,36 @@ class MessagePipeline(
                 stage_t0,
                 conversation_id=conversation_id,
             )
+            stage_pre_t0 = time.monotonic()
+            budget_result = await self._prepare_main_prompt_for_model(
+                conversation_id=conversation_id,
+                phase="main_reply",
+                tools_schema=tools_schema,
+                rebuild_messages=_rebuild_messages,
+            )
+            if not budget_result.ok:
+                _log_slow_batch_stage(
+                    "main_prompt_budget_failed",
+                    stage_pre_t0,
+                    conversation_id=conversation_id,
+                    extra=(
+                        f"estimated={budget_result.estimated_tokens} "
+                        f"budget={budget_result.budget_tokens}"
+                    ),
+                )
+                return False
+            messages = budget_result.messages
+            estimated_prompt_tokens = budget_result.estimated_tokens
+            _log_slow_batch_stage(
+                "main_prompt_budget_preflight",
+                stage_pre_t0,
+                conversation_id=conversation_id,
+                extra=(
+                    f"estimated={estimated_prompt_tokens} "
+                    f"budget={budget_result.budget_tokens}"
+                ),
+            )
+
             active_budget = self._active_budget_snapshot()
             if (
                 not active_budget.valid

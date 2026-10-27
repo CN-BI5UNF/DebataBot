@@ -31,13 +31,16 @@ data/
 .debata-run/
 
 # === 用户人格（个人私设，不上传）===
-# 所有人格平级放 personas/ 下。仓库自带的（debata）入 git，其余排除。
+# 所有人格平级放 personas/ 下。仓库自带的（大肥鱼、deepseek）入 git，其余排除。
 personas/*
 !personas/__init__.py
-!personas/debata/
-!personas/debata/**
-# 上面 negate 会把 __pycache__ 也带入，显式排除
+!personas/大肥鱼/
+!personas/大肥鱼/**
+!personas/deepseek/
+!personas/deepseek/**
+# 上面 negate 会把缓存/备份也带入，显式排除
 personas/*/__pycache__/
+personas/*/.backups/
 
 # === 归档（开发期间的私设、临时备份）===
 archived/

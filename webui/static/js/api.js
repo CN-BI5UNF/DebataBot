@@ -99,6 +99,35 @@ export const endpoints = {
   status: () => api.get('/api/status'),
   restart: () => api.post('/api/system/restart'),
   restartBackend: () => api.post('/api/system/restart-backend', {}, { timeoutMs: 15000 }),
+  slangList: (params = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    }
+    const suffix = query.toString() ? `?${query}` : '';
+    return api.get(`/api/slang${suffix}`);
+  },
+  slangCreate: (payload) => api.post('/api/slang', payload),
+  slangUpdate: (id, payload) =>
+    api.patch(`/api/slang/${encodeURIComponent(id)}`, payload),
+  slangDelete: (id) => api.del(`/api/slang/${encodeURIComponent(id)}`),
+  slangLearn: (payload) => api.post('/api/slang/learn', payload, { timeoutMs: 150000 }),
+  knowledgeList: (params = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    }
+    const suffix = query.toString() ? `?${query}` : '';
+    return api.get(`/api/knowledge${suffix}`);
+  },
+  knowledgeCreate: (payload) => api.post('/api/knowledge', payload),
+  knowledgeUpdate: (id, payload) =>
+    api.patch(`/api/knowledge/${encodeURIComponent(id)}`, payload),
+  knowledgeDelete: (id) => api.del(`/api/knowledge/${encodeURIComponent(id)}`),
+  knowledgeResearch: (payload) =>
+    api.post('/api/knowledge/research', payload, { timeoutMs: 150000 }),
+  knowledgeTrends: (payload = {}) =>
+    api.post('/api/knowledge/trends', payload, { timeoutMs: 300000 }),
   stopRuntime: () => api.post('/api/system/stop'),
   startRuntime: () => api.post('/api/system/start'),
   quit: () => api.post('/api/system/quit'),
@@ -152,7 +181,7 @@ export const endpoints = {
   personaPrompt: (name) => api.get(`/api/personas/${encodeURIComponent(name)}/prompt`),
   importPersona: (formData) => api.upload('/api/personas/import', formData),
 
-  // 角色生成 / 改写 / 复制
+  // 人格生成 / 改写 / 复制
   personaDraft: (brief) => api.post('/api/personas/draft', brief),
   personaRefine: (payload) => api.post('/api/personas/refine', payload),
   savePersona: (payload) => api.post('/api/personas', payload),
@@ -213,7 +242,8 @@ export const endpoints = {
     api.post(`/api/storage/jobs/${encodeURIComponent(jobId)}/restore`, {}),
 
   contextStatus: () => api.get('/api/context/status'),
-  contextCompact: () => api.post('/api/context/compact', {}),
+  // 手动压缩要等摘要模型完成，15 秒默认超时会先报错但服务端仍在跑。
+  contextCompact: () => api.post('/api/context/compact', {}, { timeoutMs: 180000 }),
 
   updateStatus: () => api.get('/api/update/status'),
   updateVersion: () => api.get('/api/update/version'),

@@ -408,16 +408,33 @@ def _coerce(value: Any, spec: dict[str, Any]) -> Any:
     if kind in {"int", "int_or_none"}:
         if value in (None, "", "null") and kind == "int_or_none":
             return None
-        return int(value)
+        try:
+            if isinstance(value, float) and not value.is_integer():
+                raise ValueError("not an integer")
+            return int(value)
+        except (TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400, detail="这个设置需要整数"
+            ) from e
     if kind == "float":
-        return float(value)
+        try:
+            return float(value)
+        except (TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400, detail="这个设置需要数字"
+            ) from e
     if kind == "list_int":
         if value in (None, ""):
             return []
-        if isinstance(value, str):
-            parts = [p for p in value.replace("，", ",").split(",") if p.strip()]
-            return [int(p.strip()) for p in parts]
-        return [int(v) for v in value]
+        try:
+            if isinstance(value, str):
+                parts = [p for p in value.replace("，", ",").split(",") if p.strip()]
+                return [int(p.strip()) for p in parts]
+            return [int(v) for v in value]
+        except (TypeError, ValueError) as e:
+            raise HTTPException(
+                status_code=400, detail="这个设置需要整数列表"
+            ) from e
     if kind == "list_str":
         if value in (None, ""):
             return []

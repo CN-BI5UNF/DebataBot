@@ -17,6 +17,25 @@ const ACTIVITY_TEXT = {
   error: '出错了',
 };
 
+const OPERATION_TEXT = {
+  chat: '聊天',
+  knowledge_research: '联网考究',
+  slang_extract: '黑话学习',
+  web_search_official: '官方搜索',
+  describe_image: '看图',
+  embedding: 'Embedding',
+  summary: '摘要',
+  persona: '人格后台',
+  proactive: '主动思考',
+  social: '社交',
+  provider_health: '健康检查',
+};
+
+function operationLabel(value) {
+  const key = String(value || '').trim();
+  return OPERATION_TEXT[key] || key || 'unknown';
+}
+
 export async function render(container, ctx) {
   let range = 'today';
   let timer = null;
@@ -165,6 +184,9 @@ export async function render(container, ctx) {
     const legacySamples = Number(usage.legacy_request_count || 0);
     const unknownSamples = Number(usage.unknown_semantics_request_count || 0);
     const inconsistentSamples = Number(usage.raw_cache_inconsistent_count || 0);
+    const operations = (usage.by_operation || [])
+      .filter((row) => Number(row.current_total_tokens || 0) > 0)
+      .slice(0, 10);
     fill(usageCard,
       h('h2', { class: 'card-title' }, '用量统计'),
       h('p', { class: 'card-sub' },
@@ -204,6 +226,25 @@ export async function render(container, ctx) {
       inconsistentSamples > 0
         ? h('p', { class: 'field-help' },
             `有 ${formatNumber(inconsistentSamples)} 条记录的缓存字段超过输入 token，展示值已做安全夹取。`)
+        : null,
+      operations.length
+        ? h('div', { style: { marginTop: '14px' } },
+            h('p', { class: 'field-help' }, '按用途（V2 口径）'),
+            h('table', { class: 'table' },
+              h('thead', {}, h('tr', {},
+                h('th', {}, '用途'),
+                h('th', {}, '请求'),
+                h('th', {}, 'V2 输入 token'),
+                h('th', {}, 'V2 总 token'))),
+              h('tbody', {}, ...operations.map((row) =>
+                h('tr', {},
+                  h('td', {}, h('span', { class: 'badge' }, operationLabel(row.operation))),
+                  h('td', {}, formatNumber(row.request_count)),
+                  h('td', {}, formatNumber(row.current_prompt_tokens)),
+                  h('td', {}, formatNumber(row.current_total_tokens)),
+                ),
+              )),
+            ))
         : null,
     );
   }

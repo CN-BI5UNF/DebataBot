@@ -47,6 +47,7 @@ class SummaryAttemptResult:
     summarized_records: int = 0
     archived_count: int = 0
     target_after_tokens: int | None = None
+    actual_after_tokens: int | None = None
     partial_archive_committed: bool = False
     archive_reused: bool = False
 
@@ -75,6 +76,8 @@ class PipelineSummaryMixin:
                 active_records_before=result.active_records,
                 archived_count=result.archived_count,
                 target_after_tokens=result.target_after_tokens,
+                actual_after_tokens=result.actual_after_tokens,
+                actual_coverage=result.archived_count,
             )
         elif result.status == "failed":
             planner.mark_failure(now=now, reason=result.reason or "failed")
@@ -587,6 +590,13 @@ class PipelineSummaryMixin:
         ]
         try:
             if summary_input:
+                # R01: 每次调用前动态绑定当前预算，不让启动时预算快照永久冻结
+                try:
+                    active_b = self._active_budget_snapshot()
+                    if active_b.valid:
+                        self.summary_agent.prompt_budget_tokens = active_b.input_budget
+                except Exception:
+                    logger.debug("动态绑定 summary 预算失败，保留既有设置", exc_info=True)
                 result = await self.summary_agent.summarize_rolling(
                     summary_input,
                     self.rolling_summary.text(),
@@ -729,6 +739,11 @@ class PipelineSummaryMixin:
             len(slice_records),
             target_after,
         )
+        # P01: 计算压缩后真实剩余 active token 数，不用 target 或 50% 假值
+        actual_remaining_records = active[raw_cut:]
+        actual_remaining_view = build_model_view(actual_remaining_records, policy=self._model_view_policy())
+        actual_after_tokens = estimator.estimate_messages(actual_remaining_view.records)
+
         return SummaryAttemptResult(
             status="success",
             reason=reason,
@@ -741,6 +756,7 @@ class PipelineSummaryMixin:
             summarized_records=len(summary_input),
             archived_count=len(slice_records),
             target_after_tokens=target_after,
+            actual_after_tokens=actual_after_tokens,
             archive_reused=archive_reused,
         )
 

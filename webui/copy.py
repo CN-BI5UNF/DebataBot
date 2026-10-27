@@ -20,7 +20,7 @@ DASHBOARD_COPY: dict[str, str] = {
     "nav.memory": "记忆",
     "nav.persona_mind": "人格后台",
     "nav.logs": "日志",
-    "nav.personas": "角色",
+    "nav.personas": "人格",
     "nav.settings": "设置",
     "nav.models": "模型管理",
 
@@ -31,7 +31,7 @@ DASHBOARD_COPY: dict[str, str] = {
     "topbar.adapter_connecting": "连接中",
     "topbar.adapter_disconnected": "未连接",
     "topbar.adapter_error": "出错了",
-    "topbar.persona_label": "当前角色：",
+    "topbar.persona_label": "当前人格：",
     "topbar.usage_label": "今日用量",
     "topbar.theme_toggle": "切换深浅",
 
@@ -119,7 +119,7 @@ DASHBOARD_COPY: dict[str, str] = {
     "settings.section_model": "模型",
     "settings.section_features": "功能",
     "settings.section_adapter": "渠道",
-    "settings.section_persona": "角色",
+    "settings.section_persona": "人格",
     "settings.section_appearance": "外观",
     "settings.section_advanced": "高级",
     "settings.unsaved_changes": "有未保存的修改",
@@ -135,10 +135,10 @@ DASHBOARD_COPY: dict[str, str] = {
     "settings.appearance_font_size": "字号",
 
     # ============================================================
-    # 角色管理
+    # 人格管理
     # ============================================================
-    "personas.list_title": "角色列表",
-    "personas.add_button": "新建角色",
+    "personas.list_title": "人格列表",
+    "personas.add_button": "新建人格",
     "personas.activate_button": "切换为当前",
     "personas.duplicate_button": "复制一份",
     "personas.delete_button": "删除",
@@ -146,12 +146,12 @@ DASHBOARD_COPY: dict[str, str] = {
     "personas.export_button": "导出为文件",
     "personas.builtin_badge": "内置",
     "personas.active_badge": "当前",
-    "personas.delete_confirm_title": "删除这个角色？",
+    "personas.delete_confirm_title": "删除这个人格？",
     "personas.delete_confirm_body": (
-        "角色定义会被移除，但已有的对话历史会保留。\n"
-        "如果当前激活的就是它，需要在删除后选一个新角色。"
+        "人格定义会被移除，但已有的对话历史会保留。\n"
+        "如果当前激活的就是它，需要在删除后选一个新人格。"
     ),
-    "personas.delete_active_warning": "这是当前角色，请先切换到其它角色再删除。",
+    "personas.delete_active_warning": "这是当前人格，请先切换到其它人格再删除。",
 
     # ============================================================
     # 模型管理
@@ -189,7 +189,7 @@ DASHBOARD_COPY: dict[str, str] = {
     "splash.starting": "正在启动",
     "splash.loading_config": "读取配置",
     "splash.loading_secrets": "解密密钥",
-    "splash.loading_persona": "唤起角色",
+    "splash.loading_persona": "唤起人格",
     "splash.loading_history": "翻看历史",
     "splash.connecting_adapter": "接通渠道",
     "splash.ready": "一切就位",

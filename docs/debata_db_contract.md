@@ -486,6 +486,7 @@
 
 - `load() -> None`：从 `usage_records` 加载记录到内存列表。构造时指定 persona 时只加载该 persona；未指定 persona 时加载全部记录。
 - `record(usage, *, provider="", model="", agent="", operation="", extra=None) -> None`：记录一次模型 usage。
+- `operation_breakdown(range_name="today", *, limit=20) -> list[dict]`：按 operation 聚合 V2/全历史 token，供总览页展示官方搜索、看图、embedding、联网考究等分项。
 - `summarize(range_name="today") -> UsageSummary`：基于内存列表聚合 `today`、`7d`、`30d` 或 `all`。
 - `count`：返回当前内存列表长度。
 
