@@ -24,15 +24,21 @@ RSA 私钥优先保存在系统密钥环（keyring）；Linux 无可用 keyring 
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from platformdirs import user_data_dir
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT_ENV_VAR = "DEBATA_DATA_ROOT"
-DEV_DATA_ROOT_MARKER = ".debata-dev-data-root"
-APP_DATA_DIR_NAME = "Debata_Agent"
+DATA_ROOT_ENV_VAR = "KAREN_DATA_ROOT"
+LEGACY_DATA_ROOT_ENV_VAR = "DEBATA_DATA_ROOT"
+DEV_DATA_ROOT_MARKER = ".karen-dev-data-root"
+LEGACY_DEV_DATA_ROOT_MARKER = ".debata-dev-data-root"
+APP_DATA_DIR_NAME = "KarenBot"
+LEGACY_APP_DATA_DIR_NAME = "Debata_Agent"
 
 
 class AppPaths:
@@ -41,7 +47,8 @@ class AppPaths:
     通过依赖注入传递给需要路径的模块，便于测试时替换为临时目录。
     """
 
-    KEYRING_SERVICE: str = "Debata_Agent"
+    KEYRING_SERVICE: str = "KarenBot"
+    LEGACY_KEYRING_SERVICE: str = "Debata_Agent"
     KEYRING_RSA_PRIVATE_KEY: str = "rsa_private_key"
 
     def __init__(
@@ -123,11 +130,15 @@ class AppPaths:
         if explicit_data_root is not None:
             return Path(explicit_data_root).expanduser(), False
 
-        env_data_root = os.environ.get(DATA_ROOT_ENV_VAR)
+        env_data_root = os.environ.get(DATA_ROOT_ENV_VAR) or os.environ.get(
+            LEGACY_DATA_ROOT_ENV_VAR
+        )
         if env_data_root:
             return Path(env_data_root).expanduser(), False
 
         marker = project_root / DEV_DATA_ROOT_MARKER
+        if not marker.exists():
+            marker = project_root / LEGACY_DEV_DATA_ROOT_MARKER
         if marker.exists():
             marker_value = marker.read_text(encoding="utf-8").strip()
             if not marker_value:
@@ -144,7 +155,17 @@ class AppPaths:
         if explicit_project_root and not cls._is_default_project_root(project_root):
             return project_root / "data", True
 
-        return Path(user_data_dir(APP_DATA_DIR_NAME, appauthor=False)), False
+        new_root = Path(user_data_dir(APP_DATA_DIR_NAME, appauthor=False))
+        legacy_root = Path(user_data_dir(LEGACY_APP_DATA_DIR_NAME, appauthor=False))
+        if not new_root.exists() and legacy_root.exists():
+            logger.warning(
+                "检测到旧数据目录 %s；本次继续使用旧目录。迁移到 %s 请运行 "
+                "`karen migrate`（会先备份，不删除旧目录）。",
+                legacy_root,
+                new_root,
+            )
+            return legacy_root, False
+        return new_root, False
 
     @staticmethod
     def _is_default_project_root(project_root: Path) -> bool:

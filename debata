@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
-# Debata Agent 本地启动器：./debata start / stop / log / enable ...
+# 旧命令兼容入口；新命令请使用 ./karen。
 set -euo pipefail
-
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="$ROOT/.venv/bin/python"
-
-if [[ ! -x "$PYTHON" ]]; then
-    echo "未找到 $PYTHON，请先运行: cd \"$ROOT\" && uv sync" >&2
-    exit 1
-fi
-
-exec "$PYTHON" "$ROOT/main.py" "$@"
+export KAREN_LEGACY_SERVICE=1
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/karen" "$@"

@@ -1,7 +1,7 @@
 """安全的代码更新器（Releases / tag 版本管理）。
 
 边界：
-    - 只更新 Debata 源码仓库；用户数据目录（persona/聊天/媒体/配置）不在
+    - 只更新 Karen 源码仓库；用户数据目录（persona/聊天/媒体/配置）不在
       git 工作树内，更新过程不读取、不删除、不覆盖它。
     - 版本来自远端 tag（与 GitHub Releases 使用同一组 tag）；每个版本可以在
       仓库的 ``releases/<tag>.md`` 中提供更新日志。
@@ -43,9 +43,9 @@ from core.compat import (
 
 logger = logging.getLogger(__name__)
 
-UPDATE_REPO_URL = "https://github.com/CN-BI5UNF/DebataBot.git"
+UPDATE_REPO_URL = "https://github.com/CN-BI5UNF/KarenBot.git"
 UPDATE_REPO_OWNER = "CN-BI5UNF"
-UPDATE_REPO_NAME = "DebataBot"
+UPDATE_REPO_NAME = "KarenBot"
 UPDATE_REF = "refactor/main"
 UPDATE_LOCAL_BRANCH = "refactor/main"
 UPDATE_TRACKING_REF = "refs/remotes/update-target/refactor-main"
@@ -130,7 +130,7 @@ def _sanitize_install_output(text: str) -> str:
 
 
 def resolve_update_repo_url(mirror: str = "") -> str:
-    """解析并校验镜像；只允许同一 DebataBot 仓库。"""
+    """解析并校验镜像；只允许同一 KarenBot 仓库。"""
     mirror = str(mirror or "").strip()
     if not mirror:
         url = UPDATE_REPO_URL

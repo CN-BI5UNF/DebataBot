@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 
 
 def _default_models_root() -> Path:
-    configured = os.getenv("DEBATA_MODELS_DIR", "").strip()
+    configured = (
+        os.getenv("KAREN_MODELS_DIR") or os.getenv("DEBATA_MODELS_DIR", "")
+    ).strip()
     if configured:
         return Path(configured)
     return Path.cwd() / "data" / "models"
@@ -157,7 +159,7 @@ class PluginManager:
     def __init__(self, plugins_dir: Path) -> None:
         self.plugins_dir = plugins_dir
         os.environ.setdefault(
-            "DEBATA_MODELS_DIR",
+            "KAREN_MODELS_DIR",
             str((plugins_dir.parent / "data" / "models").resolve()),
         )
         self._records: dict[str, PluginRecord] = {}

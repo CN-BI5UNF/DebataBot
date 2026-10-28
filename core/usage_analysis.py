@@ -528,7 +528,7 @@ def _format_ts(value: Any) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Analyze Debata model_usage.jsonl")
+    parser = argparse.ArgumentParser(description="Analyze Karen model_usage.jsonl")
     parser.add_argument(
         "path",
         nargs="?",

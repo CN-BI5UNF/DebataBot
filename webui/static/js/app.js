@@ -1,4 +1,4 @@
-// Debata_Agent WebUI 外壳：登录 → （首次配置）→ 仪表盘路由。
+// KarenBot WebUI 外壳：登录 → （首次配置）→ 仪表盘路由。
 //
 // 导航结构照搬原 PySide6 仪表盘（ui/dashboard/layout.py 的 NAV_ITEMS），
 // 顺序、中文标题一致，末尾追加 WebUI 新增的「黑名单」。
@@ -209,13 +209,13 @@ function applyTheme(theme) {
   const btn = qs('#btn-theme');
   fill(btn, icon(resolved === 'dark' ? 'sun' : 'moon', { size: 18 }));
   btn.title = resolved === 'dark' ? '切换到浅色主题' : '切换到深色主题';
-  localStorage.setItem('debata-theme', theme);
+  localStorage.setItem('karen-theme', theme);
 }
 
 function initTheme() {
-  applyTheme(localStorage.getItem('debata-theme') || 'auto');
+  applyTheme(localStorage.getItem('karen-theme') || 'auto');
   window.matchMedia('(prefers-color-scheme: dark)')
-    .addEventListener('change', () => applyTheme(localStorage.getItem('debata-theme') || 'auto'));
+    .addEventListener('change', () => applyTheme(localStorage.getItem('karen-theme') || 'auto'));
 }
 
 // ============================================================
@@ -252,7 +252,7 @@ function showLoading() {
 
   const content = qs('#content');
   fill(content, h('div', { class: 'page' },
-    empty('正在连接 Debata 服务…', {
+    empty('正在连接 Karen 服务…', {
       subtitle: '启动 Runtime 可能要几秒，稍等一下。',
       iconName: 'overview',
     }),
@@ -274,7 +274,7 @@ function showBootError(error) {
   fill(qs('#content'), h('div', { class: 'page' },
     h('div', { class: 'empty' },
       icon('settings', { size: 32, className: 'empty-icon' }),
-      h('p', { class: 'empty-title' }, '连不上 Debata 服务'),
+      h('p', { class: 'empty-title' }, '连不上 Karen 服务'),
       h('p', { class: 'empty-sub' }, error?.message || String(error)),
       h('button', {
         class: 'btn btn-primary',
@@ -391,11 +391,11 @@ function wireChrome() {
   // 顶栏图标（index.html 里只留空的 button，图标在这里挂，才能复用 icons.js）
   fill(qs('#btn-restart'), icon('restart', { size: 18 }));
   fill(qs('#btn-logout'), icon('logout', { size: 18 }));
-  applyTheme(localStorage.getItem('debata-theme') || 'auto');
+  applyTheme(localStorage.getItem('karen-theme') || 'auto');
 
   qs('#btn-theme').onclick = () => {
     const order = ['auto', 'light', 'dark'];
-    const now = localStorage.getItem('debata-theme') || 'auto';
+    const now = localStorage.getItem('karen-theme') || 'auto';
     const next = order[(order.indexOf(now) + 1) % order.length];
     applyTheme(next);
     // 顺手同步到配置，让同一实例的其它客户端/桌面端保持一致。

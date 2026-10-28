@@ -1,4 +1,4 @@
-"""Debata_Agent Agent 层。
+"""KarenBot Agent 层。
 
 模块组成：
     persona_loader      —— 加载 data/personas/{name}/persona_prompt.py

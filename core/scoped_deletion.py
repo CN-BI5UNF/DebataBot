@@ -7,7 +7,7 @@
    - 预览输出严格脱敏：绝不返回消息正文、signed URL 或内部绝对路径表，只输出多域影响计数与字节估算；
    - 产出带有时效（TTL）与 HMAC 防篡改签名的 preview_token。
 2. 原子墓碑与即时读屏障（read fence，E36）：
-   - 在 debata.db 的单个 SQLite 事务中先写入 delete_ops 与 tombstones，递增 corpus_state.mutation_gen；
+   - 在 karen.db 的单个 SQLite 事务中先写入 delete_ops 与 tombstones，递增 corpus_state.mutation_gen；
    - 所有 history、event、archive、display、summary、RAG、recall、export 即时遵守读屏障，慢任务/备份不得复活已删记录；
    - 关联的 summary_generations 同步失效或解绑，杜绝已概括事实产生幽灵记忆。
 3. 受控隔离期与恢复（Controlled Quarantine & Restore）：
@@ -33,17 +33,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_QUARANTINE_HOURS = 24.0
 PREVIEW_TOKEN_TTL_SECONDS = 300.0
-_DEFAULT_SECRET_KEY = b"debata-scope-deletion-seal-v2.6"
+_DEFAULT_SECRET_KEY = b"karen-scope-deletion-seal-v2.6"
 
 
 def _get_secret_key() -> bytes:
-    env_key = os.environ.get("DEBATA_SCOPE_DELETION_KEY")
+    env_key = os.environ.get("KAREN_SCOPE_DELETION_KEY") or os.environ.get(
+        "DEBATA_SCOPE_DELETION_KEY"
+    )
     if env_key:
         return env_key.encode("utf-8")
     return _DEFAULT_SECRET_KEY
@@ -171,7 +173,7 @@ class ScopedDeletionManager:
 
     def __init__(
         self,
-        db: DebataDB | str | Path | sqlite3.Connection,
+        db: KarenDB | str | Path | sqlite3.Connection,
         quarantine_dir: Path | str | None = None,
     ) -> None:
         self._db_or_conn = db
@@ -179,7 +181,7 @@ class ScopedDeletionManager:
             self.quarantine_dir = Path(quarantine_dir)
         elif isinstance(db, (str, Path)):
             self.quarantine_dir = Path(db).parent / "quarantine"
-        elif isinstance(db, DebataDB):
+        elif isinstance(db, KarenDB):
             self.quarantine_dir = db.path.parent / "quarantine"
         else:
             self.quarantine_dir = Path("./data/quarantine")
@@ -189,10 +191,10 @@ class ScopedDeletionManager:
     def _get_connection(self) -> sqlite3.Connection:
         if isinstance(self._db_or_conn, sqlite3.Connection):
             return self._db_or_conn
-        if isinstance(self._db_or_conn, DebataDB):
+        if isinstance(self._db_or_conn, KarenDB):
             return self._db_or_conn.connect()
-        debata_db = DebataDB(self._db_or_conn)
-        return debata_db.connect()
+        karen_db = KarenDB(self._db_or_conn)
+        return karen_db.connect()
 
     def _ensure_schema(self) -> None:
         conn = self._get_connection()

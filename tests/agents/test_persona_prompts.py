@@ -384,11 +384,11 @@ def test_behavior_prompt_does_not_hardcode_persona_replies():
 # ============================================================
 
 
-def _persona(prompt: str = "你是 Debata", admins: list[dict] | None = None) -> Persona:
+def _persona(prompt: str = "你是 Karen", admins: list[dict] | None = None) -> Persona:
     return Persona(
         name="test",
         prompt=prompt,
-        vars={"name": "Debata", "admins": admins or []},
+        vars={"name": "Karen", "admins": admins or []},
     )
 
 

@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import sqlite3
 from pathlib import Path
@@ -18,18 +21,20 @@ from typing import Any
 import pytest
 
 from core.chat_pagination import (
+    _CURSOR_KEY,
     ChatPageRequest,
     ChatPaginationError,
     ChatPaginationManager,
+    _decode_cursor,
 )
 from core.d01 import migrate_database
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 @pytest.fixture
-def chat_db(tmp_path: Path) -> tuple[DebataDB, sqlite3.Connection]:
-    db_file = tmp_path / "debata_chat_page.db"
-    db = DebataDB(db_file)
+def chat_db(tmp_path: Path) -> tuple[KarenDB, sqlite3.Connection]:
+    db_file = tmp_path / "karen_chat_page.db"
+    db = KarenDB(db_file)
     db.load()
     migrate_database(db_file)
     conn = db.connect()
@@ -82,7 +87,7 @@ def _insert_record(
     conn.commit()
 
 
-def test_keyset_scrolling_and_has_more(chat_db: tuple[DebataDB, sqlite3.Connection]) -> None:
+def test_keyset_scrolling_and_has_more(chat_db: tuple[KarenDB, sqlite3.Connection]) -> None:
     db, conn = chat_db
     # 插入 15 条按时间递增的消息
     for i in range(15):
@@ -139,7 +144,51 @@ def test_keyset_scrolling_and_has_more(chat_db: tuple[DebataDB, sqlite3.Connecti
     assert [m["content"] for m in res3.items] == ["msg_0", "msg_1", "msg_2", "msg_3", "msg_4"]
 
 
-def test_opaque_cursor_tamper_detection(chat_db: tuple[DebataDB, sqlite3.Connection]) -> None:
+def test_cursor_signature_containing_dot_still_decodes() -> None:
+    """签名是二进制，可能包含分隔符 b'.'，不能用 rsplit 解析。"""
+    for tie_breaker_id in range(1, 5000):
+        payload = json.dumps(
+            {
+                "s": "all",
+                "c": "group:1001",
+                "t": "2026-10-28T10:10:00Z",
+                "i": tie_breaker_id,
+                "v": 1,
+                "d": "backward",
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        sig = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()[:12]
+        if b"." not in sig:
+            continue
+        token = base64.urlsafe_b64encode(payload + b"." + sig).decode("ascii")
+        assert _decode_cursor(token).tie_breaker_id == tie_breaker_id
+        return
+    pytest.fail("failed to find a cursor signature containing a dot byte")
+
+
+def test_legacy_cursor_key_is_still_accepted() -> None:
+    """改名后旧 cursor 仍应能解码，避免升级瞬间让已发出的游标失效。"""
+    payload = json.dumps(
+        {
+            "s": "all",
+            "c": "group:1001",
+            "t": "2026-10-28T10:10:00Z",
+            "i": 11,
+            "v": 1,
+            "d": "backward",
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    sig = hmac.new(
+        b"debata-chat-cursor-key-v2.6", payload, hashlib.sha256
+    ).digest()[:12]
+    token = base64.urlsafe_b64encode(payload + b"." + sig).decode("ascii")
+
+    assert _decode_cursor(token).tie_breaker_id == 11
+
+
+def test_opaque_cursor_tamper_detection(chat_db: tuple[KarenDB, sqlite3.Connection]) -> None:
     _, conn = chat_db
     mgr = ChatPaginationManager(conn)
 
@@ -165,7 +214,7 @@ def test_opaque_cursor_tamper_detection(chat_db: tuple[DebataDB, sqlite3.Connect
     assert exc_info2.value.code in {"cursor_invalid_signature", "cursor_malformed"}
 
 
-def test_tombstone_instant_read_fence(chat_db: tuple[DebataDB, sqlite3.Connection]) -> None:
+def test_tombstone_instant_read_fence(chat_db: tuple[KarenDB, sqlite3.Connection]) -> None:
     _, conn = chat_db
     for i in range(5):
         _insert_record(
@@ -199,7 +248,7 @@ def test_tombstone_instant_read_fence(chat_db: tuple[DebataDB, sqlite3.Connectio
     assert contents == ["item_0", "item_1", "item_3", "item_4"]
 
 
-def test_tool_group_boundary_pairing(chat_db: tuple[DebataDB, sqlite3.Connection]) -> None:
+def test_tool_group_boundary_pairing(chat_db: tuple[KarenDB, sqlite3.Connection]) -> None:
     _, conn = chat_db
     # 模拟历史：普通消息 -> assistant 调用天气工具 -> 工具结果 -> 普通消息
     _insert_record(conn, index=0, role="user", content="msg 0", created_at="2026-10-28T10:00:00Z")

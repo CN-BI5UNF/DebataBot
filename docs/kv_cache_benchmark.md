@@ -86,7 +86,7 @@ venv/Scripts/python -m pytest tests/test_kv_cache_real.py -m live -s
 > 这一节不是 live API 命中率，而是对真实实例历史做的只读 prompt 估算，
 > 用于说明上下文治理的降幅。实际缓存命中率仍需部署后重跑 live 测试。
 
-数据来源：`~/.local/share/Debata_Agent/instances/default/memory/小堡/小堡.db`
+数据来源：`~/.local/share/KarenBot/instances/default/memory/小堡/小堡.db`
 （活跃窗口 568 条记录），脚本 `scripts/benchmark_prompt_tokens.py`。
 
 | 指标 | 重构前 | 重构后 | 变化 |
@@ -108,7 +108,7 @@ venv/Scripts/python -m pytest tests/test_kv_cache_real.py -m live -s
 
 ```bash
 .venv/bin/python scripts/benchmark_prompt_tokens.py \
-  --db ~/.local/share/Debata_Agent/instances/default/memory/小堡/小堡.db \
+  --db ~/.local/share/KarenBot/instances/default/memory/小堡/小堡.db \
   --persona 小堡 --model deepseek-flash
 ```
 

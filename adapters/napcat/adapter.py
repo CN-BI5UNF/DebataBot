@@ -56,7 +56,7 @@ _LOOPBACK_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
 def _server_bind_host(host: str) -> str:
     """server 模式监听地址。
 
-    这里的 host 是 Debata 监听的本机地址，不是 NapCat 设备地址。
+    这里的 host 是 Karen 监听的本机地址，不是 NapCat 设备地址。
     用户在反向 WS 场景里容易填 localhost；跨设备时这会导致 NapCat 永远连不进来。
     """
     raw = (host or "").strip()

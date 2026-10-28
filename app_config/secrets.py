@@ -233,7 +233,7 @@ class SecretsManager:
         try:
             keyring.get_password(
                 self.paths.KEYRING_SERVICE,
-                "__debata_keyring_probe__",
+                "__karen_keyring_probe__",
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(
@@ -278,17 +278,17 @@ class SecretsManager:
         """从 keyring 拼回完整 RSA 私钥 PEM。第 0 段不存在返回 None。"""
         if not self._keyring_available():
             return self._load_rsa_private_from_file()
-        first = keyring.get_password(
-            self.paths.KEYRING_SERVICE, self._rsa_part_name(0)
-        )
+        source_service = self.paths.KEYRING_SERVICE
+        first = keyring.get_password(source_service, self._rsa_part_name(0))
+        if first is None:
+            source_service = self.paths.LEGACY_KEYRING_SERVICE
+            first = keyring.get_password(source_service, self._rsa_part_name(0))
         if first is None:
             return self._load_rsa_private_from_file()
         parts: list[str] = [first]
         i = 1
         while True:
-            part = keyring.get_password(
-                self.paths.KEYRING_SERVICE, self._rsa_part_name(i)
-            )
+            part = keyring.get_password(source_service, self._rsa_part_name(i))
             if part is None:
                 break
             parts.append(part)
@@ -319,6 +319,11 @@ class SecretsManager:
                 priv_exists = (
                     keyring.get_password(
                         self.paths.KEYRING_SERVICE,
+                        self._rsa_part_name(0),
+                    )
+                    is not None
+                    or keyring.get_password(
+                        self.paths.LEGACY_KEYRING_SERVICE,
                         self._rsa_part_name(0),
                     )
                     is not None

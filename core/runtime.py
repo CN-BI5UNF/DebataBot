@@ -147,7 +147,7 @@ class Runtime:
         self.paths = AppPaths(project_root=self.project_root, config_file=self._config_file)
         self.paths.ensure_data_dirs()
         initialize_runtime_data(self.paths, project_root=self.project_root)
-        os.environ.setdefault("DEBATA_MODELS_DIR", str(self.paths.MODELS_DIR.resolve()))
+        os.environ.setdefault("KAREN_MODELS_DIR", str(self.paths.MODELS_DIR.resolve()))
         self.secrets = SecretsManager(self.paths)
         self.secrets.initialize()
         self.config = load_config(self.paths)
@@ -224,16 +224,16 @@ class Runtime:
         stage_t0 = time.monotonic()
         from memory import (
             ArchiveStore,
-            DebataArchiveStore,
-            DebataEventStore,
-            DebataHistoryStore,
-            DebataImportantStore,
-            DebataPersonaDB,
-            DebataRollingSummaryStore,
-            DebataUsageStatsStore,
             EventJournal,
             HistoryManager,
             ImportantMemoryManager,
+            KarenArchiveStore,
+            KarenEventStore,
+            KarenHistoryStore,
+            KarenImportantStore,
+            KarenPersonaDB,
+            KarenRollingSummaryStore,
+            KarenUsageStatsStore,
             import_legacy_memory_files_async,
         )
 
@@ -254,16 +254,16 @@ class Runtime:
                 usage_source_path=usage_source_path,
                 skip_existing_domains=True,
             )
-        self.usage_stats = DebataUsageStatsStore(runtime_db_path, self.persona.name)
+        self.usage_stats = KarenUsageStatsStore(runtime_db_path, self.persona.name)
         await self.usage_stats.load()
-        event_store = DebataEventStore(runtime_db_path, self.persona.name)
+        event_store = KarenEventStore(runtime_db_path, self.persona.name)
         self.event_store = EventJournal(event_store)
         await self.event_store.start()
         storage_cfg = getattr(getattr(self.config, "storage", None), "maintenance", None)
         self.history = HistoryManager(
             mem_dir / "history.jsonl",
             event_store=self.event_store,
-            store=DebataHistoryStore(
+            store=KarenHistoryStore(
                 runtime_db_path,
                 self.persona.name,
                 page_cache_max_bytes=int(
@@ -274,9 +274,9 @@ class Runtime:
             ),
         )
         important_path = mem_dir / "important.json"
-        important_store = DebataImportantStore(runtime_db_path, self.persona.name)
+        important_store = KarenImportantStore(runtime_db_path, self.persona.name)
         if self._persona_management_enabled():
-            self.persona_db = DebataPersonaDB(runtime_db_path, self.persona.name)
+            self.persona_db = KarenPersonaDB(runtime_db_path, self.persona.name)
             await self.persona_db.load()
         self.important = ImportantMemoryManager(
             important_path,
@@ -284,9 +284,9 @@ class Runtime:
         )
         self.archive = ArchiveStore(
             mem_dir / "archive.sqlite3",
-            store=DebataArchiveStore(runtime_db_path, self.persona.name),
+            store=KarenArchiveStore(runtime_db_path, self.persona.name),
         )
-        self.rolling_summary = DebataRollingSummaryStore(runtime_db_path, self.persona.name)
+        self.rolling_summary = KarenRollingSummaryStore(runtime_db_path, self.persona.name)
         # 历史不再在启动时整库加载进内存；普通读取走分页缓存，显式
         # load()/records() 仍保留给导出、聊天页与 RAG 兼容路径。
         await self.important.load()
@@ -1126,11 +1126,11 @@ class Runtime:
                 for table, source_paths in legacy_sources.items():
                     if not any(path.exists() for path in source_paths):
                         continue
-                    if self._debata_persona_row_count(conn, table, persona_id) == 0:
+                    if self._karen_persona_row_count(conn, table, persona_id) == 0:
                         return True
                 if (
                     persona_db_path.exists()
-                    and self._debata_persona_state_row_count(conn, persona_id) == 0
+                    and self._karen_persona_state_row_count(conn, persona_id) == 0
                 ):
                     return True
         except Exception as e:  # noqa: BLE001
@@ -1142,7 +1142,7 @@ class Runtime:
         return False
 
     @staticmethod
-    def _debata_persona_row_count(conn: Any, table: str, persona_id: str) -> int:
+    def _karen_persona_row_count(conn: Any, table: str, persona_id: str) -> int:
         allowed_tables = {
             "history_records",
             "important_memories",
@@ -1152,7 +1152,7 @@ class Runtime:
             "usage_records",
         }
         if table not in allowed_tables:
-            raise ValueError(f"unsupported debata import gate table: {table}")
+            raise ValueError(f"unsupported karen import gate table: {table}")
         row = conn.execute(
             f"""
             SELECT COUNT(*)
@@ -1164,7 +1164,7 @@ class Runtime:
         return int(row[0])
 
     @staticmethod
-    def _debata_persona_state_row_count(conn: Any, persona_id: str) -> int:
+    def _karen_persona_state_row_count(conn: Any, persona_id: str) -> int:
         tables = (
             "persona_schema_version_legacy",
             "persona_state",

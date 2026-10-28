@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <title>Debata_Agent 控制台</title>
+  <title>KarenBot 控制台</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <!-- 无构建步骤：用版本查询串让升级后的浏览器立即丢弃旧 CSS/入口模块。 -->
   <link rel="stylesheet" href="/static/app.css?v=20261023-2">
@@ -13,10 +13,10 @@
   <!-- 登录遮罩：需要令牌时先挡住整个界面 -->
   <div id="login-gate" class="gate hidden">
     <form class="gate-card" id="login-form">
-      <div class="gate-brand">Debata_Agent</div>
+      <div class="gate-brand">KarenBot</div>
       <p class="gate-hint">
         WebUI 能查看全部聊天记录并修改配置，因此需要访问令牌。<br>
-        令牌在启动 Debata 的终端里打印，也保存在数据目录的
+        令牌在启动 Karen 的终端里打印，也保存在数据目录的
         <code>webui_token.txt</code>。
       </p>
       <input type="password" id="login-token" placeholder="访问令牌" autocomplete="current-password"
@@ -36,7 +36,7 @@
 
   <div id="shell" class="shell hidden">
     <aside class="sidebar">
-      <div class="brand">Debata_Agent</div>
+      <div class="brand">KarenBot</div>
       <nav class="nav" id="nav"></nav>
       <div class="sidebar-foot">
         <div class="conn" id="side-conn">

@@ -9,19 +9,19 @@ from pathlib import Path
 import orjson
 import pytest
 
-from memory.debata_db import DebataDB
-from memory.debata_stores import DebataUsageStatsStore
+from memory.karen_db import KarenDB
+from memory.karen_stores import KarenUsageStatsStore
 from providers.base import Usage
 
 
 @pytest.mark.asyncio
-async def test_debata_usage_stats_store_records_and_summarizes_ranges(tmp_path, monkeypatch):
-    db_path = tmp_path / "debata.db"
+async def test_karen_usage_stats_store_records_and_summarizes_ranges(tmp_path, monkeypatch):
+    db_path = tmp_path / "karen.db"
     now = time.mktime((2026, 6, 4, 12, 0, 0, 3, 155, -1))
     current_time = now - 2 * 86400
     monkeypatch.setattr(time, "time", lambda: current_time)
 
-    store = DebataUsageStatsStore(db_path, "yuexi")
+    store = KarenUsageStatsStore(db_path, "yuexi")
     await store.load()
     await store.record(
         Usage(prompt_tokens=50, completion_tokens=10, total_tokens=60),
@@ -63,16 +63,16 @@ async def test_debata_usage_stats_store_records_and_summarizes_ranges(tmp_path, 
     assert all_time.completion_tokens == 30
     assert all_time.total_tokens == 180
 
-    reloaded = DebataUsageStatsStore(db_path, "yuexi")
+    reloaded = KarenUsageStatsStore(db_path, "yuexi")
     await reloaded.load()
     assert reloaded.count == 2
     assert reloaded.summarize("all") == all_time
 
 
 @pytest.mark.asyncio
-async def test_debata_usage_stats_store_zero_tokens_do_not_write(tmp_path):
-    db_path = tmp_path / "debata.db"
-    store = DebataUsageStatsStore(db_path, "yuexi")
+async def test_karen_usage_stats_store_zero_tokens_do_not_write(tmp_path):
+    db_path = tmp_path / "karen.db"
+    store = KarenUsageStatsStore(db_path, "yuexi")
     await store.load()
 
     await store.record(
@@ -89,11 +89,11 @@ async def test_debata_usage_stats_store_zero_tokens_do_not_write(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_debata_usage_stats_store_preserves_extra_and_extracted_columns(tmp_path, monkeypatch):
-    db_path = tmp_path / "debata.db"
+async def test_karen_usage_stats_store_preserves_extra_and_extracted_columns(tmp_path, monkeypatch):
+    db_path = tmp_path / "karen.db"
     now = time.mktime((2026, 6, 4, 12, 0, 0, 3, 155, -1))
     monkeypatch.setattr(time, "time", lambda: now)
-    store = DebataUsageStatsStore(db_path, "  yuexi  ")
+    store = KarenUsageStatsStore(db_path, "  yuexi  ")
 
     await store.record(
         Usage(prompt_tokens=10, completion_tokens=1, total_tokens=0),
@@ -139,22 +139,22 @@ async def test_debata_usage_stats_store_preserves_extra_and_extracted_columns(tm
 
 
 @pytest.mark.asyncio
-async def test_debata_usage_stats_store_persona_scope_loads_all_or_one(tmp_path):
-    db_path = tmp_path / "debata.db"
-    yuexi = DebataUsageStatsStore(db_path, "yuexi")
-    jiu = DebataUsageStatsStore(db_path, "jiu")
-    unscoped = DebataUsageStatsStore(db_path, "")
+async def test_karen_usage_stats_store_persona_scope_loads_all_or_one(tmp_path):
+    db_path = tmp_path / "karen.db"
+    yuexi = KarenUsageStatsStore(db_path, "yuexi")
+    jiu = KarenUsageStatsStore(db_path, "jiu")
+    unscoped = KarenUsageStatsStore(db_path, "")
 
     await yuexi.record(Usage(prompt_tokens=1), agent="yuexi")
     await jiu.record(Usage(prompt_tokens=2), agent="jiu")
     await unscoped.record(Usage(prompt_tokens=3), agent="global")
 
-    all_records = DebataUsageStatsStore(db_path)
+    all_records = KarenUsageStatsStore(db_path)
     await all_records.load()
     assert all_records.count == 3
     assert all_records.summarize("all").prompt_tokens == 6
 
-    yuexi_only = DebataUsageStatsStore(db_path, "yuexi")
+    yuexi_only = KarenUsageStatsStore(db_path, "yuexi")
     await yuexi_only.load()
     assert yuexi_only.count == 1
     assert yuexi_only.summarize("all").prompt_tokens == 1
@@ -164,14 +164,14 @@ async def test_debata_usage_stats_store_persona_scope_loads_all_or_one(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_debata_usage_stats_store_skips_broken_record_json_on_load(tmp_path, caplog):
-    db_path = tmp_path / "debata.db"
-    store = DebataUsageStatsStore(db_path, "yuexi")
+async def test_karen_usage_stats_store_skips_broken_record_json_on_load(tmp_path, caplog):
+    db_path = tmp_path / "karen.db"
+    store = KarenUsageStatsStore(db_path, "yuexi")
     await store.record(Usage(prompt_tokens=10), agent="ok")
     _insert_usage_record_json(db_path, persona_id="yuexi", record_json="{broken")
     _insert_usage_record_json(db_path, persona_id="yuexi", record_json="[]")
 
-    reloaded = DebataUsageStatsStore(db_path, "yuexi")
+    reloaded = KarenUsageStatsStore(db_path, "yuexi")
     with caplog.at_level("WARNING"):
         await reloaded.load()
 
@@ -180,19 +180,19 @@ async def test_debata_usage_stats_store_skips_broken_record_json_on_load(tmp_pat
     assert "usage record_json" in caplog.text
 
 
-def test_memory_package_exports_debata_usage_stats_store():
-    from memory import DebataUsageStatsStore as PackageDebataUsageStatsStore
+def test_memory_package_exports_karen_usage_stats_store():
+    from memory import KarenUsageStatsStore as PackageKarenUsageStatsStore
 
-    assert PackageDebataUsageStatsStore is DebataUsageStatsStore
+    assert PackageKarenUsageStatsStore is KarenUsageStatsStore
 
 
-def test_memory_import_exports_debata_usage_stats_store_without_core_cycle():
+def test_memory_import_exports_karen_usage_stats_store_without_core_cycle():
     result = subprocess.run(
         [
             sys.executable,
             "-B",
             "-c",
-            "import memory; from memory import DebataUsageStatsStore",
+            "import memory; from memory import KarenUsageStatsStore",
         ],
         check=False,
         capture_output=True,
@@ -221,7 +221,7 @@ def _insert_usage_record_json(
     persona_id: str | None,
     record_json: str,
 ) -> None:
-    db = DebataDB(db_path)
+    db = KarenDB(db_path)
     try:
         db.load()
         db.connect().execute(
@@ -239,8 +239,8 @@ def _insert_usage_record_json(
 
 
 @pytest.mark.asyncio
-async def test_debata_store_separates_legacy_v2_and_future(tmp_path):
-    store = DebataUsageStatsStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_store_separates_legacy_v2_and_future(tmp_path):
+    store = KarenUsageStatsStore(tmp_path / "karen.db", "yuexi")
     await store.load()
     await store.record(
         Usage(prompt_tokens=100, cached_tokens=70, total_tokens=120),
@@ -261,6 +261,6 @@ async def test_debata_store_separates_legacy_v2_and_future(tmp_path):
     assert summary.current_prompt_tokens == 185
     assert summary.cache_hit_rate == 70 / 185
 
-    reloaded = DebataUsageStatsStore(tmp_path / "debata.db", "yuexi")
+    reloaded = KarenUsageStatsStore(tmp_path / "karen.db", "yuexi")
     await reloaded.load()
     assert reloaded.summarize("all") == summary

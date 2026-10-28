@@ -27,7 +27,7 @@ _SOURCE_SUFFIXES = {
 }
 # 明确的源码/测试/文档/部署目录白名单；不靠黑名单扫描整个项目。
 _SOURCE_ROOTS = {
-    "adapters", "agents", "app_config", "core", "debata", "deploy",
+    "adapters", "agents", "app_config", "core", "karen", "deploy",
     "docs", "features", "mind", "plugins", "providers", "releases",
     "scripts", "tests", "tools", "utils", "webui",
 }

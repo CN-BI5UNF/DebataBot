@@ -1,6 +1,6 @@
-# Debata 插件规范（Plugin Spec）
+# Karen 插件规范（Plugin Spec）
 
-Debata 的插件用来接「本地模型 / 重资源依赖」的可选能力（TTS / 本地 embedding 等）。
+Karen 的插件用来接「本地模型 / 重资源依赖」的可选能力（TTS / 本地 embedding 等）。
 主程序只依赖 `features/` 下定义的**轻量接口**，插件提供具体实现 + 重依赖。
 
 ## 目录布局
@@ -136,7 +136,7 @@ if cfg.features.tts.enabled and cfg.features.tts.type == "local":
 `tools/feature_tools.py` 会按 `ctx.tts is None` 决定 `send_voice_message` 是否实际工作；
 `tools/__init__.py::build_default_registry` 按 `features.tts.enabled` 决定要不要注册该工具。
 
-ASR 已从项目中移除。QQ 语音转写走 NapCat 内置 `fetch_ptt_text`，无需 Debata 侧再做语音识别。
+ASR 已从项目中移除。QQ 语音转写走 NapCat 内置 `fetch_ptt_text`，无需 Karen 侧再做语音识别。
 
 ## 给开发者的清单
 
@@ -144,5 +144,5 @@ ASR 已从项目中移除。QQ 语音转写走 NapCat 内置 `fetch_ptt_text`，
 1. 在 `plugins/{你的插件名}/__plugin__.py` 按上面格式写 `PLUGIN_META` 和 `build(config)`
 2. 实装类放在同目录其它 `.py`，lazy import
 3. 模型文件放 `data/models/{你的 model_dir}/`
-4. 启动 Debata → 模型管理页应能看到你的插件，并能打开安装指引
+4. 启动 Karen → 模型管理页应能看到你的插件，并能打开安装指引
 5. 设置页对应 feature 节会出现你的插件名（下拉选择），在这里启用并配置

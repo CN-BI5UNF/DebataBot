@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 logger = logging.getLogger(__name__)
 
@@ -100,17 +100,17 @@ def _now_iso() -> str:
 class MediaCatalogManager:
     """管理媒体资产目录、来源权益与 Ingest 预留。"""
 
-    def __init__(self, db: DebataDB | str | Path | sqlite3.Connection) -> None:
+    def __init__(self, db: KarenDB | str | Path | sqlite3.Connection) -> None:
         self._db_or_conn = db
         self._ensure_schema()
 
     def _get_connection(self) -> sqlite3.Connection:
         if isinstance(self._db_or_conn, sqlite3.Connection):
             return self._db_or_conn
-        if isinstance(self._db_or_conn, DebataDB):
+        if isinstance(self._db_or_conn, KarenDB):
             return self._db_or_conn.connect()
-        debata_db = DebataDB(self._db_or_conn)
-        return debata_db.connect()
+        karen_db = KarenDB(self._db_or_conn)
+        return karen_db.connect()
 
     def _ensure_schema(self) -> None:
         conn = self._get_connection()

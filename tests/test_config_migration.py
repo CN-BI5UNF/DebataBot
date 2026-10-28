@@ -9,7 +9,7 @@ from app_config.schema import RootConfig
 def _legacy_config() -> dict:
     return {
         "version": 1,
-        "app": {"name": "Debata_Agent"},
+        "app": {"name": "KarenBot"},
         "adapters": {
             "default": {
                 "type": "napcat",

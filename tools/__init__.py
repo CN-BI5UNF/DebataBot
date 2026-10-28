@@ -1,4 +1,4 @@
-"""Debata_Agent 工具系统。
+"""KarenBot 工具系统。
 
 模块组成：
     base                —— ITool / ToolContext / ToolRegistry / @tool 装饰器

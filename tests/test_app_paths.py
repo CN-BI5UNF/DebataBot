@@ -4,7 +4,7 @@ from app_config.paths import AppPaths
 
 
 def test_explicit_project_root_keeps_legacy_data_dir(tmp_path, monkeypatch):
-    monkeypatch.delenv("DEBATA_DATA_ROOT", raising=False)
+    monkeypatch.delenv("KAREN_DATA_ROOT", raising=False)
 
     paths = AppPaths(project_root=tmp_path)
 
@@ -17,7 +17,7 @@ def test_explicit_project_root_keeps_legacy_data_dir(tmp_path, monkeypatch):
 
 
 def test_explicit_data_root_uses_default_instance_dir(tmp_path, monkeypatch):
-    monkeypatch.delenv("DEBATA_DATA_ROOT", raising=False)
+    monkeypatch.delenv("KAREN_DATA_ROOT", raising=False)
     data_root = tmp_path / "external-data"
 
     paths = AppPaths(project_root=tmp_path, data_root=data_root)
@@ -32,7 +32,7 @@ def test_explicit_data_root_uses_default_instance_dir(tmp_path, monkeypatch):
 
 def test_env_data_root_overrides_project_root(tmp_path, monkeypatch):
     env_data_root = tmp_path / "env-data"
-    monkeypatch.setenv("DEBATA_DATA_ROOT", str(env_data_root))
+    monkeypatch.setenv("KAREN_DATA_ROOT", str(env_data_root))
 
     paths = AppPaths(project_root=tmp_path)
 
@@ -42,8 +42,8 @@ def test_env_data_root_overrides_project_root(tmp_path, monkeypatch):
 
 
 def test_empty_dev_marker_uses_project_data_dir(tmp_path, monkeypatch):
-    monkeypatch.delenv("DEBATA_DATA_ROOT", raising=False)
-    (tmp_path / ".debata-dev-data-root").write_text("", encoding="utf-8")
+    monkeypatch.delenv("KAREN_DATA_ROOT", raising=False)
+    (tmp_path / ".karen-dev-data-root").write_text("", encoding="utf-8")
 
     paths = AppPaths(project_root=tmp_path)
 
@@ -53,19 +53,19 @@ def test_empty_dev_marker_uses_project_data_dir(tmp_path, monkeypatch):
 
 
 def test_relative_dev_marker_resolves_from_project_root(tmp_path, monkeypatch):
-    monkeypatch.delenv("DEBATA_DATA_ROOT", raising=False)
-    (tmp_path / ".debata-dev-data-root").write_text("var/debata", encoding="utf-8")
+    monkeypatch.delenv("KAREN_DATA_ROOT", raising=False)
+    (tmp_path / ".karen-dev-data-root").write_text("var/karen", encoding="utf-8")
 
     paths = AppPaths(project_root=tmp_path)
 
-    data_root = tmp_path / "var" / "debata"
+    data_root = tmp_path / "var" / "karen"
     assert paths.ROOT_DATA_DIR == data_root
     assert paths.INSTANCE_DIR == data_root / "instances" / "default"
     assert paths.DATA_DIR == paths.INSTANCE_DIR
 
 
 def test_instance_name_changes_instance_dir(tmp_path, monkeypatch):
-    monkeypatch.delenv("DEBATA_DATA_ROOT", raising=False)
+    monkeypatch.delenv("KAREN_DATA_ROOT", raising=False)
     data_root = tmp_path / "external-data"
 
     paths = AppPaths(project_root=tmp_path, data_root=data_root, instance_name="second")
@@ -77,7 +77,7 @@ def test_instance_name_changes_instance_dir(tmp_path, monkeypatch):
 
 
 def test_ensure_data_dirs_is_idempotent(tmp_path, monkeypatch):
-    monkeypatch.delenv("DEBATA_DATA_ROOT", raising=False)
+    monkeypatch.delenv("KAREN_DATA_ROOT", raising=False)
     paths = AppPaths(project_root=tmp_path, data_root=tmp_path / "external-data")
 
     paths.ensure_data_dirs()

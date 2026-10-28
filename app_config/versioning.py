@@ -18,7 +18,9 @@ except ModuleNotFoundError:  # pragma: no cover - 仅兼容 Python 3.10 环境
         tomllib = None  # type: ignore[assignment]
 
 
-PACKAGE_NAME = "debata_agent"
+PACKAGE_NAME = "karenbot"
+LEGACY_PACKAGE_NAME = "debata_agent"
+"""旧发行包名；升级后的旧 editable 安装仍可提供版本元数据。"""
 
 # 阶段 0 只登记当前版本占位，不在这里实现后续阶段的具体迁移。
 DEFAULT_SCHEMA_VERSIONS: dict[str, int] = {
@@ -26,7 +28,7 @@ DEFAULT_SCHEMA_VERSIONS: dict[str, int] = {
     "root": 2,
     "instance": 1,
     "secrets": 1,
-    "debata_db": 1,
+    "karen_db": 1,
     "persona_data": 1,
 }
 
@@ -290,10 +292,15 @@ def get_application_version(
 ) -> str:
     """读取运行时应用版本，源码树未安装时回退到 pyproject.toml。"""
 
-    try:
-        return importlib_metadata.version(package_name)
-    except importlib_metadata.PackageNotFoundError:
-        return read_pyproject_version(project_root)
+    names = [package_name]
+    if package_name == PACKAGE_NAME:
+        names.append(LEGACY_PACKAGE_NAME)
+    for name in names:
+        try:
+            return importlib_metadata.version(name)
+        except importlib_metadata.PackageNotFoundError:
+            continue
+    return read_pyproject_version(project_root)
 
 
 def read_pyproject_version(project_root: Path | None = None) -> str:

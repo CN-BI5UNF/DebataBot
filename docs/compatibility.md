@@ -96,7 +96,7 @@ UI 会显示“兼容性未通过”，禁用该版本的自动应用按钮，�
 
 ```bash
 python3 deploy/trusted_launcher.py \
-  --project-root /path/to/DebataBot \
+  --project-root /path/to/KarenBot \
   --data-dir /path/to/instances/default \
   --check-only --json
 ```
@@ -109,10 +109,10 @@ launcher 还检查维护 controller 状态，并绑定：
 - `--project-root`、`--data-dir` 和可选的 `--config`；
 - 目标 executable/入口必须在 project root 内，且入口为 `main.py`；
 - 命令中的 `--config` 必须与 launcher 检查的配置一致；
-- exec 前设置 `DEBATA_DATA_ROOT`，不继承可改写数据根的环境；
+- exec 前设置 `KAREN_DATA_ROOT`，不继承可改写数据根的环境；
 - 检查失败或 `setup_required` 未显式 `--allow-setup` 时不 exec。
 
-**没有安装到系统目录、没有改 `debata-agent.service`、没有重启**。
+**没有安装到系统目录、没有改 `karenbot.service`、没有重启**。
 安装/systemd/drop-in 需要当前明确授权；未部署时生产迁移仍 blocked。
 
 在受管部署中，建议流程：

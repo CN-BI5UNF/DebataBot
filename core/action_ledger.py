@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 from utils.token_budget import TokenEstimator
 
 logger = logging.getLogger(__name__)
@@ -76,16 +76,16 @@ def _has_table(conn: sqlite3.Connection, table_name: str) -> bool:
 class ActionLedgerManager:
     """管理 action_ledger 表的状态转换与持久化。"""
 
-    def __init__(self, db: DebataDB | str | Path | sqlite3.Connection) -> None:
+    def __init__(self, db: KarenDB | str | Path | sqlite3.Connection) -> None:
         self._db_or_conn = db
 
     def _connect(self) -> sqlite3.Connection:
         if isinstance(self._db_or_conn, sqlite3.Connection):
             return self._db_or_conn
-        if isinstance(self._db_or_conn, DebataDB):
+        if isinstance(self._db_or_conn, KarenDB):
             return self._db_or_conn.connect()
-        debata_db = DebataDB(self._db_or_conn)
-        return debata_db.connect()
+        karen_db = KarenDB(self._db_or_conn)
+        return karen_db.connect()
 
     def prepare_action(
         self,
@@ -218,16 +218,16 @@ class ActionLedgerManager:
 class TurnCheckpointManager:
     """管理 turn_checkpoints 表的水位与检查点。"""
 
-    def __init__(self, db: DebataDB | str | Path | sqlite3.Connection) -> None:
+    def __init__(self, db: KarenDB | str | Path | sqlite3.Connection) -> None:
         self._db_or_conn = db
 
     def _connect(self) -> sqlite3.Connection:
         if isinstance(self._db_or_conn, sqlite3.Connection):
             return self._db_or_conn
-        if isinstance(self._db_or_conn, DebataDB):
+        if isinstance(self._db_or_conn, KarenDB):
             return self._db_or_conn.connect()
-        debata_db = DebataDB(self._db_or_conn)
-        return debata_db.connect()
+        karen_db = KarenDB(self._db_or_conn)
+        return karen_db.connect()
 
     def open_turn(
         self,

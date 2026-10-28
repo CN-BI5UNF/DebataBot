@@ -6,14 +6,14 @@ from pathlib import Path
 import orjson
 import pytest
 
-from memory.debata_db import DebataDB
-from memory.debata_stores import DebataRollingSummaryStore
+from memory.karen_db import KarenDB
+from memory.karen_stores import KarenRollingSummaryStore
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_empty_load_defaults(tmp_path):
-    db_path = tmp_path / "debata.db"
-    store = DebataRollingSummaryStore(db_path, "yuexi")
+async def test_karen_rolling_summary_store_empty_load_defaults(tmp_path):
+    db_path = tmp_path / "karen.db"
+    store = KarenRollingSummaryStore(db_path, "yuexi")
 
     data = await store.load()
 
@@ -24,9 +24,9 @@ async def test_debata_rolling_summary_store_empty_load_defaults(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_update_roundtrip_and_columns(tmp_path):
-    db = DebataDB(tmp_path / "debata.db")
-    store = DebataRollingSummaryStore(db, "yuexi")
+async def test_karen_rolling_summary_store_update_roundtrip_and_columns(tmp_path):
+    db = KarenDB(tmp_path / "karen.db")
+    store = KarenRollingSummaryStore(db, "yuexi")
     archived_until = {
         "history_index": 12,
         "conversation_id": "private:42",
@@ -55,14 +55,14 @@ async def test_debata_rolling_summary_store_update_roundtrip_and_columns(tmp_pat
     assert orjson.loads(row["summary_json"]) == expected
     assert row["updated_at"] == "2026-06-18T12:00:00Z"
 
-    reloaded = DebataRollingSummaryStore(db.path, "yuexi")
+    reloaded = KarenRollingSummaryStore(db.path, "yuexi")
     assert await reloaded.load() == expected
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_active_start_index_updates_archived_until(tmp_path):
-    db_path = tmp_path / "debata.db"
-    store = DebataRollingSummaryStore(db_path, "yuexi")
+async def test_karen_rolling_summary_store_active_start_index_updates_archived_until(tmp_path):
+    db_path = tmp_path / "karen.db"
+    store = KarenRollingSummaryStore(db_path, "yuexi")
 
     await store.update(
         "摘要",
@@ -84,11 +84,11 @@ async def test_debata_rolling_summary_store_active_start_index_updates_archived_
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_wraps_non_dict_archived_until_with_active_start(
+async def test_karen_rolling_summary_store_wraps_non_dict_archived_until_with_active_start(
     tmp_path,
 ):
-    db_path = tmp_path / "debata.db"
-    store = DebataRollingSummaryStore(db_path, "yuexi")
+    db_path = tmp_path / "karen.db"
+    store = KarenRollingSummaryStore(db_path, "yuexi")
 
     await store.update("摘要", archived_until="legacy-marker", active_start_index=5)
 
@@ -109,9 +109,9 @@ async def test_debata_rolling_summary_store_wraps_non_dict_archived_until_with_a
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_preserves_none_archived_until(tmp_path):
-    db_path = tmp_path / "debata.db"
-    store = DebataRollingSummaryStore(db_path, "yuexi")
+async def test_karen_rolling_summary_store_preserves_none_archived_until(tmp_path):
+    db_path = tmp_path / "karen.db"
+    store = KarenRollingSummaryStore(db_path, "yuexi")
 
     await store.update("摘要", archived_until=None)
 
@@ -124,10 +124,10 @@ async def test_debata_rolling_summary_store_preserves_none_archived_until(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_persona_isolation(tmp_path):
-    db_path = tmp_path / "debata.db"
-    yuexi = DebataRollingSummaryStore(db_path, "yuexi")
-    jiu = DebataRollingSummaryStore(db_path, "jiu")
+async def test_karen_rolling_summary_store_persona_isolation(tmp_path):
+    db_path = tmp_path / "karen.db"
+    yuexi = KarenRollingSummaryStore(db_path, "yuexi")
+    jiu = KarenRollingSummaryStore(db_path, "jiu")
 
     await yuexi.update("月汐摘要", active_start_index=2)
     await jiu.update("玖摘要", active_start_index=9)
@@ -140,12 +140,12 @@ async def test_debata_rolling_summary_store_persona_isolation(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_falls_back_when_summary_json_is_broken(
+async def test_karen_rolling_summary_store_falls_back_when_summary_json_is_broken(
     tmp_path,
     caplog,
 ):
-    db_path = tmp_path / "debata.db"
-    db = DebataDB(db_path)
+    db_path = tmp_path / "karen.db"
+    db = KarenDB(db_path)
     try:
         db.load()
         db.connect().execute(
@@ -169,7 +169,7 @@ async def test_debata_rolling_summary_store_falls_back_when_summary_json_is_brok
     finally:
         db.close()
 
-    store = DebataRollingSummaryStore(db_path, "yuexi")
+    store = KarenRollingSummaryStore(db_path, "yuexi")
     with caplog.at_level("WARNING"):
         data = await store.load()
 
@@ -183,8 +183,8 @@ async def test_debata_rolling_summary_store_falls_back_when_summary_json_is_brok
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_merges_empty_summary_json_with_columns(tmp_path):
-    db_path = tmp_path / "debata.db"
+async def test_karen_rolling_summary_store_merges_empty_summary_json_with_columns(tmp_path):
+    db_path = tmp_path / "karen.db"
     _insert_rolling_summary_row(
         db_path,
         persona_id="yuexi",
@@ -195,7 +195,7 @@ async def test_debata_rolling_summary_store_merges_empty_summary_json_with_colum
         updated_at="2026-06-18T14:00:00Z",
     )
 
-    store = DebataRollingSummaryStore(db_path, "yuexi")
+    store = KarenRollingSummaryStore(db_path, "yuexi")
 
     assert await store.load() == {
         "summary_text": "列摘要",
@@ -206,8 +206,8 @@ async def test_debata_rolling_summary_store_merges_empty_summary_json_with_colum
 
 
 @pytest.mark.asyncio
-async def test_debata_rolling_summary_store_partial_summary_json_overrides_columns(tmp_path):
-    db_path = tmp_path / "debata.db"
+async def test_karen_rolling_summary_store_partial_summary_json_overrides_columns(tmp_path):
+    db_path = tmp_path / "karen.db"
     _insert_rolling_summary_row(
         db_path,
         persona_id="yuexi",
@@ -218,7 +218,7 @@ async def test_debata_rolling_summary_store_partial_summary_json_overrides_colum
         updated_at="2026-06-18T15:00:00Z",
     )
 
-    store = DebataRollingSummaryStore(db_path, "yuexi")
+    store = KarenRollingSummaryStore(db_path, "yuexi")
 
     assert await store.load() == {
         "summary_text": "json 摘要",
@@ -229,10 +229,10 @@ async def test_debata_rolling_summary_store_partial_summary_json_overrides_colum
     assert store.active_start_index() == 6
 
 
-def test_memory_package_exports_debata_rolling_summary_store():
-    from memory import DebataRollingSummaryStore as PackageDebataRollingSummaryStore
+def test_memory_package_exports_karen_rolling_summary_store():
+    from memory import KarenRollingSummaryStore as PackageKarenRollingSummaryStore
 
-    assert PackageDebataRollingSummaryStore is DebataRollingSummaryStore
+    assert PackageKarenRollingSummaryStore is KarenRollingSummaryStore
 
 
 def _rolling_summary_rows(db_path: Path) -> list[dict]:
@@ -273,7 +273,7 @@ def _insert_rolling_summary_row(
     summary_json: object,
     updated_at: str,
 ) -> None:
-    db = DebataDB(db_path)
+    db = KarenDB(db_path)
     try:
         db.load()
         db.connect().execute(

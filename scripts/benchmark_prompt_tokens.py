@@ -2,7 +2,7 @@
 
 用法：
     .venv/bin/python scripts/benchmark_prompt_tokens.py \
-      --db ~/.local/share/Debata_Agent/instances/default/memory/小堡/小堡.db \
+      --db ~/.local/share/KarenBot/instances/default/memory/小堡/小堡.db \
       --persona 小堡 --model deepseek-flash
 
 不会写数据库、不会调用模型、不会修改任何文件。
@@ -295,7 +295,7 @@ async def _synthetic_image_metrics(*, rounds: int, seed: int) -> dict[str, Any]:
         image.save(buffer, format="PNG")
         image_bytes.append(buffer.getvalue())
 
-    with tempfile.TemporaryDirectory(prefix="debata-benchmark-images-") as root:
+    with tempfile.TemporaryDirectory(prefix="karen-benchmark-images-") as root:
         workspace = Path(root) / "workspace"
         store = ImageAssetStore(workspace, limits=limits)
         refs: list[dict[str, Any]] = []
@@ -435,7 +435,7 @@ def _synthetic_payload(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _print_synthetic(payload: dict[str, Any]) -> None:
-    print("Debata 合成缓存/图片 benchmark（无网络、无 Runtime、无生产数据）")
+    print("Karen 合成缓存/图片 benchmark（无网络、无 Runtime、无生产数据）")
     print(f"  scenario={payload['scenario']} seed={payload['seed']} "
           f"rounds={payload['rounds']} repeats={payload['repeats']}")
     text = payload["scenarios"].get("text")
@@ -482,7 +482,7 @@ def _print_synthetic(payload: dict[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", help="Debata 人格 SQLite 路径（非合成模式必填）")
+    parser.add_argument("--db", help="Karen 人格 SQLite 路径（非合成模式必填）")
     parser.add_argument("--persona", default="小堡", help="人格名")
     parser.add_argument("--model", default="deepseek-flash", help="用于 tokenizer 的模型名")
     parser.add_argument("--memory-mode", default="file", choices=["file", "rag"])
@@ -602,7 +602,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
-    print("Debata prompt token benchmark（只读估算）")
+    print("Karen prompt token benchmark（只读估算）")
     print(f"  数据库        : {args.db}")
     print(f"  活跃记录      : {len(records)} -> {len(view.records)}")
     print(f"  活跃 token    : {raw_tokens:,} -> {view_tokens:,} "

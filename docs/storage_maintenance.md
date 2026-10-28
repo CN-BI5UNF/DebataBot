@@ -33,7 +33,7 @@
 
 ## 历史分页
 
-`DebataHistoryStore` 保留 `load()` / `records()` 作为显式全量兼容入口，新增：
+`KarenHistoryStore` 保留 `load()` / `records()` 作为显式全量兼容入口，新增：
 
 - `length()`：未建立全量缓存时走 SQL 有效记录计数。
 - `fetch_suffix(start)`：只读位置 `start` 之后的活跃后缀。

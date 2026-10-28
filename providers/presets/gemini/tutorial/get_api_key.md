@@ -11,6 +11,6 @@ Gemini 系列模型，原生多模态支持，免费额度大方。
 
 免费额度足够个人日常使用。超量后按 token 计费。详见 [Gemini 定价](https://ai.google.dev/pricing)。
 
-## 3. 填入 Debata
+## 3. 填入 Karen
 
 向导自定义路径 → 选 **Gemini** → 粘贴 API Key → 选模型（如 gemini-2.5-flash）→ 保存。

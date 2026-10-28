@@ -1,10 +1,10 @@
 """整进程重启后端：systemd 用户/系统服务或内置后台模式。
 
-systemd 判定必须看当前进程 cgroup 是否真的属于 Debata 的 unit。从桌面、
+systemd 判定必须看当前进程 cgroup 是否真的属于 Karen 的 unit。从桌面、
 VNC 或其他 systemd 服务里启动时，环境里可能残留 ``INVOCATION_ID``、
 ``JOURNAL_STREAM`` 等变量（它们属于外层会话服务）；只看环境变量会误以为
 当前进程受 systemd 管理，进而执行一个并不存在的
-``systemctl --user restart debata-agent.service``，结果静默失败。
+``systemctl --user restart karenbot.service``，结果静默失败。
 
 没有 systemd 管理时，用独立 session 启动 ``main.py restart-helper``，
 由它等待旧进程退出后再拉起新进程；helper 不受旧进程退出影响。
@@ -24,7 +24,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SYSTEMD_UNIT_NAME = "debata-agent.service"
+SYSTEMD_UNIT_NAME = "karenbot.service"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -37,9 +37,9 @@ def _read_self_cgroup() -> str:
 
 
 def systemd_scope() -> str | None:
-    """当前进程属于 Debata systemd unit 时返回 ``"user"`` / ``"system"``。
+    """当前进程属于 Karen systemd unit 时返回 ``"user"`` / ``"system"``。
 
-    仅当 cgroup 路径里真的出现 ``debata-agent.service`` 才算受管理；
+    仅当 cgroup 路径里真的出现 ``karenbot.service`` 才算受管理；
     外层会话服务遗留下来的 systemd 环境变量不会被误判。
     """
     if not sys.platform.startswith("linux"):
@@ -47,8 +47,8 @@ def systemd_scope() -> str | None:
     if shutil.which("systemctl") is None:
         return None
     for line in _read_self_cgroup().splitlines():
-        # cgroup v1: 1:name=systemd:/user.slice/.../debata-agent.service
-        # cgroup v2: 0::/user.slice/.../debata-agent.service
+        # cgroup v1: 1:name=systemd:/user.slice/.../karenbot.service
+        # cgroup v2: 0::/user.slice/.../karenbot.service
         path = line.rsplit(":", 1)[-1]
         parts = [part for part in path.split("/") if part]
         if SYSTEMD_UNIT_NAME not in parts:
@@ -73,8 +73,8 @@ def _systemd_restart_command(scope: str) -> list[str]:
 def spawn_fallback_restart_helper() -> None:
     """启动独立 helper：等旧进程退出后按当前启动参数拉起新后端。"""
     env = os.environ.copy()
-    env["DEBATA_SERVICE_ARGS"] = shlex.join(sys.argv[1:])
-    console_log = PROJECT_ROOT / ".debata-run" / "console.log"
+    env["KAREN_SERVICE_ARGS"] = shlex.join(sys.argv[1:])
+    console_log = PROJECT_ROOT / ".karen-run" / "console.log"
     console_log.parent.mkdir(parents=True, exist_ok=True)
     with open(console_log, "ab") as output:
         subprocess.Popen(

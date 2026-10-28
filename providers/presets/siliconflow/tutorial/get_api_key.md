@@ -16,6 +16,6 @@
 
 按 token 计费，新用户有免费额度。详见 [硅基流动定价](https://siliconflow.cn/pricing)。
 
-## 4. 填入 Debata
+## 4. 填入 Karen
 
 向导自定义路径 → 选 **硅基流动** → 粘贴 API Key → 选模型 → 保存。

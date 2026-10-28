@@ -464,10 +464,10 @@ def _run_cli_wizard_legacy(paths) -> None:
 
     print("=" * 60)
     if existing:
-        print("Debata_Agent 配置向导 · amend 模式")
+        print("KarenBot 配置向导 · amend 模式")
         print("（每项 Enter 保留当前值；只问需要的几项）")
     else:
-        print("Debata_Agent 首次配置向导")
+        print("KarenBot 首次配置向导")
     print("=" * 60)
 
     secrets = SecretsManager(paths)
@@ -525,7 +525,7 @@ def _run_cli_wizard_legacy(paths) -> None:
     if existing:
         print(f"  当前激活：{cur_persona}")
     else:
-        print("  仓库自带：debata（开箱即用）")
+        print("  仓库自带：karen（开箱即用）")
     persona_name = input(f"  人格目录名 [{cur_persona}]: ").strip() or cur_persona
 
     # 4. admin QQ（可选）
@@ -664,7 +664,7 @@ def _run_cli_wizard(paths) -> None:
             print(f"⚠ 现有 config 加载失败（{e}）。将走全新配置流程。")
 
     print("=" * 60)
-    print("Debata_Agent CLI 配置向导")
+    print("KarenBot CLI 配置向导")
     print("Enter 保留默认值；密钥不会写入 YAML，只保存到 secrets。")
     print("=" * 60)
 

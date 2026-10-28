@@ -42,7 +42,7 @@ SETTINGS_GROUPS: list[Section] = [
             {"path": "adapters.default.access_token_id", "label": "Access Token",
              "type": "secret_ref", "secret_id": "napcat_default_token",
              "default": "", "needs_restart": True},
-            {"path": "adapters.default.manage_process", "label": "由 Debata 拉起 NapCat",
+            {"path": "adapters.default.manage_process", "label": "由 Karen 拉起 NapCat",
              "type": "bool", "default": False, "needs_restart": True,
              "help": "NapCat 已由系统/手动启动时请关闭；开启后会先探测 OneBot 端口，已有响应则跳过托管。"},
             {"path": "adapters.default.process_path", "label": "NapCat 启动路径",
@@ -594,7 +594,7 @@ SETTINGS_GROUPS: list[Section] = [
     {
         "key": "update",
         "title": "更新",
-        "desc": "从 GitHub Releases/tag 选择更新或回退版本。只更新 Debata 源码，不读取或覆盖用户数据目录。",
+        "desc": "从 GitHub Releases/tag 选择更新或回退版本。只更新 Karen 源码，不读取或覆盖用户数据目录。",
         "fields": [
             # 镜像用更新面板里的“预设 + 自定义”控件；保留声明是为了让
             # PATCH /api/settings 仍能校验 update.mirror，但不在通用表单重复渲染。
@@ -621,7 +621,7 @@ SETTINGS_GROUPS: list[Section] = [
         "fields": [
             {"path": "backup.directory", "label": "备份目录", "type": "str",
              "default": "", "needs_restart": False,
-             "help": "留空使用 ~/Debata_Backups；相对路径按用户主目录解析。"},
+             "help": "留空使用 ~/Karen_Backups；相对路径按用户主目录解析。"},
             {"path": "backup.include_media", "label": "包含入站媒体/文件",
              "type": "bool", "default": True, "needs_restart": False,
              "help": "备份/排除整个 workspace/incoming（图片、视频、音频和普通入站文件）；"

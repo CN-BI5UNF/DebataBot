@@ -196,7 +196,7 @@ def _admin_info(
         parts.append(f"QQ：{qq}")
     if not parts:
         return ""
-    return "这些人是配置 Debata 的熟悉对象/管理员。生成 <relation_with_user> 和关系矩阵时要使用这些信息，不要把他们写成泛泛的陌生人。\n" + "\n".join(parts)
+    return "这些人是配置 Karen 的熟悉对象/管理员。生成 <relation_with_user> 和关系矩阵时要使用这些信息，不要把他们写成泛泛的陌生人。\n" + "\n".join(parts)
 
 
 # ============================================================

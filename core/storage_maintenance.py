@@ -60,7 +60,7 @@ CATEGORY_SPECS: dict[str, CategorySpec] = {
     ),
     "history_page_cache": CategorySpec(
         "history_page_cache", "历史分页热缓存", "memory",
-        "DebataHistoryStore 的有界分页缓存，清空不影响 SQLite 原始历史。",
+        "KarenHistoryStore 的有界分页缓存，清空不影响 SQLite 原始历史。",
     ),
     "image_encoding_cache": CategorySpec(
         "image_encoding_cache", "图片编码内存缓存", "memory",
@@ -401,7 +401,7 @@ class StorageMaintenanceService:
                 retained_media_paths: set[Path] = set()
                 try:
                     from core.media_catalog import MediaCatalogManager
-                    db_file = self.paths.DATA_DIR / "debata.db"
+                    db_file = self.paths.DATA_DIR / "karen.db"
                     if db_file.exists():
                         mgr = MediaCatalogManager(db_file)
                         for ev in mgr.evaluate_all(now=now):

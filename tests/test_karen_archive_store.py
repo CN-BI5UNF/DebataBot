@@ -6,29 +6,29 @@ from pathlib import Path
 
 import pytest
 
-from memory.debata_db import DebataDB
-from memory.debata_stores import DebataArchiveStore
+from memory.karen_db import KarenDB
+from memory.karen_stores import KarenArchiveStore
 
 
 @pytest.mark.asyncio
-async def test_debata_archive_store_starts_empty_rejects_empty_persona_and_exports(tmp_path):
-    store = DebataArchiveStore(tmp_path / "debata.db", " yuexi ")
+async def test_karen_archive_store_starts_empty_rejects_empty_persona_and_exports(tmp_path):
+    store = KarenArchiveStore(tmp_path / "karen.db", " yuexi ")
 
     assert await store.load() == []
     assert await store.records() == []
     assert await store.media_records() == []
 
     with pytest.raises(ValueError, match="persona_id must not be empty"):
-        DebataArchiveStore(tmp_path / "debata.db", "  ")
+        KarenArchiveStore(tmp_path / "karen.db", "  ")
 
-    from memory import DebataArchiveStore as PackageDebataArchiveStore
+    from memory import KarenArchiveStore as PackageKarenArchiveStore
 
-    assert PackageDebataArchiveStore is DebataArchiveStore
+    assert PackageKarenArchiveStore is KarenArchiveStore
 
 
 @pytest.mark.asyncio
-async def test_debata_archive_append_many_keeps_real_chat_and_sent_outbound_only(tmp_path):
-    store = DebataArchiveStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_archive_append_many_keeps_real_chat_and_sent_outbound_only(tmp_path):
+    store = KarenArchiveStore(tmp_path / "karen.db", "yuexi")
 
     await store.append_many(
         [
@@ -69,10 +69,10 @@ async def test_debata_archive_append_many_keeps_real_chat_and_sent_outbound_only
 
 
 @pytest.mark.asyncio
-async def test_debata_archive_persona_scopes_short_ids_and_queries(tmp_path):
-    db_path = tmp_path / "debata.db"
-    yuexi = DebataArchiveStore(db_path, "yuexi")
-    jiu = DebataArchiveStore(db_path, "jiu")
+async def test_karen_archive_persona_scopes_short_ids_and_queries(tmp_path):
+    db_path = tmp_path / "karen.db"
+    yuexi = KarenArchiveStore(db_path, "yuexi")
+    jiu = KarenArchiveStore(db_path, "jiu")
 
     await yuexi.append_many(
         [
@@ -159,10 +159,10 @@ async def test_debata_archive_persona_scopes_short_ids_and_queries(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_debata_archive_duplicate_record_json_is_scoped_by_persona(tmp_path):
-    db_path = tmp_path / "debata.db"
-    yuexi = DebataArchiveStore(db_path, "yuexi")
-    jiu = DebataArchiveStore(db_path, "jiu")
+async def test_karen_archive_duplicate_record_json_is_scoped_by_persona(tmp_path):
+    db_path = tmp_path / "karen.db"
+    yuexi = KarenArchiveStore(db_path, "yuexi")
+    jiu = KarenArchiveStore(db_path, "jiu")
     record = _chat_record(
         "重复图片 [图片 workspace=incoming/dup.jpg]",
         conversation_id="private:1",
@@ -194,10 +194,10 @@ async def test_debata_archive_duplicate_record_json_is_scoped_by_persona(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_debata_archive_filter_fallback_and_media_are_persona_isolated(tmp_path):
-    db_path = tmp_path / "debata.db"
-    yuexi = DebataArchiveStore(db_path, "yuexi")
-    jiu = DebataArchiveStore(db_path, "jiu")
+async def test_karen_archive_filter_fallback_and_media_are_persona_isolated(tmp_path):
+    db_path = tmp_path / "karen.db"
+    yuexi = KarenArchiveStore(db_path, "yuexi")
+    jiu = KarenArchiveStore(db_path, "jiu")
 
     await yuexi.append_many(
         [
@@ -391,7 +391,7 @@ def _runtime_records(conversation_id: str) -> list[dict]:
 
 
 def _archive_rows(db_path: Path, persona_id: str) -> list[sqlite3.Row]:
-    db = DebataDB(db_path)
+    db = KarenDB(db_path)
     try:
         db.load()
         rows = db.connect().execute(

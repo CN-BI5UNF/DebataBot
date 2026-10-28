@@ -44,7 +44,7 @@
 
 设置 →「备份」：
 
-- `backup.directory`：备份目录；留空使用 `~/Debata_Backups`。相对路径按用户
+- `backup.directory`：备份目录；留空使用 `~/Karen_Backups`。相对路径按用户
   主目录解析。已存在的目录必须属于当前用户，且不能对组/其他用户开放
   （例如 `0755` 会被拒绝，请先 `chmod 700`）；不会擅自修改已有目录权限。
 - `backup.include_media`：是否包含 `workspace/incoming` 的入站媒体；默认包含。
@@ -79,13 +79,13 @@
 ```bash
 # 结构/CRC/成员 hash/SQLite quick_check/密钥配对
 .venv/bin/python -m core.restore verify \
-  ~/Debata_Backups/Debata_Backup_xxx.zip --json
+  ~/Karen_Backups/Karen_Backup_xxx.zip --json
 
 # 解压到全新目录并复验（不会碰生产 DATA_DIR）
 .venv/bin/python -m core.restore drill \
-  ~/Debata_Backups/Debata_Backup_xxx.zip \
-  --destination /tmp/debata-drill-1 \
-  --protected-root ~/.local/share/Debata_Agent/instances/default \
+  ~/Karen_Backups/Karen_Backup_xxx.zip \
+  --destination /tmp/karen-drill-1 \
+  --protected-root ~/.local/share/KarenBot/instances/default \
   --json
 ```
 
@@ -98,10 +98,10 @@
 
 建议先运行上面的离线验证/drill，再在隔离环境或另一台设备验证。
 
-1. 停止 `debata-agent` 服务。
+1. 停止 `karenbot` 服务。
 2. 解压 zip。
 3. 把 `data/` 内容复制回当前实例数据目录（默认
-   `~/.local/share/Debata_Agent/instances/default/`）。
+   `~/.local/share/KarenBot/instances/default/`）。
 4. 把 `personas/` 复制回项目根目录的 `personas/`。
 5. 确认 `data/rsa_private.pem` 权限为 `0600`。如果原环境使用系统 keyring，
    可把 PEM 留在数据目录作为兜底；确认密钥可解密后再决定是否删除。

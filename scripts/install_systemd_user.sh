@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 安装 Debata Agent 的 systemd 用户服务（无需 sudo）。
+# 安装 KarenBot 的 systemd 用户服务（无需 sudo）。
 #
 # 用法：
 #   bash scripts/install_systemd_user.sh
@@ -9,13 +9,13 @@
 #   bash scripts/install_systemd_user.sh --dry-run           # 只打印 unit
 #
 # 卸载：
-#   systemctl --user disable --now debata-agent
-#   rm -f ~/.config/systemd/user/debata-agent.service
+#   systemctl --user disable --now karenbot
+#   rm -f ~/.config/systemd/user/karenbot.service
 #   systemctl --user daemon-reload
 
 set -euo pipefail
 
-SERVICE_NAME="debata-agent"
+SERVICE_NAME="karenbot"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 TARGET_UNIT_FILE="$UNIT_DIR/$SERVICE_NAME.service"
@@ -37,7 +37,7 @@ usage() {
   --port PORT      WebUI 端口（默认 8000）
   --no-auth        关闭 WebUI 鉴权（仅完全可信内网）
   --dry-run        只打印生成的 unit，不写入、不启动
-  --write-only     写入 unit 和 debata 命令，但不启动服务
+  --write-only     写入 unit 和 karen 命令，但不启动服务
   -h, --help       显示帮助
 EOF
 }
@@ -86,7 +86,7 @@ if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
 fi
 
 if [[ ! -f "$PROJECT_ROOT/main.py" ]]; then
-    echo "找不到 $PROJECT_ROOT/main.py，请在 Debata_Agent 项目内运行。" >&2
+    echo "找不到 $PROJECT_ROOT/main.py，请在 KarenBot 项目内运行。" >&2
     exit 1
 fi
 
@@ -102,7 +102,7 @@ fi
 
 # 只有 systemctl 存在还不够：容器 / WSL / 精简系统里通常没有用户 bus。
 HAS_SYSTEMD_USER=0
-if [[ "${DEBATA_FORCE_NO_SYSTEMD:-0}" != "1" ]] && command -v systemctl >/dev/null 2>&1; then
+if [[ "${KAREN_FORCE_NO_SYSTEMD:-0}" != "1" ]] && command -v systemctl >/dev/null 2>&1; then
     if systemctl --user show-environment >/dev/null 2>&1; then
         HAS_SYSTEMD_USER=1
     fi
@@ -133,7 +133,7 @@ done
 if [[ "$DRY_RUN" -eq 1 || "$HAS_SYSTEMD_USER" -eq 1 ]]; then
     cat > "$UNIT_FILE" <<EOF
 [Unit]
-Description=Debata Agent ($([[ $HEADLESS -eq 1 ]] && echo "headless" || echo "WebUI + runtime"))
+Description=KarenBot ($([[ $HEADLESS -eq 1 ]] && echo "headless" || echo "WebUI + runtime"))
 Documentation=file://$PROJECT_ROOT/docs/background_running.md
 After=network-online.target
 Wants=network-online.target
@@ -145,7 +145,7 @@ Type=simple
 WorkingDirectory=$PROJECT_ROOT
 ExecStart="$PYTHON" "$PROJECT_ROOT/main.py"$QUOTED_EXTRA
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-$HOME/.config/debata-agent.env
+EnvironmentFile=-$HOME/.config/karenbot.env
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=60
@@ -174,35 +174,35 @@ else
     echo "未检测到可用的 systemd 用户会话，跳过 systemd unit 安装。"
 fi
 
-# 安装 debata 管理命令（不覆盖已有的非 Debata 命令）
+# 安装 karen 管理命令（不覆盖已有的非 Karen 命令）
 BIN_DIR="$HOME/.local/bin"
-LAUNCHER="$BIN_DIR/debata"
-if [[ -e "$LAUNCHER" ]] && ! grep -q "Debata Agent launcher" "$LAUNCHER" 2>/dev/null; then
-    echo "提示：$LAUNCHER 已存在且不是 Debata 启动器，跳过安装 debata 命令。"
+LAUNCHER="$BIN_DIR/karen"
+if [[ -e "$LAUNCHER" ]] && ! grep -q "KarenBot launcher" "$LAUNCHER" 2>/dev/null; then
+    echo "提示：$LAUNCHER 已存在且不是 Karen 启动器，跳过安装 karen 命令。"
 else
     mkdir -p "$BIN_DIR"
     cat > "$LAUNCHER" <<EOF
 #!/usr/bin/env bash
-# Debata Agent launcher
+# KarenBot launcher
 exec "$PYTHON" "$PROJECT_ROOT/main.py" "\$@"
 EOF
     chmod +x "$LAUNCHER"
     echo "已安装命令: $LAUNCHER"
     case ":$PATH:" in
         *":$BIN_DIR:"*) ;;
-        *) echo "提示：$BIN_DIR 不在 PATH；可以直接用 ./debata，或把它加入 PATH。" ;;
+        *) echo "提示：$BIN_DIR 不在 PATH；可以直接用 ./karen，或把它加入 PATH。" ;;
     esac
 fi
 
-# 保存安装参数，systemd 不可用时 `debata start` 会沿用相同配置。
-mkdir -p "$PROJECT_ROOT/.debata-run"
-printf '%s\n' "${EXEC_ARGS[@]}" > "$PROJECT_ROOT/.debata-run/args.txt"
+# 保存安装参数，systemd 不可用时 `karen start` 会沿用相同配置。
+mkdir -p "$PROJECT_ROOT/.karen-run"
+printf '%s\n' "${EXEC_ARGS[@]}" > "$PROJECT_ROOT/.karen-run/args.txt"
 
 if [[ "$HAS_SYSTEMD_USER" -eq 1 ]]; then
     systemctl --user daemon-reload
 
     if [[ "$WRITE_ONLY" -eq 1 ]]; then
-        echo "服务已写入，未启动。运行: debata start"
+        echo "服务已写入，未启动。运行: karen start"
         exit 0
     fi
 
@@ -229,7 +229,7 @@ else
 EOF
 
     if [[ "$WRITE_ONLY" -eq 1 ]]; then
-        echo "运行: debata start"
+        echo "运行: karen start"
         exit 0
     fi
 
@@ -241,24 +241,24 @@ fi
 
 echo
 echo "常用命令："
-echo "  启动     : debata start"
-echo "  停止     : debata stop"
-echo "  重启     : debata restart"
-echo "  状态     : debata status"
-echo "  日志     : debata log"
+echo "  启动     : karen start"
+echo "  停止     : karen stop"
+echo "  重启     : karen restart"
+echo "  状态     : karen status"
+echo "  日志     : karen log"
 if [[ "$HAS_SYSTEMD_USER" -eq 1 ]]; then
-    echo "  开机自启 : debata enable"
-    echo "  取消自启 : debata disable"
+    echo "  开机自启 : karen enable"
+    echo "  取消自启 : karen disable"
 else
     echo "  开机自启 : 不可用（请使用容器重启策略或 cron @reboot）"
 fi
-echo "  （未加入 PATH 时用 ./debata start）"
+echo "  （未加入 PATH 时用 ./karen start）"
 if [[ "$HEADLESS" -eq 0 ]]; then
     echo "  WebUI   : http://127.0.0.1:$PORT"
-    echo "  令牌文件: ~/.local/share/Debata_Agent/instances/default/webui_token.txt"
+    echo "  令牌文件: ~/.local/share/KarenBot/instances/default/webui_token.txt"
     if [[ "$HAS_SYSTEMD_USER" -eq 1 ]]; then
         echo "            （首次启动后生成；也可用 journalctl 查看启动横幅）"
     else
-        echo "            （首次启动后生成；日志用 debata log 查看）"
+        echo "            （首次启动后生成；日志用 karen log 查看）"
     fi
 fi

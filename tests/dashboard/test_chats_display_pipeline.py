@@ -23,7 +23,7 @@ from webui.chatlog.display_pipeline import (
 )
 from webui.chatlog.models import DisplayItem
 
-PERSONA = "debata"
+PERSONA = "karen"
 
 
 def _msg(role: str, content: str, **extra) -> dict:

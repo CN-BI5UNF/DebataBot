@@ -1,13 +1,13 @@
 # 贡献指南
 
-感谢愿意为 Debata_Agent 添砖加瓦。本文写给希望提 PR、加 provider、加工具、报 bug 或重写文档的人。
+感谢愿意为 KarenBot 添砖加瓦。本文写给希望提 PR、加 provider、加工具、报 bug 或重写文档的人。
 读完前 3 节即可开始动手；后两节是「加 provider」「加 Tool」的实操指引。
 
 ---
 
 ## 项目准则
 
-Debata 不是 ChatGPT 套壳，也不是「能多就多」的 AI 全家桶。她有边界、有取舍。
+Karen 不是 ChatGPT 套壳，也不是「能多就多」的 AI 全家桶。她有边界、有取舍。
 
 **保留的：**
 - 全会话统一上下文（不隔离不同用户/群聊）
@@ -17,7 +17,7 @@ Debata 不是 ChatGPT 套壳，也不是「能多就多」的 AI 全家桶。她
 - 用户配置全 WebUI 可改（除 persona 文件本身）
 
 **不接受的 PR：**
-- 把 Debata 改成「全平台多账号 SaaS」
+- 把 Karen 改成「全平台多账号 SaaS」
 - 加「礼貌话术润色器」「敬语自动检测」之类破坏人格的「礼貌补丁」
 - 把单一 system prompt 拆成多 system 段（破坏 KV 缓存）
 - 引入「记忆数据库 ORM 层」「插件市场后端」等过度抽象
@@ -96,9 +96,9 @@ uv run ruff format .
    `reasoning_style` 可选值：`none`（什么都不发，不认识的中转站用这个）、`thinking_extra_body`（DeepSeek / GLM / MiMo 风格）、`qwen_enable_thinking`（通义千问）、`openai_native`（OpenAI o 系列）。
    注意 `pricing` 字段当前**不被解析**，写进去不会有任何效果。
 
-2. **写 `providers/presets/{name}/tutorial/get_api_key.md`**。3~5 段简短中文教程，覆盖：官网注册地址 → 如何获取 API Key → 计费说明 → 填到 Debata 的步骤。
+2. **写 `providers/presets/{name}/tutorial/get_api_key.md`**。3~5 段简短中文教程，覆盖：官网注册地址 → 如何获取 API Key → 计费说明 → 填到 Karen 的步骤。
 
-3. **验证**：启动 Debata → 向导的预设下拉、设置 →「模型」→「添加提供商」的预设下拉都应能看到新 provider。或用脚本：
+3. **验证**：启动 Karen → 向导的预设下拉、设置 →「模型」→「添加提供商」的预设下拉都应能看到新 provider。或用脚本：
    ```bash
    uv run python -c "from providers.presets_loader import load_presets_for; from app_config import AppPaths; print(sorted(load_presets_for(AppPaths()).keys()))"
    ```
@@ -130,7 +130,7 @@ uv run ruff format .
 
 3. **若需要 ToolContext 新字段**：在 `tools/base.py::ToolContext` 加字段 → 在 `core/runtime.py` 装配时注入值。不要直接在工具函数内 import 全局单例。
 
-4. **验证**：启动 Debata → 设置页确认工具已出现在 schema 中（按 feature 开关决定是否暴露）。运行 pytest 确保全过。
+4. **验证**：启动 Karen → 设置页确认工具已出现在 schema 中（按 feature 开关决定是否暴露）。运行 pytest 确保全过。
 
 ---
 
@@ -139,7 +139,7 @@ uv run ruff format .
 用 [Issue Template](.github/ISSUE_TEMPLATE/bug_report.md)。最少给：
 - 复现步骤
 - 期望行为 vs 实际行为
-- 环境（OS、Python 版本、Debata 版本/commit hash）
+- 环境（OS、Python 版本、Karen 版本/commit hash）
 - 相关日志（脱敏后）
 
 ---

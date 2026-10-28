@@ -41,7 +41,7 @@ def dashboard_runtime(tmp_paths, cfg: RootConfig | None = None) -> SimpleNamespa
         important=EmptyImportant(),
         model_activity={},
         paths=tmp_paths,
-        persona=SimpleNamespace(name="Debata"),
+        persona=SimpleNamespace(name="Karen"),
         provider_health={},
         provider_registry=SimpleNamespace(presets={}),
         providers={},

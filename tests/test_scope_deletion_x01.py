@@ -16,14 +16,14 @@ from core.scoped_deletion import (
     ScopedDeletionError,
     ScopedDeletionManager,
 )
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 @pytest.fixture
-def test_env(tmp_path: Path) -> tuple[DebataDB, Path, ScopedDeletionManager]:
-    db_file = tmp_path / "debata_del_test.db"
+def test_env(tmp_path: Path) -> tuple[KarenDB, Path, ScopedDeletionManager]:
+    db_file = tmp_path / "karen_del_test.db"
     quarantine_dir = tmp_path / "quarantine"
-    db = DebataDB(db_file)
+    db = KarenDB(db_file)
     db.load()
 
     # 执行 D01 迁移建立基础表
@@ -61,7 +61,7 @@ def _insert_history(
     )
 
 
-def test_preview_sanitization_and_empty_conversation_guard(test_env: tuple[DebataDB, Path, ScopedDeletionManager]) -> None:
+def test_preview_sanitization_and_empty_conversation_guard(test_env: tuple[KarenDB, Path, ScopedDeletionManager]) -> None:
     """测试范围删除预览脱敏输出，以及空 conversation_id 拒绝扩大删除（第 19 节）。"""
     db, _, mgr = test_env
 
@@ -126,7 +126,7 @@ def test_preview_sanitization_and_empty_conversation_guard(test_env: tuple[Debat
     assert "/home/" not in sanitized_str
 
 
-def test_atomic_tombstone_and_instant_read_fence(test_env: tuple[DebataDB, Path, ScopedDeletionManager]) -> None:
+def test_atomic_tombstone_and_instant_read_fence(test_env: tuple[KarenDB, Path, ScopedDeletionManager]) -> None:
     """测试原子墓碑提交、代次增加与即时读屏障即刻生效（E36）。"""
     db, _, mgr = test_env
     conn = db.connect()
@@ -197,7 +197,7 @@ def test_atomic_tombstone_and_instant_read_fence(test_env: tuple[DebataDB, Path,
     assert s_row[0] == "invalidated"
 
 
-def test_controlled_quarantine_restore_new_epoch(test_env: tuple[DebataDB, Path, ScopedDeletionManager]) -> None:
+def test_controlled_quarantine_restore_new_epoch(test_env: tuple[KarenDB, Path, ScopedDeletionManager]) -> None:
     """测试受控隔离期内恢复分配全新 lifecycle_epoch 与 mutation_gen（第 19 节，E36）。"""
     db, _, mgr = test_env
     conn = db.connect()
@@ -238,7 +238,7 @@ def test_controlled_quarantine_restore_new_epoch(test_env: tuple[DebataDB, Path,
     assert len(visible) == 1
 
 
-def test_quarantine_expiration_rejects_restore(test_env: tuple[DebataDB, Path, ScopedDeletionManager]) -> None:
+def test_quarantine_expiration_rejects_restore(test_env: tuple[KarenDB, Path, ScopedDeletionManager]) -> None:
     """测试超过受控隔离期后拒绝常规恢复。"""
     _, quarantine_dir, mgr = test_env
 
@@ -262,7 +262,7 @@ def test_quarantine_expiration_rejects_restore(test_env: tuple[DebataDB, Path, S
     assert exc_info.value.code == "quarantine_expired"
 
 
-def test_purge_permanently_removes_records(test_env: tuple[DebataDB, Path, ScopedDeletionManager]) -> None:
+def test_purge_permanently_removes_records(test_env: tuple[KarenDB, Path, ScopedDeletionManager]) -> None:
     """测试 Purge 彻底物理清除历史与隔离清单。"""
     db, quarantine_dir, mgr = test_env
     conn = db.connect()
@@ -302,7 +302,7 @@ def test_purge_permanently_removes_records(test_env: tuple[DebataDB, Path, Scope
     assert not (quarantine_dir / f"{del_res.op_id}.manifest.json").exists()
 
 
-def test_persona_context_reset_preserves_records_advances_epoch(test_env: tuple[DebataDB, Path, ScopedDeletionManager]) -> None:
+def test_persona_context_reset_preserves_records_advances_epoch(test_env: tuple[KarenDB, Path, ScopedDeletionManager]) -> None:
     """测试人格上下文重置（Context Reset）：推进代次与游标，绝不物理删除历史底册。"""
     db, _, mgr = test_env
     conn = db.connect()

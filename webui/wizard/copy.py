@@ -42,10 +42,10 @@ COPY: dict[str, str] = {
     # ============================================================
     # 欢迎页
     # ============================================================
-    "welcome.title": "Debata_Agent",
+    "welcome.title": "KarenBot",
     "welcome.subtitle": "让虚拟人格活过来的通用框架",
     "welcome.intro": (
-        "接下来用几分钟告诉 Debata 三件事：\n"
+        "接下来用几分钟告诉 Karen 三件事：\n"
         "  · 用哪个模型说话\n"
         "  · 通过什么渠道收发消息\n"
         "  · 想要什么样的人格\n\n"
@@ -108,21 +108,21 @@ COPY: dict[str, str] = {
     # ============================================================
     "features.vision_title": "看懂图片",
     "features.vision_desc": (
-        "用户发图片时，让 Debata 能看懂。\n"
+        "用户发图片时，让 Karen 能看懂。\n"
         "需要一个多模态模型（如 GLM-4V / Qwen-VL / GPT-4o）。"
     ),
     "features.asr_title": "听懂语音",
     "features.asr_desc": (
-        "用户发语音时，自动转成文字交给 Debata。\n"
+        "用户发语音时，自动转成文字交给 Karen。\n"
         "现在统一使用 NapCat 内置转写，无需本地 ASR 模型。"
     ),
     "features.tts_title": "用声音说话",
     "features.tts_desc": (
-        "让 Debata 主动用声音回复。\n"
+        "让 Karen 主动用声音回复。\n"
         "本地推荐 VoxCPM2（需要 8GB 显存，可用音色描述或参考音频），或接入云端 TTS。"
     ),
     "features.weather_title": "查天气",
-    "features.weather_desc": "提供和风天气 API 密钥，Debata 就能查实时天气和未来预报。",
+    "features.weather_desc": "提供和风天气 API 密钥，Karen 就能查实时天气和未来预报。",
     "features.web_search_title": "联网搜索",
     "features.web_search_desc": "走 Bing RSS / 百度免费搜索，不需要额外密钥。建议开启。",
     "features.long_term_memory_title": "长期记忆方式",
@@ -170,36 +170,36 @@ COPY: dict[str, str] = {
     # NapCat 适配器
     # ============================================================
     "adapter.intro": (
-        "NapCat 是连接 QQ 的中间层程序。Debata 通过 WebSocket 跟它通信。\n"
+        "NapCat 是连接 QQ 的中间层程序。Karen 通过 WebSocket 跟它通信。\n"
         "如果你还没装，先看教程把它跑起来。"
     ),
     "adapter.mode_title": "连接方式",
-    "adapter.mode_client": "Debata 连过去（client）",
-    "adapter.mode_client_desc": "推荐。NapCat 配「正向 WS」监听，Debata 主动连接它。",
+    "adapter.mode_client": "Karen 连过去（client）",
+    "adapter.mode_client_desc": "推荐。NapCat 配「正向 WS」监听，Karen 主动连接它。",
     "adapter.mode_server": "NapCat 连过来（server）",
     "adapter.mode_server_desc": (
-        "NapCat 配「反向 WS」主动连出，Debata 监听端口等连入。"
-        "跨设备时监听地址用 0.0.0.0，NapCat 目标填 Debata 机器的局域网 IP。"
+        "NapCat 配「反向 WS」主动连出，Karen 监听端口等连入。"
+        "跨设备时监听地址用 0.0.0.0，NapCat 目标填 Karen 机器的局域网 IP。"
     ),
     "adapter.ws_url_label": "NapCat WebSocket 地址",
     "adapter.ws_url_placeholder": "ws://127.0.0.1:6199",
     "adapter.token_label": "鉴权 Token（可选）",
     "adapter.token_hint": "NapCat 配置里设了 token 才需要填。",
-    "adapter.manage_process_label": "由 Debata 托管 NapCat 进程",
+    "adapter.manage_process_label": "由 Karen 托管 NapCat 进程",
     "adapter.manage_process_hint": (
-        "打开后，启动 Debata 时自动拉起 NapCat，退出时自动关闭。\n"
+        "打开后，启动 Karen 时自动拉起 NapCat，退出时自动关闭。\n"
         "需要填 NapCat 启动脚本或可执行文件路径（.bat / .cmd / .exe），不要带引号。\n"
-        "如果 NapCat 已经由系统或手动启动，请关闭托管；Debata 也会先探测端口，"
+        "如果 NapCat 已经由系统或手动启动，请关闭托管；Karen 也会先探测端口，"
         "已有服务响应时跳过拉起。"
     ),
-    "adapter.whitelist_title": "谁能跟 Debata 说话",
+    "adapter.whitelist_title": "谁能跟 Karen 说话",
     "adapter.whitelist_mode_verify": "管理员审核",
     "adapter.whitelist_mode_verify_desc": "陌生人加好友 / 加群时，由你确认。当前默认。",
     "adapter.whitelist_mode_whitelist": "白名单",
     "adapter.whitelist_mode_whitelist_desc": "只响应名单内的 QQ 和群。最严格。",
     "adapter.whitelist_mode_all": "对所有人开放",
     "adapter.whitelist_mode_all_desc": (
-        "⚠ 谁都可以触发 Debata。可能产生意外的 API 费用，谨慎选择。"
+        "⚠ 谁都可以触发 Karen。可能产生意外的 API 费用，谨慎选择。"
     ),
     "adapter.test_success": "已连上 NapCat",
     "adapter.test_fail": "未连上。检查地址、Token 是否正确，NapCat 是否在跑。",
@@ -261,7 +261,7 @@ COPY: dict[str, str] = {
     # 完成总览
     # ============================================================
     "summary.title": "确认一下",
-    "summary.intro": "下面是你这一路做的选择。能让 Debata 跑起来了。",
+    "summary.intro": "下面是你这一路做的选择。能让 Karen 跑起来了。",
     "summary.section_model": "模型",
     "summary.section_features": "功能",
     "summary.section_adapter": "渠道",
@@ -282,7 +282,7 @@ COPY: dict[str, str] = {
     # ============================================================
     "warning.whitelist_all_title": "对所有人开放？",
     "warning.whitelist_all_body": (
-        "选择这一项意味着：任何 QQ 用户给你的 bot 发消息，Debata 都会回应——\n"
+        "选择这一项意味着：任何 QQ 用户给你的 bot 发消息，Karen 都会回应——\n"
         "包括陌生人、广告号、扫号者。\n\n"
         "如果你的主模型按 token 计费（绝大多数都是），可能会产生意外的费用。\n"
         "建议先用「管理员审核」或「白名单」模式，确认稳定后再考虑放开。\n\n"

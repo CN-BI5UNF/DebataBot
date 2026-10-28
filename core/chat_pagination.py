@@ -25,13 +25,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
-_CURSOR_KEY = b"debata-chat-cursor-key-v2.6"
+_CURSOR_KEY = b"karen-chat-cursor-key-v2.6"
+_LEGACY_CURSOR_KEYS = (b"debata-chat-cursor-key-v2.6",)
+_CURSOR_KEYS = (_CURSOR_KEY, *_LEGACY_CURSOR_KEYS)
+_CURSOR_SIG_BYTES = 12
+"""游标签名固定 12 字节；旧密钥仅用于升级后继续解码旧游标。"""
 
 
 class ChatPaginationError(RuntimeError):
@@ -87,7 +91,7 @@ def _encode_cursor(cur: ChatCursor) -> str:
         },
         separators=(",", ":"),
     ).encode("utf-8")
-    sig = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()[:12]
+    sig = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()[:_CURSOR_SIG_BYTES]
     token_bytes = payload + b"." + sig
     return base64.urlsafe_b64encode(token_bytes).decode("ascii")
 
@@ -95,9 +99,18 @@ def _encode_cursor(cur: ChatCursor) -> str:
 def _decode_cursor(token: str) -> ChatCursor:
     try:
         raw = base64.urlsafe_b64decode(token.encode("ascii"))
-        payload, sig = raw.rsplit(b".", 1)
-        expected_sig = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()[:12]
-        if not hmac.compare_digest(sig, expected_sig):
+        # 签名是任意二进制，可能包含 b"."；不能用 rsplit 找分隔符。
+        if len(raw) <= _CURSOR_SIG_BYTES or raw[-_CURSOR_SIG_BYTES - 1 : -_CURSOR_SIG_BYTES] != b".":
+            raise ChatPaginationError("cursor_malformed", "游标格式损坏")
+        payload = raw[: -_CURSOR_SIG_BYTES - 1]
+        sig = raw[-_CURSOR_SIG_BYTES:]
+        if not any(
+            hmac.compare_digest(
+                sig,
+                hmac.new(key, payload, hashlib.sha256).digest()[:_CURSOR_SIG_BYTES],
+            )
+            for key in _CURSOR_KEYS
+        ):
             raise ChatPaginationError("cursor_invalid_signature", "游标签名无效或已被篡改")
         data = json.loads(payload.decode("utf-8"))
         return ChatCursor(
@@ -115,16 +128,16 @@ def _decode_cursor(token: str) -> ChatCursor:
 class ChatPaginationManager:
     """基于 Keyset 的高效、有界聊天 Read Model 分页服务。"""
 
-    def __init__(self, db: DebataDB | str | Path | sqlite3.Connection) -> None:
+    def __init__(self, db: KarenDB | str | Path | sqlite3.Connection) -> None:
         self._db_or_conn = db
 
     def _get_connection(self) -> sqlite3.Connection:
         if isinstance(self._db_or_conn, sqlite3.Connection):
             return self._db_or_conn
-        if isinstance(self._db_or_conn, DebataDB):
+        if isinstance(self._db_or_conn, KarenDB):
             return self._db_or_conn.connect()
-        debata_db = DebataDB(self._db_or_conn)
-        return debata_db.connect()
+        karen_db = KarenDB(self._db_or_conn)
+        return karen_db.connect()
 
     def fetch_page(self, req: ChatPageRequest) -> ChatPageResponse:
         """从 SQLite 获取 Keyset 分页，墓碑优先过滤并保证工具组完整。"""

@@ -1,4 +1,4 @@
-"""Debata_Agent 核心运行时。
+"""KarenBot 核心运行时。
 
 替代旧 NoneBot2 + handler.py 的整套机制。每个模块职责单一，依赖通过构造器注入。
 

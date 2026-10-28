@@ -158,7 +158,7 @@ def test_voxcpm2_project_ffmpeg_shared_dir_added_to_path(tmp_path, monkeypatch):
 
     monkeypatch.chdir(root)
     monkeypatch.setenv("PATH", "")
-    monkeypatch.delenv("DEBATA_FFMPEG_DIR", raising=False)
+    monkeypatch.delenv("KAREN_FFMPEG_DIR", raising=False)
     voxcpm_impl._REGISTERED_FFMPEG_DIRS.clear()
 
     found = voxcpm_impl._prepare_project_ffmpeg()
@@ -170,7 +170,7 @@ def test_voxcpm2_project_ffmpeg_shared_dir_added_to_path(tmp_path, monkeypatch):
 def test_voxcpm2_denoiser_requires_shared_ffmpeg(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PATH", "")
-    monkeypatch.delenv("DEBATA_FFMPEG_DIR", raising=False)
+    monkeypatch.delenv("KAREN_FFMPEG_DIR", raising=False)
     voxcpm_impl._REGISTERED_FFMPEG_DIRS.clear()
 
     with pytest.raises(TTSError, match="full-shared"):

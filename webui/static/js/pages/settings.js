@@ -1097,7 +1097,7 @@ export async function render(container, ctx) {
     select.append(h('option', { value: 'custom', selected: initial === 'custom' }, '自定义…'));
     const custom = h('input', {
       value: current,
-      placeholder: 'https://your-mirror.example/CN-BI5UNF/DebataBot.git',
+      placeholder: 'https://your-mirror.example/CN-BI5UNF/KarenBot.git',
       disabled: initial !== 'custom',
     });
     const note = h('p', { class: 'field-help' });
@@ -1109,7 +1109,7 @@ export async function render(container, ctx) {
         custom.value = preset.value || '';
         note.textContent = preset.note || '';
       } else {
-        note.textContent = '填写完整 https 仓库 URL 或 https://…/ 前缀；只接受同一 DebataBot 仓库，'
+        note.textContent = '填写完整 https 仓库 URL 或 https://…/ 前缀；只接受同一 KarenBot 仓库，'
           + '不接受账号密码、file:// 或内网地址。';
       }
     }

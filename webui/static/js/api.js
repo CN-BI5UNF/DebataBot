@@ -55,7 +55,7 @@ async function request(method, path, body, options = {}) {
     // 完全不知道发生了什么。
     const message = e && e.name === 'AbortError'
       ? `请求超时（超过 ${Math.round(timeoutMs / 1000)} 秒）：${path}`
-      : `无法连接到 Debata 服务：${e.message}`;
+      : `无法连接到 Karen 服务：${e.message}`;
     throw new ApiError(0, message);
   } finally {
     if (timer) clearTimeout(timer);

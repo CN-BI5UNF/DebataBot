@@ -54,7 +54,7 @@ class FakePipeline:
     def __init__(self, event_store: Any) -> None:
         self.event_store = event_store
         self.adapter = FakeAdapter()
-        self.persona = SimpleNamespace(name="Debata")
+        self.persona = SimpleNamespace(name="Karen")
         self.chat_timeline = FakeTimeline()
         self.activity_count = 0
         self.outbound_records: list[dict[str, Any]] = []

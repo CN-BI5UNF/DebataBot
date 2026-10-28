@@ -9,12 +9,6 @@ import pytest
 from memory import (
     ArchiveStore,
     ArchiveStoreLike,
-    DebataArchiveStore,
-    DebataEventStore,
-    DebataHistoryStore,
-    DebataImportantStore,
-    DebataRollingSummaryStore,
-    DebataUsageStatsStore,
     EventAppenderLike,
     EventJournal,
     EventStoreLike,
@@ -24,6 +18,12 @@ from memory import (
     JsonlStoreLike,
     JsonStore,
     JsonStoreLike,
+    KarenArchiveStore,
+    KarenEventStore,
+    KarenHistoryStore,
+    KarenImportantStore,
+    KarenRollingSummaryStore,
+    KarenUsageStatsStore,
     RollingSummaryStore,
     RollingSummaryStoreLike,
     UsageStatsStoreLike,
@@ -272,15 +272,15 @@ def test_store_protocols_are_exported_and_runtime_checkable(tmp_path):
     assert isinstance(MemoryUsageStatsStore(), UsageStatsStoreLike)
 
 
-def test_debata_stores_match_store_protocols(tmp_path):
-    db_path = tmp_path / "debata.db"
+def test_karen_stores_match_store_protocols(tmp_path):
+    db_path = tmp_path / "karen.db"
 
-    assert isinstance(DebataHistoryStore(db_path, "yuexi"), JsonlStoreLike)
-    assert isinstance(DebataImportantStore(db_path, "yuexi"), JsonStoreLike)
-    assert isinstance(DebataArchiveStore(db_path, "yuexi"), ArchiveStoreLike)
-    assert isinstance(DebataRollingSummaryStore(db_path, "yuexi"), RollingSummaryStoreLike)
-    assert isinstance(DebataEventStore(db_path, "yuexi"), EventStoreLike)
-    assert isinstance(DebataUsageStatsStore(db_path, "yuexi"), UsageStatsStoreLike)
+    assert isinstance(KarenHistoryStore(db_path, "yuexi"), JsonlStoreLike)
+    assert isinstance(KarenImportantStore(db_path, "yuexi"), JsonStoreLike)
+    assert isinstance(KarenArchiveStore(db_path, "yuexi"), ArchiveStoreLike)
+    assert isinstance(KarenRollingSummaryStore(db_path, "yuexi"), RollingSummaryStoreLike)
+    assert isinstance(KarenEventStore(db_path, "yuexi"), EventStoreLike)
+    assert isinstance(KarenUsageStatsStore(db_path, "yuexi"), UsageStatsStoreLike)
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,6 @@ Key 只显示一次。
 
 OpenAI 是预付费制。进 [Billing](https://platform.openai.com/settings/organization/billing/overview) 绑定信用卡并充值。
 
-## 4. 填入 Debata
+## 4. 填入 Karen
 
 向导自定义路径 → 选 **OpenAI** → 粘贴 API Key → 选模型（如 gpt-4o）→ 保存。

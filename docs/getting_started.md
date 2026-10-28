@@ -1,22 +1,22 @@
 # 图文教程
 
-从零开始，把 Debata 跑起来。遇到问题先看文末的 [常见问题](#常见问题)。
+从零开始，把 Karen 跑起来。遇到问题先看文末的 [常见问题](#常见问题)。
 
 ---
 
 ## 1.安装 NapCat
 
-Debata 通过 [NapCat](https://napneko.github.io/guide/start-install) 接入 QQ。先到 NapCat 官网下载安装，按教程跑起来。
+Karen 通过 [NapCat](https://napneko.github.io/guide/start-install) 接入 QQ。先到 NapCat 官网下载安装，按教程跑起来。
 
 NapCat 启动后，记下它的 WebSocket 地址和 token（如果设了的话）——下一步要用。
 
 ---
 
-## 2.安装 Debata
+## 2.安装 Karen
 
 ```bash
-git clone https://github.com/CN-BI5UNF/DebataBot.git
-cd DebataBot
+git clone https://github.com/CN-BI5UNF/KarenBot.git
+cd KarenBot
 
 # 没装 uv 的话先安装：https://docs.astral.sh/uv/getting-started/installation/
 uv sync
@@ -35,7 +35,7 @@ Linux 服务器或 SSH 环境可以直接跑纯 CLI 向导：
 uv run python main.py --no-gui --setup
 ```
 
-CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapCat 和人格等主要配置。密钥优先保存到系统 keyring；如果 Linux 没有可用 Secret Service，会自动退回数据目录下的 `rsa_private.pem` 本地私钥文件（默认 `~/.local/share/Debata_Agent/instances/default/rsa_private.pem`），并使用 0600 权限保护。
+CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapCat 和人格等主要配置。密钥优先保存到系统 keyring；如果 Linux 没有可用 Secret Service，会自动退回数据目录下的 `rsa_private.pem` 本地私钥文件（默认 `~/.local/share/KarenBot/instances/default/rsa_private.pem`），并使用 0600 权限保护。
 
 ---
 
@@ -45,23 +45,23 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 第一步：选路径
 
-![欢迎页](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_welcome.png)
+![欢迎页](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_welcome.png)
 
 推荐路径用 DeepSeek 主模型快速上手。想逐个调校每个参数选自定义。
 
 ### 第二步：主模型
 
-![主模型](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_model_quick.png)
+![主模型](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_model_quick.png)
 
 填入 [DeepSeek API 密钥](https://platform.deepseek.com/api_keys)，点「测试连接」验证。推荐先充 5 块钱，够测很久。
 
 自定义路径可以选其他 provider，调 temperature、top_p 等参数。
 
-![自定义模型](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_model_custom.png)
+![自定义模型](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_model_custom.png)
 
 ### 第三步：可选功能
 
-![功能开关](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_features.png)
+![功能开关](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_features.png)
 
 4 个可选功能，按需打开。以后在设置页随时能改：
 
@@ -72,7 +72,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 第四步：记忆方式
 
-![记忆方式](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_embedding.png)
+![记忆方式](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_embedding.png)
 
 选 [长期记忆](feature_guides/embedding_rag.md) 的工作方式：
 
@@ -81,17 +81,17 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 第五步：接 NapCat
 
-![NapCat](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_adapter.png)
+![NapCat](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_adapter.png)
 
 在NapCat创建Server后（注意：NapCat填Server意味着程序要选择Client模式），填入 NapCat 的 WebSocket 地址和 token。白名单建议选「管理员审核」——陌生人加好友时你手动确认，避免意外费用。
 
 ### 第六步：选角色
 
-![人格选择](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_persona.png)
+![人格选择](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_persona.png)
 
 三种方式：
 
-- **仓库自带**：直接用 Debata，开箱即用
+- **仓库自带**：直接用 Karen，开箱即用
 - **AI 辅助创建**：描述你想要的角色，配置完成后到「角色 → 新建角色」，AI 帮你写完整的 [人格档案](persona_writing_guide.md)
 - **直接写提示词**：已经有完整人设时，用「角色 → 直接写提示词」粘贴即可，不经过 AI；
   已有角色也可以用「直接编辑」修改并自动备份
@@ -103,7 +103,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 确认 & 启动
 
-![确认](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/wizard_summary.png)
+![确认](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/wizard_summary.png)
 
 检查配置没问题，点「启动」。以后在设置页随时能改。
 
@@ -111,7 +111,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ## 4.仪表盘
 
-![总览](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/dashboard_overview.png)
+![总览](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/dashboard_overview.png)
 
 左边 7 个导航：
 
@@ -119,7 +119,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 |------|------------------------------------------|
 | 总览   | 渠道状态、模型健康、用量、KV 缓存命中率                    |
 | 对话   | 看历史对话，展开 AI 的思考过程                        |
-| 记忆   | 管理 Debata 记住的事（scope / pinned / 编辑 / 删除） |
+| 记忆   | 管理 Karen 记住的事（scope / pinned / 编辑 / 删除） |
 | 日志   | 实时日志流，按等级和模块过滤                           |
 | 角色   | 切换、新建、修改、导入导出人格                          |
 | 模型管理 | 本地模型安装状态和指引                              |
@@ -131,7 +131,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 切换人格
 
-角色页 → 选中目标 → 点「切换为当前」→ 重启 Debata。
+角色页 → 选中目标 → 点「切换为当前」→ 重启 Karen。
 
 ### 新建一个角色（AI 生成）
 
@@ -162,7 +162,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 侧栏「表情包」页 → 「添加表情包」：拖图片进去，或点开选择文件。可以在上传前逐个改名——
 **名字就是 AI 引用时用的名字**，建议起容易懂的（如「笑哭」「困」而不是 `emoji_0142`）。
 
-也可以直接把图片丢进数据目录的 `emoji/`（默认 `~/.local/share/Debata_Agent/instances/default/emoji/`），效果一样。支持 png / jpg / jpeg / gif，单个不超过 5MB。
+也可以直接把图片丢进数据目录的 `emoji/`（默认 `~/.local/share/KarenBot/instances/default/emoji/`），效果一样。支持 png / jpg / jpeg / gif，单个不超过 5MB。
 重名会自动加 `_1` 后缀。
 
 ### 改模型 / 加中转站
@@ -177,7 +177,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 改动需要重启 Runtime 才生效，页面会给出「立即重启」提示。
 
-![设置模型](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/dashboard_settings_model.png)
+![设置模型](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/dashboard_settings_model.png)
 
 设置页 → 模型 → 改 Provider 密钥或 Agent 模型。点「测试连接」确认可用。
 
@@ -187,7 +187,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 调主题
 
-![外观](https://raw.githubusercontent.com/CN-BI5UNF/DebataBot/main/docs/images/dashboard_appearance.png)
+![外观](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/dashboard_appearance.png)
 
 设置页 → 软件行为 → 外观 → 深浅主题即时切换。
 
@@ -204,30 +204,30 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 - **AI 现场捏一个**：向导里描述「我想要一个 25 岁的程序员、嘴硬心软、爱猫」，等几秒看 AI 写出来
 - **手写**：照 `personas/大肥鱼/persona_prompt.py` 或 `personas/deepseek/persona_prompt.py` 的结构写，放到 `personas/{你的名字}/`
 
-#### 每个 persona 都有自己独立的 `memory/{name}/` 目录存历史与重要记忆（默认数据目录 `~/.local/share/Debata_Agent/instances/default/`），互不干扰.
+#### 每个 persona 都有自己独立的 `memory/{name}/` 目录存历史与重要记忆（默认数据目录 `~/.local/share/KarenBot/instances/default/`），互不干扰.
 
 ---
 
 ## 7.后台运行
 
-调试完成后，不要让 Debata 依赖 SSH 窗口。一次性安装后，用短命令管理：
+调试完成后，不要让 Karen 依赖 SSH 窗口。一次性安装后，用短命令管理：
 
 ```bash
-cd ~/DebataBot
+cd ~/KarenBot
 bash scripts/install_systemd_user.sh   # 一次性安装并启动
 
-debata start       # 启动
-debata stop        # 停止
-debata log         # 查看日志
-debata enable      # 开机自启
-debata disable     # 取消开机自启
-debata status      # 状态
+karen start       # 启动
+karen stop        # 停止
+karen log         # 查看日志
+karen enable      # 开机自启
+karen disable     # 取消开机自启
+karen status      # 状态
 ```
 
-`debata enable` 会尝试开启 linger；如果提示失败，执行
+`karen enable` 会尝试开启 linger；如果提示失败，执行
 `sudo loginctl enable-linger "$USER"`。只跑 headless 用
 `bash scripts/install_systemd_user.sh --headless`。
-临时挂机可以用 `tmux new -s debata` 或 `screen -S debata`。
+临时挂机可以用 `tmux new -s karen` 或 `screen -S karen`。
 NapCat 需要单独保持运行。
 
 完整说明（系统级服务、nohup、升级、排错、安全建议）见
@@ -244,13 +244,13 @@ NapCat 需要单独保持运行。
 确认密钥复制完整（sk- 开头），账户余额是否充足。
 
 **没收到消息？**
-检查白名单模式——如果是「白名单」模式且你的 QQ 不在名单里，Debata 不会回复。切到「管理员审核」试试。
+检查白名单模式——如果是「白名单」模式且你的 QQ 不在名单里，Karen 不会回复。切到「管理员审核」试试。
 
 **日志刷屏？**
 设置页 → 日志与诊断 → 日志级别切到 INFO 或 WARNING。排查问题时再开 DEBUG。
 
 **改配置不生效？**
-部分配置（模型、Adapter、功能开关等）改完需要重启 Debata 服务。设置页底部有重启按钮。
+部分配置（模型、Adapter、功能开关等）改完需要重启 Karen 服务。设置页底部有重启按钮。
 
 ---
 

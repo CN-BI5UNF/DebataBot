@@ -147,7 +147,7 @@ def test_load_config_normalizes_current_version_legacy_keys_and_writes_backup(tm
 
 
 def test_load_config_migration_writeback_preserves_header_comments(tmp_paths):
-    text = """# Debata 配置
+    text = """# Karen 配置
 
 version: 1
 adapters:
@@ -188,7 +188,7 @@ behavior:
     load_config(tmp_paths, set_global=False)
 
     saved_text = tmp_paths.CONFIG_FILE.read_text(encoding="utf-8")
-    assert "# Debata 配置" in saved_text
+    assert "# Karen 配置" in saved_text
     assert "# 段内适配器说明" in saved_text
     saved = yaml.safe_load(saved_text)
     assert saved["version"] == CURRENT_CONFIG_VERSION

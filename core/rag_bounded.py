@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +155,7 @@ class BoundedVectorStore:
     检索走流式批次 + 堆选择，空间复杂度恒为 O(k + batch_size)。
     """
 
-    def __init__(self, db: DebataDB | str | Path | sqlite3.Connection) -> None:
+    def __init__(self, db: KarenDB | str | Path | sqlite3.Connection) -> None:
         self._db_or_conn = db
         self._expected_dim: int | None = None
         self._ensure_schema()
@@ -163,10 +163,10 @@ class BoundedVectorStore:
     def _get_connection(self) -> sqlite3.Connection:
         if isinstance(self._db_or_conn, sqlite3.Connection):
             return self._db_or_conn
-        if isinstance(self._db_or_conn, DebataDB):
+        if isinstance(self._db_or_conn, KarenDB):
             return self._db_or_conn.connect()
-        debata_db = DebataDB(self._db_or_conn)
-        return debata_db.connect()
+        karen_db = KarenDB(self._db_or_conn)
+        return karen_db.connect()
 
     def _ensure_schema(self) -> None:
         conn = self._get_connection()

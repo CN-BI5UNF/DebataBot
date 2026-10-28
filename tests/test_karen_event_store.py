@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 
 from memory import EventJournal
-from memory.debata_db import DebataDB
-from memory.debata_stores import DebataEventStore
+from memory.karen_db import KarenDB
+from memory.karen_stores import KarenEventStore
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_roundtrips_events_and_payload_metadata(tmp_path):
-    store = DebataEventStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_event_store_roundtrips_events_and_payload_metadata(tmp_path):
+    store = KarenEventStore(tmp_path / "karen.db", "yuexi")
     payload = {
         "text": "你好",
         "items": [{"kind": "image", "path": "incoming/a.jpg"}],
@@ -97,9 +97,9 @@ async def test_debata_event_store_roundtrips_events_and_payload_metadata(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_idempotency_deduplicates_same_batch_and_reload(tmp_path):
-    db_path = tmp_path / "debata.db"
-    store = DebataEventStore(db_path, "yuexi")
+async def test_karen_event_store_idempotency_deduplicates_same_batch_and_reload(tmp_path):
+    db_path = tmp_path / "karen.db"
+    store = KarenEventStore(db_path, "yuexi")
 
     ids = await store.append_events(
         [
@@ -128,7 +128,7 @@ async def test_debata_event_store_idempotency_deduplicates_same_batch_and_reload
         "新事件",
     ]
 
-    reloaded = DebataEventStore(db_path, "yuexi")
+    reloaded = KarenEventStore(db_path, "yuexi")
     duplicate = await reloaded.append_event(
         event_type="message",
         payload={"text": "重载重复"},
@@ -144,10 +144,10 @@ async def test_debata_event_store_idempotency_deduplicates_same_batch_and_reload
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_persona_scopes_ids_and_idempotency_keys(tmp_path):
-    db_path = tmp_path / "debata.db"
-    yuexi = DebataEventStore(db_path, " yuexi ")
-    jiu = DebataEventStore(db_path, "jiu")
+async def test_karen_event_store_persona_scopes_ids_and_idempotency_keys(tmp_path):
+    db_path = tmp_path / "karen.db"
+    yuexi = KarenEventStore(db_path, " yuexi ")
+    jiu = KarenEventStore(db_path, "jiu")
 
     yuexi_ids = await yuexi.append_events(
         [
@@ -192,8 +192,8 @@ async def test_debata_event_store_persona_scopes_ids_and_idempotency_keys(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_conversation_and_type_pages(tmp_path):
-    store = DebataEventStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_event_store_conversation_and_type_pages(tmp_path):
+    store = KarenEventStore(tmp_path / "karen.db", "yuexi")
     ids = await store.append_events(
         [
             {
@@ -251,8 +251,8 @@ async def test_debata_event_store_conversation_and_type_pages(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_event_journal_can_wrap_debata_event_store(tmp_path):
-    store = DebataEventStore(tmp_path / "debata.db", "yuexi")
+async def test_event_journal_can_wrap_karen_event_store(tmp_path):
+    store = KarenEventStore(tmp_path / "karen.db", "yuexi")
     journal = EventJournal(store)
 
     await journal.start()
@@ -275,8 +275,8 @@ async def test_event_journal_can_wrap_debata_event_store(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_wait_projected_waits_for_future_event_id(tmp_path):
-    store = DebataEventStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_event_store_wait_projected_waits_for_future_event_id(tmp_path):
+    store = KarenEventStore(tmp_path / "karen.db", "yuexi")
 
     async def append_later() -> int:
         await asyncio.sleep(0.03)
@@ -295,8 +295,8 @@ async def test_debata_event_store_wait_projected_waits_for_future_event_id(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_wait_projected_times_out_for_missing_future_event_id(tmp_path):
-    store = DebataEventStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_event_store_wait_projected_times_out_for_missing_future_event_id(tmp_path):
+    store = KarenEventStore(tmp_path / "karen.db", "yuexi")
     await store.append_event(event_type="message", payload={"n": 1})
 
     started_at = time.perf_counter()
@@ -309,13 +309,13 @@ async def test_debata_event_store_wait_projected_times_out_for_missing_future_ev
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_rejects_appends_after_shutdown_but_reads_existing_events(tmp_path):
-    store = DebataEventStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_event_store_rejects_appends_after_shutdown_but_reads_existing_events(tmp_path):
+    store = KarenEventStore(tmp_path / "karen.db", "yuexi")
     event_id = await store.append_event(event_type="message", payload={"n": 1})
 
     assert await store.shutdown(timeout=0.01)
 
-    with pytest.raises(RuntimeError, match="DebataEventStore is closed"):
+    with pytest.raises(RuntimeError, match="KarenEventStore is closed"):
         await store.append_event(event_type="message", payload={"n": 2})
 
     assert (await store.get_event(event_id))["payload"] == {"n": 1}
@@ -323,9 +323,9 @@ async def test_debata_event_store_rejects_appends_after_shutdown_but_reads_exist
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_concurrent_same_persona_instances_keep_unique_ids(tmp_path):
-    db_path = tmp_path / "debata.db"
-    stores = [DebataEventStore(db_path, "yuexi") for _ in range(4)]
+async def test_karen_event_store_concurrent_same_persona_instances_keep_unique_ids(tmp_path):
+    db_path = tmp_path / "karen.db"
+    stores = [KarenEventStore(db_path, "yuexi") for _ in range(4)]
 
     ids = await asyncio.gather(
         *(
@@ -335,14 +335,14 @@ async def test_debata_event_store_concurrent_same_persona_instances_keep_unique_
     )
 
     assert sorted(ids) == [1, 2, 3, 4]
-    events = await DebataEventStore(db_path, "yuexi").events_by_type("concurrent", limit=10)
+    events = await KarenEventStore(db_path, "yuexi").events_by_type("concurrent", limit=10)
     assert [event["event_id"] for event in events] == [1, 2, 3, 4]
     assert {event["payload"]["index"] for event in events} == {0, 1, 2, 3}
 
 
 @pytest.mark.asyncio
-async def test_debata_event_store_stats_and_close_state(tmp_path):
-    store = DebataEventStore(tmp_path / "debata.db", "yuexi")
+async def test_karen_event_store_stats_and_close_state(tmp_path):
+    store = KarenEventStore(tmp_path / "karen.db", "yuexi")
 
     initial = await store.stats()
     assert initial == {
@@ -374,24 +374,24 @@ async def test_debata_event_store_stats_and_close_state(tmp_path):
     closed_stats = await store.stats()
     assert closed_stats["closed"] is True
 
-    other = DebataEventStore(store.db.path, "jiu")
+    other = KarenEventStore(store.db.path, "jiu")
     assert await other.close(timeout=0.01)
     assert (await other.stats())["closed"] is True
 
 
-def test_debata_event_store_rejects_empty_persona_id(tmp_path):
+def test_karen_event_store_rejects_empty_persona_id(tmp_path):
     with pytest.raises(ValueError, match="persona_id must not be empty"):
-        DebataEventStore(tmp_path / "debata.db", "  ")
+        KarenEventStore(tmp_path / "karen.db", "  ")
 
 
-def test_memory_package_exports_debata_event_store():
-    from memory import DebataEventStore as PackageDebataEventStore
+def test_memory_package_exports_karen_event_store():
+    from memory import KarenEventStore as PackageKarenEventStore
 
-    assert PackageDebataEventStore is DebataEventStore
+    assert PackageKarenEventStore is KarenEventStore
 
 
 def _event_count(db_path: Path, persona_id: str) -> int:
-    db = DebataDB(db_path)
+    db = KarenDB(db_path)
     try:
         db.load()
         return int(

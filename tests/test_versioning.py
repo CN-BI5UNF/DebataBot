@@ -31,7 +31,7 @@ def _noop(data):
 
 def test_application_version_falls_back_to_pyproject_for_uninstalled_package():
     version = get_application_version(
-        package_name="debata-agent-uninstalled-distribution-for-test",
+        package_name="karenbot-uninstalled-distribution-for-test",
         project_root=PROJECT_ROOT,
     )
 
@@ -48,7 +48,7 @@ def test_default_registry_registers_phase_0_schema_planes():
         "root",
         "instance",
         "secrets",
-        "debata_db",
+        "karen_db",
         "persona_data",
     } <= set(registry.schema_versions)
     assert all(isinstance(version, int) for version in registry.schema_versions.values())

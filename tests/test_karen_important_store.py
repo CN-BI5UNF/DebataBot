@@ -6,14 +6,14 @@ from pathlib import Path
 import orjson
 import pytest
 
-from memory.debata_db import DebataDB
-from memory.debata_stores import DebataImportantStore
+from memory.karen_db import KarenDB
+from memory.karen_stores import KarenImportantStore
 
 
 @pytest.mark.asyncio
-async def test_debata_important_store_list_roundtrip_and_extracted_columns(tmp_path):
-    db = DebataDB(tmp_path / "debata.db")
-    store = DebataImportantStore(db, "yuexi")
+async def test_karen_important_store_list_roundtrip_and_extracted_columns(tmp_path):
+    db = KarenDB(tmp_path / "karen.db")
+    store = KarenImportantStore(db, "yuexi")
     items = [
         {
             "id": "mem_a",
@@ -57,15 +57,15 @@ async def test_debata_important_store_list_roundtrip_and_extracted_columns(tmp_p
     ]
     assert [orjson.loads(row["item_json"]) for row in rows] == items
 
-    reloaded = DebataImportantStore(db.path, "yuexi")
+    reloaded = KarenImportantStore(db.path, "yuexi")
     assert await reloaded.read(default=[]) == items
 
 
 @pytest.mark.asyncio
-async def test_debata_important_store_replaces_current_persona_only(tmp_path):
-    db_path = tmp_path / "debata.db"
-    yuexi = DebataImportantStore(db_path, "yuexi")
-    jiu = DebataImportantStore(db_path, "jiu")
+async def test_karen_important_store_replaces_current_persona_only(tmp_path):
+    db_path = tmp_path / "karen.db"
+    yuexi = KarenImportantStore(db_path, "yuexi")
+    jiu = KarenImportantStore(db_path, "jiu")
     original = [
         {"id": "mem_1", "timestamp": "t1", "content": "one", "scope": "global"},
         {"id": "mem_2", "timestamp": "t2", "content": "two", "scope": "user:1"},
@@ -86,9 +86,9 @@ async def test_debata_important_store_replaces_current_persona_only(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_debata_important_store_missing_id_fallback_is_stable(tmp_path):
-    db_path = tmp_path / "debata.db"
-    store = DebataImportantStore(db_path, "yuexi")
+async def test_karen_important_store_missing_id_fallback_is_stable(tmp_path):
+    db_path = tmp_path / "karen.db"
+    store = KarenImportantStore(db_path, "yuexi")
     item = {
         "timestamp": "2026-06-18 12:00:00",
         "content": "没有 id 的旧重要记忆",
@@ -108,10 +108,10 @@ async def test_debata_important_store_missing_id_fallback_is_stable(tmp_path):
     assert await store.read(default=[]) == [item]
 
 
-def test_memory_package_exports_debata_important_store():
-    from memory import DebataImportantStore as PackageDebataImportantStore
+def test_memory_package_exports_karen_important_store():
+    from memory import KarenImportantStore as PackageKarenImportantStore
 
-    assert PackageDebataImportantStore is DebataImportantStore
+    assert PackageKarenImportantStore is KarenImportantStore
 
 
 def _important_rows(db_path: Path, persona_id: str) -> list[dict]:

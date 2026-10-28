@@ -171,7 +171,7 @@ async def test_strict_snapshot_fails_if_maintenance_db_missing(tmp_path):
     assert finished["state"] == "failed"
     assert finished["error"]["code"] == "snapshot_missing_required"
     assert barrier.released is True
-    assert not list((tmp_path / "backups").glob("Debata_Backup_*.zip"))
+    assert not list((tmp_path / "backups").glob("Karen_Backup_*.zip"))
 
 
 @pytest.mark.asyncio

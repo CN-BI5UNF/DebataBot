@@ -11,18 +11,18 @@ from core.media_catalog import (
     DEFAULT_MEDIA_RETENTION_HOURS,
     MediaCatalogManager,
 )
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 @pytest.fixture
-def test_db(tmp_path: Path) -> DebataDB:
-    db_file = tmp_path / "debata_test.db"
-    db = DebataDB(db_file)
+def test_db(tmp_path: Path) -> KarenDB:
+    db_file = tmp_path / "karen_test.db"
+    db = KarenDB(db_file)
     db.load()
     return db
 
 
-def test_ingest_reservation_lease_and_protection(test_db: DebataDB) -> None:
+def test_ingest_reservation_lease_and_protection(test_db: KarenDB) -> None:
     """测试入站预留租约的创建、保护与释放。"""
     mgr = MediaCatalogManager(test_db)
     sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -43,7 +43,7 @@ def test_ingest_reservation_lease_and_protection(test_db: DebataDB) -> None:
     assert expired_count == 1
 
 
-def test_48h_retention_expiry_single_origin(test_db: DebataDB) -> None:
+def test_48h_retention_expiry_single_origin(test_db: KarenDB) -> None:
     """测试单来源入站媒体在 48 小时到达后正常过期。"""
     mgr = MediaCatalogManager(test_db)
     sha = "aaa111222333444555666777888999000aaa111222333444555666777888999000"
@@ -76,7 +76,7 @@ def test_48h_retention_expiry_single_origin(test_db: DebataDB) -> None:
     assert evals[0].decision == "expire"
 
 
-def test_origin_equity_multi_origin_max_retention(test_db: DebataDB) -> None:
+def test_origin_equity_multi_origin_max_retention(test_db: KarenDB) -> None:
     """测试多来源权益（E34）：共享同一底层 hash，物理文件取最长有效保留期。"""
     mgr = MediaCatalogManager(test_db)
     sha = "shared_hash_1234567890abcdef1234567890abcdef1234567890abcdef1234"
@@ -127,7 +127,7 @@ def test_origin_equity_multi_origin_max_retention(test_db: DebataDB) -> None:
     assert not is_retained_all
 
 
-def test_origin_equity_expired_origin_never_revived(test_db: DebataDB) -> None:
+def test_origin_equity_expired_origin_never_revived(test_db: KarenDB) -> None:
     """测试已过期的旧来源绝不因新流入而复活（E34）。"""
     mgr = MediaCatalogManager(test_db)
     sha = "hash_no_resurrect_111111111111111111111111111111111111111111111"
@@ -161,7 +161,7 @@ def test_origin_equity_expired_origin_never_revived(test_db: DebataDB) -> None:
     assert float(row_old[0]) <= now + 48.0 * 3600 + 1.0
 
 
-def test_historical_reading_does_not_extend_retention(test_db: DebataDB) -> None:
+def test_historical_reading_does_not_extend_retention(test_db: KarenDB) -> None:
     """测试历史查看/阅读绝不延长保留期（E34 契约）。"""
     mgr = MediaCatalogManager(test_db)
     sha = "hash_touch_read_222222222222222222222222222222222222222222222"
@@ -192,7 +192,7 @@ def test_historical_reading_does_not_extend_retention(test_db: DebataDB) -> None
     assert before_ret == after_ret
 
 
-def test_pinned_origin_permanently_protected(test_db: DebataDB) -> None:
+def test_pinned_origin_permanently_protected(test_db: KarenDB) -> None:
     """测试显式 pin 的来源获得永久保护。"""
     mgr = MediaCatalogManager(test_db)
     sha = "hash_pinned_3333333333333333333333333333333333333333333333333"

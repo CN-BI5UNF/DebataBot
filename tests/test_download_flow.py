@@ -66,7 +66,7 @@ def test_install_guide_matches_nested_model_folder_and_preserves_dest_prefix(
         install_model_folder,
     )
 
-    monkeypatch.setenv("DEBATA_MODELS_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("KAREN_MODELS_DIR", str(tmp_path / "models"))
     source = tmp_path / "downloads" / "large-v3"
     source.mkdir(parents=True)
     (source / "model.bin").write_bytes(b"model")
@@ -107,7 +107,7 @@ def test_install_guide_matches_nested_model_folder_and_preserves_dest_prefix(
 def test_install_guide_markdown_contains_manual_steps(tmp_path: Path, monkeypatch):
     from webui.model_guide import build_model_install_markdown
 
-    monkeypatch.setenv("DEBATA_MODELS_DIR", str(tmp_path / "models"))
+    monkeypatch.setenv("KAREN_MODELS_DIR", str(tmp_path / "models"))
     record = PluginRecord(
         meta=PluginMeta(
             name="demo",

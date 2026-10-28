@@ -262,7 +262,7 @@ async def export_persona(request: Request, name: str) -> FileResponse:
         raise HTTPException(status_code=404, detail=f"人格 {name!r} 不存在")
 
     def _zip() -> Path:
-        tmp = Path(tempfile.mkdtemp(prefix="debata-persona-")) / f"{name}.zip"
+        tmp = Path(tempfile.mkdtemp(prefix="karen-persona-")) / f"{name}.zip"
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             for path in directory.rglob("*"):
                 if path.is_file():
@@ -294,7 +294,7 @@ async def import_persona(
         raise HTTPException(status_code=400, detail="上传内容为空")
 
     def _do_import() -> str:
-        tmp_dir = Path(tempfile.mkdtemp(prefix="debata-persona-import-"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="karen-persona-import-"))
         tmp_zip = tmp_dir / "persona.zip"
         tmp_zip.write_bytes(data)
         try:

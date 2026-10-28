@@ -18,7 +18,7 @@ from core.backup import (
 from core.d01 import D01Error, migrate_database
 from core.restore import RestoreError, drill_backup, verify_backup
 from core.snapshot_barrier import SnapshotBarrier, SnapshotMarker
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 class Secrets:
@@ -95,7 +95,7 @@ def _seed(
     memory = paths.MEMORY_DIR / "demo"
     memory.mkdir(parents=True)
     chat_db = memory / "chat.db"
-    db = DebataDB(chat_db)
+    db = KarenDB(chat_db)
     db.load()
     db.close()
     with sqlite3.connect(chat_db) as conn:
@@ -277,8 +277,8 @@ def test_post_d01_snapshot_replay_drill_is_bounded(tmp_path):
         tombstone_record,
     )
 
-    path = tmp_path / "debata.db"
-    db = DebataDB(path)
+    path = tmp_path / "karen.db"
+    db = KarenDB(path)
     db.load()
     db.close()
     with sqlite3.connect(path) as conn:

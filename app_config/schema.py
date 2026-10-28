@@ -51,7 +51,7 @@ class StrictModel(BaseModel):
 
 
 class AppMeta(StrictModel):
-    name: str = "Debata_Agent"
+    name: str = "KarenBot"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     theme: Literal["auto", "light", "dark"] = "auto"
 
@@ -99,7 +99,7 @@ class NapCatAdapterConfig(StrictModel):
     enabled: bool = True
 
     mode: Literal["client", "server"] = "client"
-    """连接模式（从 Debata_Agent 视角命名，符合直觉）：
+    """连接模式（从 KarenBot 视角命名，符合直觉）：
 
         - "client"：程序作为 WebSocket **客户端**，主动连 NapCat 的 WS 端口。
           对应 NapCat 那边配置「正向 WS」（NapCat 监听，等程序连入）。
@@ -1658,7 +1658,7 @@ class BackupConfig(StrictModel):
     """
 
     directory: str = ""
-    """备份目录；空表示 ~/Debata_Backups。相对路径按用户主目录解析。"""
+    """备份目录；空表示 ~/Karen_Backups。相对路径按用户主目录解析。"""
 
     include_media: bool = True
     """是否包含 workspace/incoming 中的入站图片/视频。"""

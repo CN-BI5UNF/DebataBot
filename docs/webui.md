@@ -1,6 +1,6 @@
 # WebUI 说明
 
-Debata_Agent 的界面是浏览器控制台，取代了早期的 PySide6 桌面端（`ui/` 目录已移除）。
+KarenBot 的界面是浏览器控制台，取代了早期的 PySide6 桌面端（`ui/` 目录已移除）。
 本文说明怎么启动、页面结构、接口一览，以及二次开发时该改哪个文件。
 
 ## 启动
@@ -23,7 +23,7 @@ uv run python webui_server.py  # 等价入口，参数相同
 
 ```
 ================================================================
-  Debata_Agent WebUI 已启动
+  KarenBot WebUI 已启动
 ================================================================
   监听        : 0.0.0.0:8000
   访问地址    : http://127.0.0.1:8000
@@ -37,7 +37,7 @@ uv run python webui_server.py  # 等价入口，参数相同
 
 WebUI 能读到全部聊天记录、改配置、换 API Key，所以**默认必须带令牌**，即使在局域网里也一样。
 
-- 令牌优先级：`--token` > 环境变量 `DEBATA_WEBUI_TOKEN` > 数据目录下持久化的 `webui_token.txt`（首次启动自动生成，权限 `0600`）
+- 令牌优先级：`--token` > 环境变量 `KAREN_WEBUI_TOKEN` > 数据目录下持久化的 `webui_token.txt`（首次启动自动生成，权限 `0600`）
 - 浏览器侧用 `POST /api/auth/login` 换取 HttpOnly 会话 cookie，有效期 30 天
 - 脚本 / curl 可以用 `Authorization: Bearer <token>`，或 `?token=` 查询参数（WebSocket 也认）
 
@@ -282,7 +282,7 @@ Anthropic 映射为 thinking budget；其他未声明支持的供应商只保存
 增长 EWMA），并提供「立即压缩活跃历史」。手动压缩会等待摘要完成；后台压缩
 进行中返回忙碌，不会排队重复调用摘要模型。
 
-设置 →「更新」显示当前分支/提交、发布仓库 `CN-BI5UNF/DebataBot`、目标分支
+设置 →「更新」显示当前分支/提交、发布仓库 `CN-BI5UNF/KarenBot`、目标分支
 `refactor/main`、生效远程与数据目录。版本列表来自远端 tag/Releases，每个版本
 的更新日志来自仓库内 `releases/<tag>.md`，可展开/收起；可以选择更新、回退或
 切换到任意版本。应用前必须检查并确认，创建 `refs/backups/update/*` 备份，
@@ -291,7 +291,7 @@ Anthropic 映射为 thinking budget；其他未声明支持的供应商只保存
 超出目标支持范围时，显示“兼容性未通过”并禁用自动应用按钮。
 
 镜像提供 GitHub 官方、gh-proxy.com、ghfast.top、ghproxy.net 预设，以及自定义
-https 输入。更新器只接受同一 `CN-BI5UNF/DebataBot` 仓库，拒绝 http、账号密码、
+https 输入。更新器只接受同一 `CN-BI5UNF/KarenBot` 仓库，拒绝 http、账号密码、
 本机/内网地址。自动检查默认每 9 天一次；总览页发现新版本时显示绿色圆形上箭头，
 从该入口关闭窗口会询问是否“之后不再提示”，可在设置页重新开启提醒。右下角
 保留浅灰色“开发版”版本占位，当前不发布正式版本号。

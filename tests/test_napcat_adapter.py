@@ -1309,13 +1309,13 @@ async def test_send_voice_timeout_is_treated_as_possible_success(tmp_path):
 
 def test_napcat_process_path_strips_windows_quotes():
     cfg = NapCatAdapterConfig(
-        process_path='"D:\\Debata_Agent\\NapCat.Shell\\launcher.bat"',
+        process_path='"D:\\KarenBot\\NapCat.Shell\\launcher.bat"',
     )
-    assert cfg.process_path == "D:\\Debata_Agent\\NapCat.Shell\\launcher.bat"
+    assert cfg.process_path == "D:\\KarenBot\\NapCat.Shell\\launcher.bat"
     cfg2 = NapCatAdapterConfig(
-        process_path="  “D:\\Debata_Agent\\NapCat.Shell\\launcher.bat”  ",
+        process_path="  “D:\\KarenBot\\NapCat.Shell\\launcher.bat”  ",
     )
-    assert cfg2.process_path == "D:\\Debata_Agent\\NapCat.Shell\\launcher.bat"
+    assert cfg2.process_path == "D:\\KarenBot\\NapCat.Shell\\launcher.bat"
 
 
 def test_process_manager_strips_quotes_from_path(tmp_path):

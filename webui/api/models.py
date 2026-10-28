@@ -191,7 +191,7 @@ async def upload_model(
         raise HTTPException(status_code=400, detail="上传内容为空")
 
     def _do() -> str:
-        tmp_dir = Path(tempfile.mkdtemp(prefix="debata-model-"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="karen-model-"))
         try:
             import zipfile
 

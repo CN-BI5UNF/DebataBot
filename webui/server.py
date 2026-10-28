@@ -81,8 +81,8 @@ def create_app(host: RuntimeHost, auth: TokenAuth) -> FastAPI:
             await host.stop()
 
     app = FastAPI(
-        title="Debata_Agent WebUI",
-        description="Debata_Agent 的浏览器控制台（原 PySide6 桌面端的替代）",
+        title="KarenBot WebUI",
+        description="KarenBot 的浏览器控制台（原 PySide6 桌面端的替代）",
         version="1.0.0",
         lifespan=lifespan,
         docs_url="/docs",
@@ -250,9 +250,9 @@ def run_webui(
 
     if not _port_available(host, port):
         print(
-            f"\n端口 {port} 已被占用，Debata 可能已经在运行。\n"
-            f"  查看状态: debata status\n"
-            f"  查看日志: debata log\n"
+            f"\n端口 {port} 已被占用，Karen 可能已经在运行。\n"
+            f"  查看状态: karen status\n"
+            f"  查看日志: karen log\n"
             f"  换端口启动: python main.py --host {host} --port 9000\n",
             file=sys.stderr,
             flush=True,
@@ -297,7 +297,7 @@ def run_webui(
         ws_ping_interval=25.0,
         ws_ping_timeout=25.0,
         # 不设置时 uvicorn 会无限等待 WebSocket 客户端自行断开，
-        # NapCat / 浏览器保持连接时 `debata stop` 会被 systemd 超时强杀。
+        # NapCat / 浏览器保持连接时 `karen stop` 会被 systemd 超时强杀。
         timeout_graceful_shutdown=10,
     )
     server = uvicorn.Server(config)
@@ -331,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(
-        prog="debata-webui", description="Debata_Agent WebUI 服务"
+        prog="karen-webui", description="KarenBot WebUI 服务"
     )
     parser.add_argument("--host", default="0.0.0.0", help="监听地址（默认 0.0.0.0，局域网可访问）")
     parser.add_argument("--port", type=int, default=8000, help="监听端口（默认 8000）")

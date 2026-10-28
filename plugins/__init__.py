@@ -1,4 +1,4 @@
-"""插件系统 —— 给 Debata 接本地模型 / 重资源依赖的可选能力。
+"""插件系统 —— 给 Karen 接本地模型 / 重资源依赖的可选能力。
 
 设计目标：
     - 主程序只依赖 features/ 的轻量接口（ITTSService / IEmbeddingService）

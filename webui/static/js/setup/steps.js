@@ -14,7 +14,7 @@ import { endpoints } from '../api.js';
 import { providerFields, readProviderFields } from '../providers.js';
 
 const PERSONA_SOURCE = [
-  ['builtin', '用内置人格', '先用自带的 debata 试跑，之后随时能换'],
+  ['builtin', '用内置人格', '先用自带的 karen 试跑，之后随时能换'],
   ['create', '生成一个新人格', '填几个关键词，让模型帮你写人设'],
 ];
 
@@ -534,8 +534,8 @@ export function renderAdapter(host, ctx, state) {
     onchange: (e) => { a.mode = e.target.value; },
   });
   for (const [value, label] of [
-    ['client', 'client（Debata 连 NapCat 的正向 WS）'],
-    ['server', 'server（Debata 监听，等 NapCat 反向连入）'],
+    ['client', 'client（Karen 连 NapCat 的正向 WS）'],
+    ['server', 'server（Karen 监听，等 NapCat 反向连入）'],
   ]) {
     mode.append(h('option', { value, selected: a.mode === value }, label));
   }
@@ -573,13 +573,13 @@ export function renderAdapter(host, ctx, state) {
 
   const nodes = [
     h('p', { class: 'card-sub' },
-      '让 Debata 通过 NapCat 收发 QQ 消息。还没装 NapCat 也可以先跳过，之后在设置里配。'),
+      '让 Karen 通过 NapCat 收发 QQ 消息。还没装 NapCat 也可以先跳过，之后在设置里配。'),
     field('连接模式', mode),
     h('div', { class: 'grid grid-3' },
       field('地址', hostInput), field('端口', port), field('路径', path),
     ),
     field('Access Token', token, 'NapCat 里配置的那个，留空表示没设'),
-    h('label', { class: 'switch' }, manage, '由 Debata 拉起 NapCat 进程'),
+    h('label', { class: 'switch' }, manage, '由 Karen 拉起 NapCat 进程'),
   ];
 
   if (a.manage_process) {
@@ -634,7 +634,7 @@ export function renderPersona(host, ctx, state) {
     onchange: (e) => { state.persona = e.target.value; },
   });
   if (!state.personas.length) {
-    select.append(h('option', { value: 'debata' }, 'debata（内置）'));
+    select.append(h('option', { value: 'karen' }, 'karen（内置）'));
   }
   for (const persona of state.personas) {
     select.append(h('option', {

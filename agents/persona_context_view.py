@@ -264,9 +264,9 @@ _SECTION_NAMES: tuple[str, ...] = (
 def _log_section_sizes(sections: list[str], view: Any) -> None:
     """按需打印各段字符数，用于定位「前缀被哪一段打断」。
 
-    只在 DEBATA_KV_SECTION_DIAG=1 时输出 —— 每段体积直接决定可缓存前缀的长度。
+    只在 KAREN_KV_SECTION_DIAG=1 时输出 —— 每段体积直接决定可缓存前缀的长度。
     """
-    if os.environ.get("DEBATA_KV_SECTION_DIAG") != "1":
+    if os.environ.get("KAREN_KV_SECTION_DIAG") != "1":
         return
     sizes = " ".join(
         f"{name}={len(text)}"

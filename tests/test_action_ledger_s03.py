@@ -8,14 +8,14 @@ from core.action_ledger import (
     compact_turn_loop,
 )
 from core.d01 import _DDL
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 from utils.token_budget import TokenEstimator
 
 
 @pytest.fixture
 def ledger_db(tmp_path):
     db_file = tmp_path / "action_ledger_test.db"
-    db = DebataDB(db_file)
+    db = KarenDB(db_file)
     db.load()
     with db.connect() as conn:
         for stmt in _DDL:
@@ -34,7 +34,7 @@ def test_action_ledger_lifecycle(ledger_db):
         "act_100",
         turn_id="turn_1",
         tool_name="web_search",
-        args_summary='{"q": "Debata"}',
+        args_summary='{"q": "Karen"}',
     )
     rec1 = mgr.get_action("persona_1", "act_100")
     assert rec1 is not None

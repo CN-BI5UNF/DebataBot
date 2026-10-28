@@ -1513,7 +1513,11 @@ class KnowledgeService:
             raise
 
     def start_background(self, *, startup_delay: float = 20.0) -> None:
-        if os.environ.get("DEBATA_DISABLE_TREND_RESEARCH", "").strip() == "1":
+        disabled = (
+            os.environ.get("KAREN_DISABLE_TREND_RESEARCH")
+            or os.environ.get("DEBATA_DISABLE_TREND_RESEARCH", "")
+        ).strip()
+        if disabled == "1":
             return
         if not self._enabled() or not bool(
             getattr(self.config, "auto_research_enabled", True)

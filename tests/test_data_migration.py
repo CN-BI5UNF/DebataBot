@@ -24,8 +24,8 @@ def test_migrates_old_data_to_target_instance_and_creates_backup(tmp_path):
     project_root = tmp_path / "project"
     old_data = project_root / "data"
     target_instance = tmp_path / "data-root" / "instances" / "default"
-    (old_data / "memory" / "debata").mkdir(parents=True)
-    (old_data / "memory" / "debata" / "history.jsonl").write_text("old history", encoding="utf-8")
+    (old_data / "memory" / "karen").mkdir(parents=True)
+    (old_data / "memory" / "karen" / "history.jsonl").write_text("old history", encoding="utf-8")
     (old_data / "config.yaml").write_text("name: old\n", encoding="utf-8")
 
     report = ensure_data_root_initialized(make_paths(project_root, target_instance), "0.9.0", now=fixed_now)
@@ -36,7 +36,7 @@ def test_migrates_old_data_to_target_instance_and_creates_backup(tmp_path):
     assert report["target_instance_dir"] == target_instance
     assert (tmp_path / "data-root" / "root.json").is_file()
     assert (target_instance / "instance.json").is_file()
-    assert (target_instance / "memory" / "debata" / "history.jsonl").read_text(encoding="utf-8") == "old history"
+    assert (target_instance / "memory" / "karen" / "history.jsonl").read_text(encoding="utf-8") == "old history"
     assert (target_instance / "config.yaml").read_text(encoding="utf-8") == "name: old\n"
     assert old_data.is_dir()
     assert (old_data / "config.yaml").is_file()
@@ -44,7 +44,7 @@ def test_migrates_old_data_to_target_instance_and_creates_backup(tmp_path):
     backup_path = report["backup_path"]
     assert backup_path == tmp_path / "data-root" / "backups" / "data-20260102T030405Z"
     assert backup_path.is_dir()
-    assert (backup_path / "memory" / "debata" / "history.jsonl").read_text(encoding="utf-8") == "old history"
+    assert (backup_path / "memory" / "karen" / "history.jsonl").read_text(encoding="utf-8") == "old history"
 
 
 def test_second_run_is_idempotent(tmp_path):
@@ -146,7 +146,7 @@ def test_legacy_single_root_migration_record_is_compatible(tmp_path):
     root_json.write_text(
         json.dumps(
             {
-                "schema": "debata.data_root.v0",
+                "schema": "karen.data_root.v0",
                 "app_version": "0.9.0",
                 "created_at": "20260102T030405Z",
                 "instances": [{"name": "default", "path": str(default_instance)}],

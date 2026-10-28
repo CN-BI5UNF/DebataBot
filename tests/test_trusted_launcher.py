@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _load_launcher():
     spec = importlib.util.spec_from_file_location(
-        "debata_trusted_launcher", ROOT / "deploy" / "trusted_launcher.py"
+        "karen_trusted_launcher", ROOT / "deploy" / "trusted_launcher.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

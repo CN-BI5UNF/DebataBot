@@ -4,7 +4,7 @@
 路径；测试使用 tmp AppPaths。它不启动 Runtime、不删除/重写旧 raw JSON、
 不重放工具或外发消息。
 
-迁移版本：debata.db v1 -> v2（migration id ``M001``）。旧 raw 字节保留，
+迁移版本：karen.db v1 -> v2（migration id ``M001``）。旧 raw 字节保留，
 只补身份列和账本表；重复执行幂等。
 """
 
@@ -227,9 +227,9 @@ def _looks_like_production(path: Path) -> bool:
     """拒绝默认生产数据根和项目内 data/，测试必须使用显式临时路径。"""
     resolved = path.resolve()
     text = resolved.as_posix()
-    # 不绑定具体用户名：任何 .../.local/share/Debata_Agent 都视为生产数据根。
-    if "/.local/share/Debata_Agent/" in text or text.endswith(
-        "/.local/share/Debata_Agent"
+    # 不绑定具体用户名：任何 .../.local/share/KarenBot 都视为生产数据根。
+    if "/.local/share/KarenBot/" in text or text.endswith(
+        "/.local/share/KarenBot"
     ):
         return True
     project_data = Path(__file__).resolve().parents[1] / "data"
@@ -400,7 +400,7 @@ def migrate_database(
     allow_production: bool = False,
     instance_id: str = "default",
 ) -> dict[str, Any]:
-    """把 debata.db v1 增量迁移到 D01 v2；不覆盖生产路径除非显式授权。"""
+    """把 karen.db v1 增量迁移到 D01 v2；不覆盖生产路径除非显式授权。"""
     db_path = Path(path)
     if not db_path.is_file():
         raise D01Error("source_missing", f"数据库不存在：{db_path}")

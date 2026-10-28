@@ -4,10 +4,10 @@ import sqlite3
 
 import pytest
 
-from memory.debata_db import (
-    DEBATA_DB_SCHEMA_VERSION,
-    DebataDB,
-    DebataDBVersionError,
+from memory.karen_db import (
+    KAREN_DB_SCHEMA_VERSION,
+    KarenDB,
+    KarenDBVersionError,
     backup_existing_database,
 )
 
@@ -38,15 +38,15 @@ KEY_TABLES = {
 }
 
 
-def test_memory_package_exports_debata_db():
-    from memory import DebataDB as PackageDebataDB
+def test_memory_package_exports_karen_db():
+    from memory import KarenDB as PackageKarenDB
 
-    assert PackageDebataDB is DebataDB
+    assert PackageKarenDB is KarenDB
 
 
-def test_debata_db_load_creates_v1_schema_and_versions(tmp_path):
-    db_path = tmp_path / "db" / "debata.db"
-    db = DebataDB(db_path)
+def test_karen_db_load_creates_v1_schema_and_versions(tmp_path):
+    db_path = tmp_path / "db" / "karen.db"
+    db = KarenDB(db_path)
 
     try:
         db.load()
@@ -79,25 +79,25 @@ def test_debata_db_load_creates_v1_schema_and_versions(tmp_path):
         "summary_json",
         "updated_at",
     } <= rolling_summary_columns
-    assert user_version == DEBATA_DB_SCHEMA_VERSION
-    assert migration_row["version"] == DEBATA_DB_SCHEMA_VERSION
+    assert user_version == KAREN_DB_SCHEMA_VERSION
+    assert migration_row["version"] == KAREN_DB_SCHEMA_VERSION
     assert migration_row["migration_id"] == "v1_initial_schema"
-    assert version.user_version == DEBATA_DB_SCHEMA_VERSION
-    assert version.migration_version == DEBATA_DB_SCHEMA_VERSION
+    assert version.user_version == KAREN_DB_SCHEMA_VERSION
+    assert version.migration_version == KAREN_DB_SCHEMA_VERSION
     assert foreign_keys == 1
     assert busy_timeout == 30_000
 
 
-def test_debata_db_load_is_idempotent(tmp_path):
-    db_path = tmp_path / "db" / "debata.db"
+def test_karen_db_load_is_idempotent(tmp_path):
+    db_path = tmp_path / "db" / "karen.db"
 
-    first = DebataDB(db_path)
+    first = KarenDB(db_path)
     try:
         first.load()
     finally:
         first.close()
 
-    second = DebataDB(db_path)
+    second = KarenDB(db_path)
     try:
         second.load()
         second.load()
@@ -109,13 +109,13 @@ def test_debata_db_load_is_idempotent(tmp_path):
         second.close()
 
     assert migration_count == 1
-    assert migration_version == DEBATA_DB_SCHEMA_VERSION
-    assert user_version == DEBATA_DB_SCHEMA_VERSION
+    assert migration_version == KAREN_DB_SCHEMA_VERSION
+    assert user_version == KAREN_DB_SCHEMA_VERSION
 
 
-def test_debata_db_load_rejects_future_user_version_without_downgrade(tmp_path):
-    db_path = tmp_path / "db" / "debata.db"
-    db = DebataDB(db_path)
+def test_karen_db_load_rejects_future_user_version_without_downgrade(tmp_path):
+    db_path = tmp_path / "db" / "karen.db"
+    db = KarenDB(db_path)
     try:
         db.load()
     finally:
@@ -123,9 +123,9 @@ def test_debata_db_load_rejects_future_user_version_without_downgrade(tmp_path):
     with sqlite3.connect(db_path) as conn:
         conn.execute("PRAGMA user_version = 2")
 
-    db = DebataDB(db_path)
+    db = KarenDB(db_path)
     try:
-        with pytest.raises(DebataDBVersionError, match="user_version=2"):
+        with pytest.raises(KarenDBVersionError, match="user_version=2"):
             db.load()
     finally:
         db.close()
@@ -134,9 +134,9 @@ def test_debata_db_load_rejects_future_user_version_without_downgrade(tmp_path):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
-def test_debata_db_load_rejects_future_internal_migration_without_downgrade(tmp_path):
-    db_path = tmp_path / "db" / "debata.db"
-    db = DebataDB(db_path)
+def test_karen_db_load_rejects_future_internal_migration_without_downgrade(tmp_path):
+    db_path = tmp_path / "db" / "karen.db"
+    db = KarenDB(db_path)
     try:
         db.load()
         db.connect().execute(
@@ -149,20 +149,20 @@ def test_debata_db_load_rejects_future_internal_migration_without_downgrade(tmp_
     finally:
         db.close()
 
-    db = DebataDB(db_path)
+    db = KarenDB(db_path)
     try:
-        with pytest.raises(DebataDBVersionError, match="migration_version=2"):
+        with pytest.raises(KarenDBVersionError, match="migration_version=2"):
             db.load()
     finally:
         db.close()
 
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == DEBATA_DB_SCHEMA_VERSION
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == KAREN_DB_SCHEMA_VERSION
         assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 2
 
 
 def test_backup_missing_database_returns_none_without_creating_backups_dir(tmp_path):
-    db_path = tmp_path / "db" / "debata.db"
+    db_path = tmp_path / "db" / "karen.db"
 
     backup_path = backup_existing_database(db_path)
 
@@ -171,8 +171,8 @@ def test_backup_missing_database_returns_none_without_creating_backups_dir(tmp_p
 
 
 def test_backup_existing_database_is_sqlite_copy_and_does_not_overwrite(tmp_path):
-    db_path = tmp_path / "db" / "debata.db"
-    db = DebataDB(db_path)
+    db_path = tmp_path / "db" / "karen.db"
+    db = KarenDB(db_path)
     try:
         db.load()
         db.connect().execute(
@@ -192,9 +192,9 @@ def test_backup_existing_database_is_sqlite_copy_and_does_not_overwrite(tmp_path
         timestamp="20260618T120000Z",
     )
     assert first_backup is not None
-    assert first_backup.name == "debata-v1-20260618T120000Z.db"
+    assert first_backup.name == "karen-v1-20260618T120000Z.db"
     with sqlite3.connect(first_backup) as backup_conn:
-        assert backup_conn.execute("PRAGMA user_version").fetchone()[0] == DEBATA_DB_SCHEMA_VERSION
+        assert backup_conn.execute("PRAGMA user_version").fetchone()[0] == KAREN_DB_SCHEMA_VERSION
         assert backup_conn.execute("SELECT COUNT(*) FROM history_records").fetchone()[0] == 1
         backup_conn.execute("CREATE TABLE backup_marker(value TEXT NOT NULL)")
         backup_conn.execute("INSERT INTO backup_marker(value) VALUES ('preserve-first')")
@@ -204,7 +204,7 @@ def test_backup_existing_database_is_sqlite_copy_and_does_not_overwrite(tmp_path
         timestamp="20260618T120000Z",
     )
     assert second_backup is not None
-    assert second_backup.name == "debata-v1-20260618T120000Z-1.db"
+    assert second_backup.name == "karen-v1-20260618T120000Z-1.db"
 
     with sqlite3.connect(first_backup) as first_conn:
         marker = first_conn.execute("SELECT value FROM backup_marker").fetchone()[0]
@@ -218,33 +218,33 @@ def test_backup_existing_database_is_sqlite_copy_and_does_not_overwrite(tmp_path
         }
 
     assert marker == "preserve-first"
-    assert second_user_version == DEBATA_DB_SCHEMA_VERSION
+    assert second_user_version == KAREN_DB_SCHEMA_VERSION
     assert "backup_marker" not in second_tables
 
 
 def test_backup_existing_database_skips_preexisting_target_file(tmp_path):
-    db_path = tmp_path / "db" / "debata.db"
-    db = DebataDB(db_path)
+    db_path = tmp_path / "db" / "karen.db"
+    db = KarenDB(db_path)
     try:
         db.load()
     finally:
         db.close()
     backups_dir = db_path.parent / "backups"
     backups_dir.mkdir(parents=True)
-    existing_backup = backups_dir / "debata-v1-20260618T120000Z.db"
+    existing_backup = backups_dir / "karen-v1-20260618T120000Z.db"
     existing_backup.write_text("preexisting backup", encoding="utf-8")
 
     backup_path = backup_existing_database(db_path, timestamp="20260618T120000Z")
 
     assert backup_path is not None
-    assert backup_path.name == "debata-v1-20260618T120000Z-1.db"
+    assert backup_path.name == "karen-v1-20260618T120000Z-1.db"
     assert existing_backup.read_text(encoding="utf-8") == "preexisting backup"
     with sqlite3.connect(backup_path) as backup_conn:
-        assert backup_conn.execute("PRAGMA user_version").fetchone()[0] == DEBATA_DB_SCHEMA_VERSION
+        assert backup_conn.execute("PRAGMA user_version").fetchone()[0] == KAREN_DB_SCHEMA_VERSION
 
 
 def test_history_records_unique_per_persona_index(tmp_path):
-    db = DebataDB(tmp_path / "debata.db")
+    db = KarenDB(tmp_path / "karen.db")
     try:
         db.load()
         conn = db.connect()

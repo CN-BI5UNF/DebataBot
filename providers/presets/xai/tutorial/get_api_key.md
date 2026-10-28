@@ -17,6 +17,6 @@ xAI 提供 Grok 系列模型，API 走 OpenAI 兼容协议。
 
 [按 token 计费](https://x.ai/api-pricing)，每月有免费额度（额度可能变动，以官网为准）。
 
-## 4. 填入 Debata
+## 4. 填入 Karen
 
 启动向导 → 选 **xAI Grok** → 粘贴 API Key → 选模型 → 保存。或设置页 Models 节手动加。

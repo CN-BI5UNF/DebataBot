@@ -37,7 +37,7 @@ LLM 可以把联网搜索的结果先自己过一遍，再写成 Persona 级的�
 - 如果官方 provider 支持 DeepSeek Fetch（preset 里有 `fetch_path`），LLM 还可以用 `web_fetch` 读取单页正文，继续做更深入的考究。
 - 关闭后台：`features.knowledge.auto_research_enabled=false`（手动考究仍可用）。
 - 关闭整个知识库：`features.knowledge.enabled=false`（不接受写入或查询）。
-- 临时禁用后台（例如 CI/调试）：环境变量 `DEBATA_DISABLE_TREND_RESEARCH=1`。
+- 临时禁用后台（例如 CI/调试）：环境变量 `KAREN_DISABLE_TREND_RESEARCH=1`。
 
 ## 管理
 

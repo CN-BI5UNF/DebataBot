@@ -255,7 +255,7 @@ def _ensure_ffmpeg_for_denoiser() -> Path:
         "否则官方 ZipEnhancer 的 torchaudio 响度归一化会加载 torchcodec 失败。\n\n"
         f"请把 full-shared 版 FFmpeg 的 bin 目录放到：{expected}\n"
         "确认其中包含 ffmpeg.exe、avutil-*.dll、avcodec-*.dll、avformat-*.dll；"
-        "或设置环境变量 DEBATA_FFMPEG_DIR 指向该 bin 目录。"
+        "或设置环境变量 KAREN_FFMPEG_DIR 指向该 bin 目录。"
     )
 
 
@@ -320,7 +320,9 @@ def _is_ffmpeg_shared_dir(bin_dir: Path) -> bool:
 
 def _ffmpeg_bin_candidates() -> list[Path]:
     candidates: list[Path] = []
-    configured = os.getenv("DEBATA_FFMPEG_DIR", "").strip()
+    configured = (
+        os.getenv("KAREN_FFMPEG_DIR") or os.getenv("DEBATA_FFMPEG_DIR", "")
+    ).strip()
     if configured:
         candidates.append(Path(configured))
     root = Path.cwd()

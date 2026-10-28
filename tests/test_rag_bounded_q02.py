@@ -24,13 +24,13 @@ from core.rag_bounded import (
     RagQueueFullError,
     validate_embedding_batch,
 )
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 @pytest.fixture
 def rag_conn(tmp_path: Path) -> sqlite3.Connection:
-    db_file = tmp_path / "debata_rag_test.db"
-    db = DebataDB(db_file)
+    db_file = tmp_path / "karen_rag_test.db"
+    db = KarenDB(db_file)
     db.load()
     migrate_database(db_file)
     return db.connect()

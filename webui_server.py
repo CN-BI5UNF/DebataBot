@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Debata_Agent WebUI 启动脚本。
+"""KarenBot WebUI 启动脚本。
 
 用法::
 

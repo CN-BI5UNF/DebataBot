@@ -36,7 +36,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 DEFAULT_LEASE_TTL_SECONDS = 300.0  # 5 分钟
-_CSRF_SECRET = b"debata-csrf-protection-secret-v2.6"
+_CSRF_SECRET = b"karen-csrf-protection-secret-v2.6"
 
 
 class ConfigConflictError(RuntimeError):

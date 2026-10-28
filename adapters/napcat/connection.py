@@ -1,6 +1,6 @@
 """NapCat WebSocket 连接管理。
 
-两种连接模式（在配置中通过 mode 字段选择，命名从 Debata_Agent 视角）：
+两种连接模式（在配置中通过 mode 字段选择，命名从 KarenBot 视角）：
 
     client（推荐）：
         程序作为 WS 客户端，主动连 NapCat 的 WS 服务（如 ws://127.0.0.1:3001）。

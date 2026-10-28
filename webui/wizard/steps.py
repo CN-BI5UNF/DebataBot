@@ -75,7 +75,7 @@ STEPS: dict[StepId, Step] = {
         id=StepId.WELCOME,
         title="开始之前",
         subtitle=(
-            "Debata_Agent 是一个让虚拟角色活过来的通用框架。\n"
+            "KarenBot 是一个让虚拟角色活过来的通用框架。\n"
             "下面用几分钟配置好——你可以选择「推荐」最快上手，也可以自定义每个细节。"
         ),
     ),
@@ -98,7 +98,7 @@ STEPS: dict[StepId, Step] = {
         id=StepId.OTHER_AGENTS,
         title="其它模型",
         subtitle=(
-            "Debata_Agent 内部用了三类模型：\n"
+            "KarenBot 内部用了三类模型：\n"
             "  · 主聊天（你刚才配的）\n"
             "  · 主动思考（小模型，决定是否主动开口）\n"
             "  · 历史总结（中型模型，定期整理对话）\n"
@@ -111,7 +111,7 @@ STEPS: dict[StepId, Step] = {
         id=StepId.FEATURES,
         title="选些可选的本领",
         subtitle=(
-            "这些功能默认关闭。打开哪个，Debata 就拥有哪个能力。\n"
+            "这些功能默认关闭。打开哪个，Karen 就拥有哪个能力。\n"
             "现在不开也没关系，之后随时能在设置里打开。"
         ),
         fields=[
@@ -136,7 +136,7 @@ STEPS: dict[StepId, Step] = {
         title="把 NapCat 接上",
         subtitle=(
             "NapCat 是连接 QQ 的中间件。你需要先把它跑起来（参考教程），\n"
-            "然后告诉 Debata 怎么找到它。"
+            "然后告诉 Karen 怎么找到它。"
         ),
         fields=[
             "adapter_mode",
@@ -151,7 +151,7 @@ STEPS: dict[StepId, Step] = {
         id=StepId.PERSONA,
         title="赋予一个角色",
         subtitle=(
-            "Debata 不是单一角色——你给它什么人格，它就活成谁。\n"
+            "Karen 不是单一角色——你给它什么人格，它就活成谁。\n"
             "可以用内置的示范角色快速开始，或者花十分钟创造一个属于你的。"
         ),
         fields=["persona_source", "active_persona"],

@@ -687,7 +687,7 @@ class PipelineSummaryMixin:
         partial_archives = self._partial_compaction_archives()
         archive_reused = archive_key in partial_archives
 
-        # S02: 若底层存在 debata.db，优先执行原子 CAS 事务提交
+        # S02: 若底层存在 karen.db，优先执行原子 CAS 事务提交
         rolling_db = getattr(self.rolling_summary, "db", None)
         persona_id = str(getattr(self.rolling_summary, "persona_id", getattr(self, "persona_id", "default")))
         used_cas = False

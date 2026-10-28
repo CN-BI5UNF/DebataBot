@@ -16,6 +16,6 @@
 
 按 token 计费，部分模型有免费额度。详见 [百炼定价](https://help.aliyun.com/zh/model-studio/getting-started/models)。
 
-## 4. 填入 Debata
+## 4. 填入 Karen
 
 向导自定义路径 → 选 **通义千问** → 粘贴 API Key → 选模型（如 qwen3-flash）→ 保存。

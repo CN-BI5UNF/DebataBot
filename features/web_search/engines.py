@@ -29,11 +29,11 @@ _BING_URL = "https://cn.bing.com/search"
 _BAIDU_URL = "https://www.baidu.com/s"
 _USER_AGENT = (
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 DebataBot"
+    "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 KarenBot"
 )
 _BAIDU_USER_AGENT = (
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 DebataBot"
+    "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 KarenBot"
 )
 _TAG_RE = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
@@ -246,7 +246,7 @@ class BingRssEngine:
             timeout_seconds=timeout_seconds or min(self.timeout_seconds, 8.0),
         )
         try:
-            await engine.search("DebataBot", 1)
+            await engine.search("KarenBot", 1)
         except SearchEngineError as exc:
             return ProbeResult(
                 ok=False,
@@ -385,7 +385,7 @@ class BaiduEngine:
             timeout_seconds=timeout_seconds or min(self.timeout_seconds, 8.0),
         )
         try:
-            await engine.search("DebataBot", 1)
+            await engine.search("KarenBot", 1)
         except SearchEngineError as exc:
             return ProbeResult(
                 ok=False,
@@ -490,7 +490,7 @@ class SearxngEngine:
             timeout_seconds=timeout_seconds or min(self.timeout_seconds, 8.0),
         )
         try:
-            await engine.search("DebataBot", 1)
+            await engine.search("KarenBot", 1)
         except (SearchEngineError, ValueError) as exc:
             return ProbeResult(
                 ok=False,
@@ -556,7 +556,7 @@ class DuckDuckGoEngine:
             timeout_seconds=timeout_seconds or min(self.timeout_seconds, 8.0)
         )
         try:
-            await engine.search("DebataBot", 1)
+            await engine.search("KarenBot", 1)
         except SearchEngineError as exc:
             return ProbeResult(
                 ok=False,

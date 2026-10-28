@@ -53,23 +53,23 @@ def test_systemd_scope_ignores_inherited_outer_service_env(monkeypatch):
 
 def test_systemd_scope_detects_user_and_system_units(monkeypatch):
     _platform_linux(monkeypatch)
-    cgroup = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/debata-agent.service"
+    cgroup = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/karenbot.service"
     monkeypatch.setattr(backend_restart, "_read_self_cgroup", lambda: cgroup)
     assert backend_restart.systemd_scope() == "user"
 
     monkeypatch.setattr(
         backend_restart, "_read_self_cgroup",
-        lambda: "0::/system.slice/debata-agent.service",
+        lambda: "0::/system.slice/karenbot.service",
     )
     assert backend_restart.systemd_scope() == "system"
 
 
 def test_systemd_restart_commands_keep_scope():
     assert backend_restart._systemd_restart_command("user") == [
-        "systemctl", "--user", "--no-block", "restart", "debata-agent.service",
+        "systemctl", "--user", "--no-block", "restart", "karenbot.service",
     ]
     assert backend_restart._systemd_restart_command("system") == [
-        "systemctl", "--no-block", "restart", "debata-agent.service",
+        "systemctl", "--no-block", "restart", "karenbot.service",
     ]
 
 
@@ -168,7 +168,7 @@ def test_spawn_fallback_restart_helper_passes_current_args(monkeypatch):
     assert command[-2:] == ["restart-helper", "12345"]
     assert command[1].endswith("main.py")
     assert kwargs["start_new_session"] is True
-    assert kwargs["env"]["DEBATA_SERVICE_ARGS"] == "--host 0.0.0.0 --port 8000"
+    assert kwargs["env"]["KAREN_SERVICE_ARGS"] == "--host 0.0.0.0 --port 8000"
 
 
 @pytest.mark.asyncio

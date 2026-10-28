@@ -491,7 +491,7 @@ def _write_minimal_config(paths):
     """写一份能跑通 Runtime 装配的最小 config.yaml。"""
     data = {
         "version": 2,
-        "app": {"name": "Debata_Agent", "log_level": "INFO"},
+        "app": {"name": "KarenBot", "log_level": "INFO"},
         "adapters": {
             "default": {
                 "type": "napcat",
@@ -664,7 +664,7 @@ def _patch_rag_runtime_network(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runtime_start_heals_removed_persona_and_persists_config(assembled_project):
-    """旧配置 persona.active=debata 不应再导致启动失败。"""
+    """旧配置 persona.active=__KAREN_OLD_PERSONA_KAREN__ 不应再导致启动失败。"""
     project_root, paths = assembled_project
     persona_dir = paths.PERSONAS_DIR / "deepseek"
     persona_dir.mkdir(parents=True, exist_ok=True)
@@ -674,7 +674,7 @@ async def test_runtime_start_heals_removed_persona_and_persists_config(assembled
         encoding="utf-8",
     )
     config_data = yaml.safe_load(paths.CONFIG_FILE.read_text(encoding="utf-8"))
-    config_data["persona"]["active"] = "debata"
+    config_data["persona"]["active"] = "__KAREN_OLD_PERSONA_KAREN__"
     paths.CONFIG_FILE.write_text(
         yaml.safe_dump(config_data, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
@@ -724,23 +724,23 @@ async def test_runtime_start_assembles_all_components(assembled_project):
         assert rt.subconscious_agent is None
         assert rt.persona_db is None
         from memory import (
-            DebataArchiveStore,
-            DebataEventStore,
-            DebataHistoryStore,
-            DebataImportantStore,
-            DebataRollingSummaryStore,
-            DebataUsageStatsStore,
+            KarenArchiveStore,
+            KarenEventStore,
+            KarenHistoryStore,
+            KarenImportantStore,
+            KarenRollingSummaryStore,
+            KarenUsageStatsStore,
         )
 
         runtime_db_path = paths.memory_dir_for("test_bot") / "test_bot.db"
         assert runtime_db_path.exists()
-        assert not (paths.memory_dir_for("test_bot") / "debata.db").exists()
-        assert isinstance(rt.history._store, DebataHistoryStore)
-        assert isinstance(rt.event_store.store, DebataEventStore)
-        assert isinstance(rt.important._store, DebataImportantStore)
-        assert isinstance(rt.archive._store, DebataArchiveStore)
-        assert isinstance(rt.rolling_summary, DebataRollingSummaryStore)
-        assert isinstance(rt.usage_stats, DebataUsageStatsStore)
+        assert not (paths.memory_dir_for("test_bot") / "karen.db").exists()
+        assert isinstance(rt.history._store, KarenHistoryStore)
+        assert isinstance(rt.event_store.store, KarenEventStore)
+        assert isinstance(rt.important._store, KarenImportantStore)
+        assert isinstance(rt.archive._store, KarenArchiveStore)
+        assert isinstance(rt.rolling_summary, KarenRollingSummaryStore)
+        assert isinstance(rt.usage_stats, KarenUsageStatsStore)
         assert rt.history._store.db.path == runtime_db_path
         assert rt.event_store.store.db.path == runtime_db_path
         assert rt.important._store.db.path == runtime_db_path
@@ -975,7 +975,7 @@ async def test_runtime_imports_legacy_memory_into_persona_db_idempotently(assemb
         await rt.start()
 
         assert runtime_db_path.exists()
-        assert not (mem_dir / "debata.db").exists()
+        assert not (mem_dir / "karen.db").exists()
         assert await rt.history.records() == history_records
         assert _memory_id_content_pairs(rt.important.items()) == [
             ("persona_only", "persona.db 记忆"),
@@ -986,9 +986,9 @@ async def test_runtime_imports_legacy_memory_into_persona_db_idempotently(assemb
         assert rt.usage_stats.count == 1
         assert rt.usage_stats.summarize("all").total_tokens == 7
 
-        from memory import DebataPersonaDB
+        from memory import KarenPersonaDB
 
-        persona_db = DebataPersonaDB(runtime_db_path, "test_bot")
+        persona_db = KarenPersonaDB(runtime_db_path, "test_bot")
         assert await persona_db.read_important(default=[]) == persona_items
         runtime_only_record = {
             "role": "user",
@@ -1006,9 +1006,9 @@ async def test_runtime_imports_legacy_memory_into_persona_db_idempotently(assemb
         await second.start()
 
         expected_history = [*history_records, runtime_only_record]
-        assert _debata_row_count(runtime_db_path, "history_records", "test_bot") == 3
-        assert _debata_row_count(runtime_db_path, "important_memories", "test_bot") == 2
-        assert _debata_usage_count(runtime_db_path, "test_bot") == 1
+        assert _karen_row_count(runtime_db_path, "history_records", "test_bot") == 3
+        assert _karen_row_count(runtime_db_path, "important_memories", "test_bot") == 2
+        assert _karen_usage_count(runtime_db_path, "test_bot") == 1
         assert await second.history.records() == expected_history
         assert _memory_id_content_pairs(second.important.items()) == [
             ("persona_only", "persona.db 记忆"),
@@ -1057,11 +1057,11 @@ async def test_runtime_import_gate_merges_persona_db_important_source_when_perso
     persona_items = [{"id": "persona_only", "content": "persona.db 记忆"}]
     _write_legacy_persona_db(mem_dir / "persona.db", persona_items)
 
-    from memory import DebataImportantStore, DebataPersonaDB
+    from memory import KarenImportantStore, KarenPersonaDB
 
-    persona_db = DebataPersonaDB(runtime_db_path, "test_bot")
+    persona_db = KarenPersonaDB(runtime_db_path, "test_bot")
     await persona_db.load()
-    assert await DebataImportantStore(runtime_db_path, "test_bot").read(default=[]) == []
+    assert await KarenImportantStore(runtime_db_path, "test_bot").read(default=[]) == []
 
     rt = Runtime(project_root=project_root)
     try:
@@ -1074,7 +1074,7 @@ async def test_runtime_import_gate_merges_persona_db_important_source_when_perso
     finally:
         await rt.shutdown()
 
-    assert _debata_row_count(runtime_db_path, "important_memories", "test_bot") == 1
+    assert _karen_row_count(runtime_db_path, "important_memories", "test_bot") == 1
     assert (mem_dir / "persona.db").exists()
 
 
@@ -1165,17 +1165,17 @@ async def test_runtime_persona_management_assembles_agents_and_pipeline(
         runtime_db_path = paths.memory_dir_for("test_bot") / "test_bot.db"
         assert not persona_db_path.exists()
         assert runtime_db_path.exists()
-        assert not (paths.memory_dir_for("test_bot") / "debata.db").exists()
+        assert not (paths.memory_dir_for("test_bot") / "karen.db").exists()
         assert rt.persona_db is not None
         assert rt.persona_agent is not None
         assert rt.social_agent is not None
         assert rt.subconscious_agent is not None
         assert rt.age_profile is None
 
-        from memory import DebataImportantStore, DebataPersonaDB
+        from memory import KarenImportantStore, KarenPersonaDB
 
-        assert isinstance(rt.persona_db, DebataPersonaDB)
-        assert isinstance(rt.important._store, DebataImportantStore)
+        assert isinstance(rt.persona_db, KarenPersonaDB)
+        assert isinstance(rt.important._store, KarenImportantStore)
         assert rt.persona_agent.cfg.provider == "fake_main"
         assert rt.persona_agent.cfg.model == "fake-chat"
         assert rt.persona_agent.cfg.temperature == 0.2
@@ -1624,7 +1624,7 @@ def _legacy_event(event_id, *, payload=None):
     }
 
 
-def _debata_row_count(db_path, table, persona_id):
+def _karen_row_count(db_path, table, persona_id):
     allowed_tables = {
         "history_records": "history_records",
         "important_memories": "important_memories",
@@ -1639,7 +1639,7 @@ def _debata_row_count(db_path, table, persona_id):
         )
 
 
-def _debata_usage_count(db_path, persona_id):
+def _karen_usage_count(db_path, persona_id):
     with sqlite3.connect(db_path) as conn:
         return int(
             conn.execute(

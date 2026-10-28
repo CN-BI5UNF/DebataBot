@@ -15,5 +15,5 @@
 - 在 `main` 上只允许 release/hotfix 级别提交；提交前必须明确版本号、CHANGELOG、依赖清单版本号和 tag 是否同步。
 - 合并或同步到 `main` 前，必须按 `.github/workflows/` 的实际命令完成等价测试；不能只跑局部测试就发布。
 - `main` 发布后必须确认 `git status --short --branch` 干净，并确认本地 `HEAD` 与 `origin/main` 一致。
-- release 压缩包只放 ignored 的 `release/` 目录，文件名使用 `Debata-vX.Y.Z-alpha.zip`，不得提交进 Git。
+- release 压缩包只放 ignored 的 `release/` 目录，文件名使用 `Karen-vX.Y.Z-alpha.zip`，不得提交进 Git。
 - 如果需要重写或强推 `main`，先创建备份分支，再使用 `--force-with-lease`，并在推送后等待远端 CI 全矩阵完成。

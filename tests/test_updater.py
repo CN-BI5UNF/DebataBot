@@ -406,20 +406,20 @@ async def test_data_dir_inside_project_is_rejected(tmp_path):
 
 def test_mirror_url_supports_full_and_prefix_and_rejects_unsafe():
     official = resolve_update_repo_url("")
-    assert official == "https://github.com/CN-BI5UNF/DebataBot.git"
+    assert official == "https://github.com/CN-BI5UNF/KarenBot.git"
     prefix = resolve_update_repo_url("https://ghproxy.net/")
     assert prefix == (
-        "https://ghproxy.net/https://github.com/CN-BI5UNF/DebataBot.git"
+        "https://ghproxy.net/https://github.com/CN-BI5UNF/KarenBot.git"
     )
     full = resolve_update_repo_url(
-        "https://mirror.example/CN-BI5UNF/DebataBot.git"
+        "https://mirror.example/CN-BI5UNF/KarenBot.git"
     )
-    assert full.endswith("/CN-BI5UNF/DebataBot.git")
+    assert full.endswith("/CN-BI5UNF/KarenBot.git")
     full_without_suffix = resolve_update_repo_url(
-        "https://mirror.example/CN-BI5UNF/DebataBot/"
+        "https://mirror.example/CN-BI5UNF/KarenBot/"
     )
     assert full_without_suffix == (
-        "https://mirror.example/CN-BI5UNF/DebataBot.git"
+        "https://mirror.example/CN-BI5UNF/KarenBot.git"
     )
 
     presets = mirror_presets()
@@ -432,10 +432,10 @@ def test_mirror_url_supports_full_and_prefix_and_rejects_unsafe():
     assert MIRROR_PRESETS[0]["value"] == ""
 
     for bad in (
-        "http://mirror.example/CN-BI5UNF/DebataBot.git",
-        "https://user:pass@mirror.example/CN-BI5UNF/DebataBot.git",
-        "https://127.0.0.1/CN-BI5UNF/DebataBot.git",
-        "https://localhost/CN-BI5UNF/DebataBot.git",
+        "http://mirror.example/CN-BI5UNF/KarenBot.git",
+        "https://user:pass@mirror.example/CN-BI5UNF/KarenBot.git",
+        "https://127.0.0.1/CN-BI5UNF/KarenBot.git",
+        "https://localhost/CN-BI5UNF/KarenBot.git",
         "https://mirror.example/other/repo.git",
     ):
         with pytest.raises(UpdateError):
@@ -650,7 +650,7 @@ async def test_probe_mirrors_is_read_only_and_reports_per_target(tmp_path, monke
             {
                 "id": "bad",
                 "label": "BAD",
-                "value": "https://bad.example/CN-BI5UNF/DebataBot.git",
+                "value": "https://bad.example/CN-BI5UNF/KarenBot.git",
                 "note": "",
             },
         ],

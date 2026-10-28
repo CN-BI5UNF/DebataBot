@@ -11,8 +11,8 @@ import pytest
 
 from app_config.schema import RootConfig
 from core.storage_maintenance import StorageMaintenanceError, StorageMaintenanceService
-from memory.debata_stores import DebataHistoryStore
 from memory.history import HistoryManager
+from memory.karen_stores import KarenHistoryStore
 from memory.maintenance_store import safe_unlink
 
 
@@ -32,7 +32,7 @@ def _config() -> RootConfig:
 def _runtime(tmp_paths):
     history = HistoryManager(
         tmp_paths.memory_dir_for("test_bot") / "history.jsonl",
-        store=DebataHistoryStore(
+        store=KarenHistoryStore(
             tmp_paths.memory_dir_for("test_bot") / "test_bot.db",
             "test_bot",
         ),

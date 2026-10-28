@@ -1,4 +1,4 @@
-"""Debata_Agent 程序入口。
+"""KarenBot 程序入口。
 
 默认启动 **WebUI**（浏览器控制台，监听 0.0.0.0 供局域网访问）。
 原 PySide6 桌面端已移除，`ui/` 目录与 `gui` 依赖不再存在。
@@ -77,7 +77,7 @@ def setup_logging(
     console = logging.StreamHandler()
     console.setFormatter(fmt)
     file_handler = RotatingFileHandler(
-        logs_dir / "debata.log",
+        logs_dir / "karen.log",
         maxBytes=20 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
@@ -112,8 +112,8 @@ def install_uvloop() -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="debata",
-        description="Debata_Agent —— 让虚拟角色活过来的通用框架（默认启动 WebUI）",
+        prog="karen",
+        description="KarenBot —— 让虚拟角色活过来的通用框架（默认启动 WebUI）",
     )
     parser.add_argument(
         "--no-gui",
@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> None:
     """同步入口。"""
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if raw_argv and raw_argv[0] in _SERVICE_COMMANDS:
-        # 通过 .venv/bin/debata 启动时，sys.path[0] 是 .venv/bin；显式加入项目根，
+        # 通过 .venv/bin/karen 启动时，sys.path[0] 是 .venv/bin；显式加入项目根，
         # 保证 service_cli 在源码运行和可编辑安装下都能导入。
         project_root_text = str(Path(__file__).resolve().parent)
         if project_root_text not in sys.path:

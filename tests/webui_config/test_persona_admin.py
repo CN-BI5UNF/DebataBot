@@ -448,4 +448,4 @@ def test_builtin_personas_are_dafiyu_and_deepseek():
 
     assert "大肥鱼" in BUILTIN_PERSONAS
     assert "deepseek" in BUILTIN_PERSONAS
-    assert "debata" not in BUILTIN_PERSONAS
+    assert "karen" not in BUILTIN_PERSONAS

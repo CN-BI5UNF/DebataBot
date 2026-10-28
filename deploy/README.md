@@ -1,7 +1,7 @@
 # 受信 launcher 部署包（未安装）
 
 本目录只准备可审阅的 launcher 代码和 systemd 样例，**没有**修改当前
-`debata-agent.service`、没有复制文件到系统目录、没有重启服务。
+`karenbot.service`、没有复制文件到系统目录、没有重启服务。
 
 ## 为什么需要独立程序
 
@@ -24,14 +24,14 @@
 ```bash
 # 先只读检查
 python3 deploy/trusted_launcher.py \
-  --project-root /home/kickpi/Debata_Agent \
-  --data-dir /home/kickpi/.local/share/Debata_Agent/instances/default \
+  --project-root /home/kickpi/KarenBot \
+  --data-dir /home/kickpi/.local/share/KarenBot/instances/default \
   --check-only --json
 
 # 授权后再安装固定副本（示例；不要自动 sudo/覆盖）
-sudo install -d -m 0755 -o root -g root /usr/local/lib/debata
+sudo install -d -m 0755 -o root -g root /usr/local/lib/karen
 sudo install -m 0755 -o root -g root \
-  deploy/trusted_launcher.py /usr/local/lib/debata/trusted_launcher.py
+  deploy/trusted_launcher.py /usr/local/lib/karen/trusted_launcher.py
 ```
 
 要求：launcher 文件 root:root、0755，所在目录 root:root 且服务用户无写权限。
@@ -41,18 +41,18 @@ launcher 还会：
 
 - 校验 target executable 和 `main.py` 都在 `--project-root` 内；
 - 校验命令的 `--config` 与 `--config`/`--data-dir` 绑定一致；
-- exec 前设置 `DEBATA_DATA_ROOT`，不让旧环境变量改写数据根；
+- exec 前设置 `KAREN_DATA_ROOT`，不让旧环境变量改写数据根；
 - 检查 `<DATA_DIR>/maintenance/controller_state.json`，维护 phase 拒绝启动；
 - `setup_required` 只有显式 `--allow-setup` 才允许进入向导。
 
 ## systemd drop-in 样例
 
-样例在 `deploy/systemd/debata-launcher.conf.example`。当前 unit 的
+样例在 `deploy/systemd/karen-launcher.conf.example`。当前 unit 的
 `ExecStart` 类似：
 
 ```text
-ExecStart="/home/kickpi/Debata_Agent/.venv/bin/python" \
-  "/home/kickpi/Debata_Agent/main.py" --host 0.0.0.0 --port 8000
+ExecStart="/home/kickpi/KarenBot/.venv/bin/python" \
+  "/home/kickpi/KarenBot/main.py" --host 0.0.0.0 --port 8000
 ```
 
 受管版本改为先经过固定 launcher：
@@ -60,31 +60,31 @@ ExecStart="/home/kickpi/Debata_Agent/.venv/bin/python" \
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/local/lib/debata/trusted_launcher.py \
-  --project-root /home/kickpi/Debata_Agent \
-  --data-dir /home/kickpi/.local/share/Debata_Agent/instances/default \
-  -- /home/kickpi/Debata_Agent/.venv/bin/python \
-  /home/kickpi/Debata_Agent/main.py --host 0.0.0.0 --port 8000
+ExecStart=/usr/local/lib/karen/trusted_launcher.py \
+  --project-root /home/kickpi/KarenBot \
+  --data-dir /home/kickpi/.local/share/KarenBot/instances/default \
+  -- /home/kickpi/KarenBot/.venv/bin/python \
+  /home/kickpi/KarenBot/main.py --host 0.0.0.0 --port 8000
 ```
 
 安装步骤（**本轮不执行**）：
 
 ```bash
-mkdir -p ~/.config/systemd/user/debata-agent.service.d
-cp deploy/systemd/debata-launcher.conf.example \
-  ~/.config/systemd/user/debata-agent.service.d/launcher.conf
+mkdir -p ~/.config/systemd/user/karenbot.service.d
+cp deploy/systemd/karen-launcher.conf.example \
+  ~/.config/systemd/user/karenbot.service.d/launcher.conf
 systemctl --user daemon-reload
-systemctl --user restart debata-agent.service
-systemctl --user status debata-agent.service
+systemctl --user restart karenbot.service
+systemctl --user status karenbot.service
 ```
 
 ## 回滚/卸载
 
 ```bash
-rm ~/.config/systemd/user/debata-agent.service.d/launcher.conf
+rm ~/.config/systemd/user/karenbot.service.d/launcher.conf
 systemctl --user daemon-reload
-systemctl --user restart debata-agent.service
-sudo rm -f /usr/local/lib/debata/trusted_launcher.py
+systemctl --user restart karenbot.service
+sudo rm -f /usr/local/lib/karen/trusted_launcher.py
 ```
 
 回滚前先确认旧代码理解当前数据；源码回滚不等于数据回滚。更新/回退需重新做

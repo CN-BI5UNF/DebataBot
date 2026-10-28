@@ -1,6 +1,8 @@
 # Changelog
 
-本文件记录 Debata 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+本文件记录 KarenBot 所有重要变更，格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+
+> 项目已由 Debata_Agent 更名为 KarenBot。以下历史条目保留当时的旧名称，以便追溯；上游项目仍为 [binglang001/Debata_Agent](https://github.com/binglang001/Debata_Agent)。
 
 ## [Unreleased] — 大肥鱼人格 / 联网知识 / 表情包工具 / 依赖自动安装
 

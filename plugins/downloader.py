@@ -57,7 +57,7 @@ async def download_sources(
 
     timeout = httpx.Timeout(connect=15.0, read=60.0, write=30.0, pool=15.0)
     headers = {
-        "User-Agent": "Debata-Agent model downloader",
+        "User-Agent": "Karen-Agent model downloader",
         "Accept": "*/*",
     }
     async with httpx.AsyncClient(

@@ -1,4 +1,4 @@
-"""Debata_Agent WebUI —— 取代原 PySide6 桌面的浏览器界面。
+"""KarenBot WebUI —— 取代原 PySide6 桌面的浏览器界面。
 
 模块构成（按职责）：
     server       —— FastAPI 应用装配 + uvicorn 启动

@@ -22,7 +22,7 @@ MANIFEST = (ROOT / "compatibility.json").read_text(encoding="utf-8")
 
 def _launcher():
     spec = importlib.util.spec_from_file_location(
-        "debata_trusted_launcher_parity",
+        "karen_trusted_launcher_parity",
         ROOT / "deploy" / "trusted_launcher.py",
     )
     assert spec and spec.loader

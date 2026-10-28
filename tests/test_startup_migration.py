@@ -8,7 +8,7 @@ def test_initialize_runtime_data_migrates_legacy_config_to_external_data_root(tm
     from app_config.paths import AppPaths
     from app_config.startup import initialize_runtime_data
 
-    monkeypatch.delenv("DEBATA_DATA_ROOT", raising=False)
+    monkeypatch.delenv("KAREN_DATA_ROOT", raising=False)
     project_root = tmp_path / "project"
     data_root = tmp_path / "system-data"
     old_data = project_root / "data"
@@ -43,7 +43,7 @@ def test_main_no_gui_initializes_data_before_config_check(tmp_path, monkeypatch)
     (old_data / "config.yaml").write_text("app:\n  name: old\n", encoding="utf-8")
     data_root = tmp_path / "system-data"
 
-    monkeypatch.setenv("DEBATA_DATA_ROOT", str(data_root))
+    monkeypatch.setenv("KAREN_DATA_ROOT", str(data_root))
     # main(argv=None) 会把 argv 透传给 parse_args，所以替身要接受一个可选参数。
     monkeypatch.setattr(app_main, "parse_args", lambda argv=None: app_main.argparse.Namespace(
         no_gui=True,

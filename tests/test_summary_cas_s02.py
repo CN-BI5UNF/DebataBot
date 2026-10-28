@@ -9,14 +9,14 @@ from core.summary_cas import (
     SummaryCASResult,
     commit_summary_cas,
 )
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 @pytest.fixture
 def memory_db(tmp_path):
     """初始化包含 D01 完整契约表结构的测试数据库。"""
-    db_file = tmp_path / "debata_test.db"
-    db = DebataDB(db_file)
+    db_file = tmp_path / "karen_test.db"
+    db = KarenDB(db_file)
     db.load()
     with db.connect() as conn:
         for stmt in _DDL:

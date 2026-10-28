@@ -60,7 +60,7 @@ def test_root_and_static_are_public():
         "/api/backup",
         "/api/backup/status",
         "/api/backup/jobs/job-1",
-        "/api/backup/files/Debata_Backup_20261024_000000.zip",
+        "/api/backup/files/Karen_Backup_20261024_000000.zip",
     ],
 )
 def test_sensitive_paths_require_token(path):

@@ -19,6 +19,6 @@ Together AI 托管了大量开源模型（Llama、Qwen、DeepSeek 等），全�
 
 [按 token 计费](https://www.together.ai/pricing)，不同模型价格不同。新用户通常有 $1 免费额度。注意大模型（Llama 70B 等）单价较高。
 
-## 4. 填入 Debata
+## 4. 填入 Karen
 
 启动向导 → 选 **Together AI** → 粘贴 API Key → 选模型 → 保存。

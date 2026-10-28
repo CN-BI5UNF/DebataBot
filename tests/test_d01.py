@@ -16,12 +16,12 @@ from core.d01 import (
     migrate_database,
     tombstone_record,
 )
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 def _db(tmp_path):
-    path = tmp_path / "debata.db"
-    db = DebataDB(path)
+    path = tmp_path / "karen.db"
+    db = KarenDB(path)
     db.load()
     db.close()
     with sqlite3.connect(path) as conn:
@@ -174,10 +174,10 @@ def test_tombstone_is_transactional_and_blocks_reuse(tmp_path):
 
 
 def test_production_path_requires_explicit_authorization(tmp_path):
-    prod = tmp_path / ".local" / "share" / "Debata_Agent" / "instances" / "default"
+    prod = tmp_path / ".local" / "share" / "KarenBot" / "instances" / "default"
     prod.mkdir(parents=True)
-    path = prod / "debata.db"
-    db = DebataDB(path)
+    path = prod / "karen.db"
+    db = KarenDB(path)
     db.load()
     db.close()
     with pytest.raises(D01Error) as exc:

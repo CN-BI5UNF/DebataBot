@@ -16,6 +16,6 @@ OpenRouter 聚合了几乎所有主流模型，一个 Key 通吃。适合想同�
 
 按 token 计费，不同模型价格不同。需要先充值才能用。详见 [OpenRouter 定价](https://openrouter.ai/models)。
 
-## 4. 填入 Debata
+## 4. 填入 Karen
 
 向导自定义路径 → 选 **OpenRouter** → 粘贴 API Key → 选模型 → 保存。

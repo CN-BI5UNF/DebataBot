@@ -216,7 +216,7 @@ ta 不会做什么，比 ta 能做什么更定义这个人。**必写。**
 1. 用配置向导里的 **AI 辅助生成**功能起一个初版（PersonaGenAgent 会按规范写）
 2. 预览，提调整意见，多轮 refine 到满意
 3. 保存到 `personas/{name}/persona_prompt.py`
-4. 在仪表盘"角色管理"里切换激活（切换后需重启 Debata 才会生效）
+4. 在仪表盘"角色管理"里切换激活（切换后需重启 Karen 才会生效）
 5. 跑几段对话验证——尤其检查不同关系下的切换、长对话后的一致性
 
 如果你已经有完整提示词，可以跳过 1-3 步：
@@ -229,7 +229,7 @@ ta 不会做什么，比 ta 能做什么更定义这个人。**必写。**
 
 ### 直接提示词的模式
 
-直接写时不必沿用原来的 XML 标签。推荐使用纯 Markdown 结构（模板文件参见 [persona_template.md](file:///home/kickpi/Debata_Agent/docs/persona_template.md)），这种“两层”结构更适合当前运行时：
+直接写时不必沿用原来的 XML 标签。推荐使用纯 Markdown 结构（模板文件参见 [persona_template.md](file:///home/kickpi/KarenBot/docs/persona_template.md)），这种“两层”结构更适合当前运行时：
 
 ```markdown
 # 角色卡：[填入角色名称]

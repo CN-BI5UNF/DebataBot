@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Debata 受信 launcher（独立部署，未安装到 systemd）。
+"""Karen 受信 launcher（独立部署，未安装到 systemd）。
 
 这个脚本刻意只依赖 Python 标准库，不 import 项目里的 ``core.compat``：
 一旦源码被 ``git switch`` 换回旧版本，launcher 自身仍必须是可信的、固定的。
@@ -735,7 +735,7 @@ def _parse_command(argv: list[str]) -> tuple[list[str], list[str]]:
 def main(argv: list[str] | None = None) -> int:
     args_list, command = _parse_command(list(argv if argv is not None else sys.argv[1:]))
     parser = argparse.ArgumentParser(
-        prog="debata-trusted-launcher",
+        prog="karen-trusted-launcher",
         description="在启动 Runtime 前独立检查 compatibility.json 与本地数据",
     )
     parser.add_argument("--project-root", required=True)
@@ -788,8 +788,8 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_INCOMPATIBLE
     env = os.environ.copy()
     # 受管进程的数据根由 launcher 固定；不继承可改写目标的旧环境。
-    env["DEBATA_DATA_ROOT"] = str(data_dir)
-    env["DEBATA_LAUNCHER_PROTOCOL"] = str(LAUNCHER_PROTOCOL)
+    env["KAREN_DATA_ROOT"] = str(data_dir)
+    env["KAREN_LAUNCHER_PROTOCOL"] = str(LAUNCHER_PROTOCOL)
     try:
         os.chdir(project_root)
         os.execvpe(command[0], command, env)

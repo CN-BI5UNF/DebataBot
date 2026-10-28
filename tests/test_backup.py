@@ -72,7 +72,7 @@ def _seed(paths: AppPaths) -> None:
 
     # 不应进入备份的目录/文件
     paths.LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    (paths.LOGS_DIR / "debata.log").write_text("log\n", encoding="utf-8")
+    (paths.LOGS_DIR / "karen.log").write_text("log\n", encoding="utf-8")
     (paths.CACHE_DIR / "cache.bin").write_bytes(b"cache")
     (paths.TMP_DIR / "tmp.bin").write_bytes(b"tmp")
     (paths.DATA_DIR / "config_backups").mkdir(exist_ok=True)
@@ -171,7 +171,7 @@ async def test_backup_contents_manifest_and_permissions(tmp_path):
         assert manifest["capabilities"]["migration_safe"] is False
         paths_in_manifest = {item["path"] for item in manifest["files"]}
         assert "data/memory/test/chat.db" in paths_in_manifest
-        assert "data/logs/debata.log" not in paths_in_manifest
+        assert "data/logs/karen.log" not in paths_in_manifest
         assert "KEYRING-PEM" not in json.dumps(manifest, ensure_ascii=False)
         assert "encrypted-secrets" not in json.dumps(manifest, ensure_ascii=False)
 
@@ -185,7 +185,7 @@ async def test_backup_contents_manifest_and_permissions(tmp_path):
     assert [item["filename"] for item in files] == [job["filename"]]
     assert files[0]["includes_keys"] is True
     assert service.resolve_download(job["filename"]).is_file()
-    for bad in ("../x.zip", "x.zip", "Debata_Backup_x.txt", "Debata_Backup_x/../y.zip"):
+    for bad in ("../x.zip", "x.zip", "Karen_Backup_x.txt", "Karen_Backup_x/../y.zip"):
         with pytest.raises(BackupError):
             service.resolve_download(bad)
 
@@ -230,7 +230,7 @@ async def test_backup_insufficient_space_is_reported(tmp_path, monkeypatch):
     job = await service.create_backup()
     assert job["state"] == "failed"
     assert job["error"]["code"] == "insufficient_space"
-    assert not list((tmp_path / "backups").glob("Debata_Backup_*.zip"))
+    assert not list((tmp_path / "backups").glob("Karen_Backup_*.zip"))
 
 
 def test_backup_directory_is_file_is_rejected(tmp_path):
@@ -257,7 +257,7 @@ def test_backup_directory_is_file_is_rejected(tmp_path):
 
 def test_resolve_backup_directory(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    assert resolve_backup_directory("") == tmp_path / "Debata_Backups"
+    assert resolve_backup_directory("") == tmp_path / "Karen_Backups"
     assert resolve_backup_directory("my-backups") == tmp_path / "my-backups"
     assert resolve_backup_directory(str(tmp_path / "abs")) == tmp_path / "abs"
 
@@ -482,7 +482,7 @@ async def test_cancel_stops_before_publish_and_cleans_temp(tmp_path, monkeypatch
 
     assert finished["state"] == "cancelled", finished
     assert finished["error"]["code"] == "backup_cancelled"
-    assert not list((tmp_path / "backups").glob("Debata_Backup_*.zip"))
+    assert not list((tmp_path / "backups").glob("Karen_Backup_*.zip"))
     assert not list((tmp_path / "backups").glob(".backup-work-*"))
     persisted = json.loads(
         (paths.DATA_DIR / "backup_jobs.json").read_text(encoding="utf-8")
@@ -581,7 +581,7 @@ async def test_external_task_cancel_keeps_lock_until_worker_stops(tmp_path):
     assert service._shared.locked is False
     finished = service.get_job(job["id"])
     assert finished["state"] == "cancelled", finished
-    assert not list((tmp_path / "backups").glob("Debata_Backup_*.zip"))
+    assert not list((tmp_path / "backups").glob("Karen_Backup_*.zip"))
 
 
 @pytest.mark.asyncio

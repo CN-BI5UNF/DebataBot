@@ -1,0 +1,19 @@
+KarenBot
+Copyright 2026 CN-BI5UNF and KarenBot contributors.
+
+This product is a derivative work of Debata_Agent:
+    https://github.com/binglang001/Debata_Agent
+    Copyright 2026 binglang001 and contributors
+    Licensed under the Apache License, Version 2.0.
+
+KarenBot retains the upstream copyright notices and license terms. Changes
+made for KarenBot include the project rename, UI/documentation updates,
+compatibility layers for legacy data and commands, and the feature work
+described in the repository history.
+
+The name "Karen" is inspired by the SpongeBob SquarePants character Karen.
+This project is not affiliated with, endorsed by, or sponsored by Nickelodeon,
+Paramount, or the owners of the SpongeBob SquarePants franchise. All character
+names and related rights remain with their respective owners.
+
+The full Apache License, Version 2.0 text is in LICENSE.

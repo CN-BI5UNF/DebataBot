@@ -4,7 +4,7 @@ WebUI 能读到全部聊天记录、改配置、换 API Key，所以默认**必�
 即使在局域网里也一样。三种提供方式，优先级从高到低：
 
     1. 命令行 ``--token xxx``
-    2. 环境变量 ``DEBATA_WEBUI_TOKEN``
+    2. 环境变量 ``KAREN_WEBUI_TOKEN``
     3. 数据目录下持久化的 ``webui_token.txt``（首次启动自动生成，权限 0600）
 
 浏览器侧用 ``POST /api/auth/login`` 换取一个 HttpOnly 会话 cookie；
@@ -26,8 +26,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 TOKEN_FILENAME = "webui_token.txt"
-COOKIE_NAME = "debata_webui_session"
-ENV_VAR = "DEBATA_WEBUI_TOKEN"
+COOKIE_NAME = "karen_webui_session"
+ENV_VAR = "KAREN_WEBUI_TOKEN"
 
 # 会话有效期（秒）。局域网自用场景给足 30 天，避免手机上反复登录。
 SESSION_TTL_SECONDS = 30 * 24 * 3600
@@ -42,7 +42,10 @@ def load_or_create_token(paths) -> tuple[str, str]:
 
     优先命令行 / 环境变量；都没有就读数据目录里的 token 文件，文件不存在则生成。
     """
-    env_token = os.environ.get(ENV_VAR, "").strip()
+    env_token = (
+        os.environ.get(ENV_VAR)
+        or os.environ.get("DEBATA_WEBUI_TOKEN", "")
+    ).strip()
     if env_token:
         return env_token, f"环境变量 {ENV_VAR}"
 
@@ -146,7 +149,7 @@ def format_token_banner(auth: TokenAuth, *, host: str, port: int, urls: list[str
     lines = [
         "",
         "=" * 64,
-        "  Debata_Agent WebUI 已启动",
+        "  KarenBot WebUI 已启动",
         "=" * 64,
         f"  监听        : {host}:{port}",
     ]

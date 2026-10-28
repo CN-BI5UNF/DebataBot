@@ -305,7 +305,7 @@ def verify_backup(
 
         sqlite_checked = 0
         ledger_probes: list[dict] = []
-        with tempfile.TemporaryDirectory(prefix="debata-backup-verify-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="karen-backup-verify-") as tmp:
             tmp_root = Path(tmp)
             for index, (name, entry) in enumerate(entries.items()):
                 expected_size = entry.get("size")
@@ -549,7 +549,7 @@ def drill_backup(
 
     created_temp = destination is None
     target = Path(destination) if destination is not None else Path(
-        tempfile.mkdtemp(prefix="debata-restore-drill-")
+        tempfile.mkdtemp(prefix="karen-restore-drill-")
     )
     try:
         if not created_temp:
@@ -707,7 +707,7 @@ def drill_backup(
 
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Debata 备份离线验证/隔离恢复演练（不接触生产数据）"
+        description="Karen 备份离线验证/隔离恢复演练（不接触生产数据）"
     )
     sub = parser.add_subparsers(dest="command", required=True)
     for command in ("verify", "drill"):

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from memory.archive_sqlite_records import real_chat_archive_records
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 logger = logging.getLogger(__name__)
 
@@ -83,20 +83,20 @@ def _has_table(conn: sqlite3.Connection, table_name: str) -> bool:
 
 
 def commit_summary_cas(
-    db: DebataDB | str | Path | sqlite3.Connection,
+    db: KarenDB | str | Path | sqlite3.Connection,
     plan: SummaryCASPlan,
 ) -> SummaryCASResult:
-    """在 debata.db 的单个 SQLite 事务中原子执行 CAS 检查与写入。
+    """在 karen.db 的单个 SQLite 事务中原子执行 CAS 检查与写入。
 
     任一步失败（CAS 不匹配、删除冲突、写错误）均全量 ROLLBACK。
     """
     if isinstance(db, sqlite3.Connection):
         return _execute_cas_tx(db, plan, close_on_exit=False)
-    if isinstance(db, DebataDB):
+    if isinstance(db, KarenDB):
         conn = db.connect()
         return _execute_cas_tx(conn, plan, close_on_exit=False)
-    debata_db = DebataDB(db)
-    conn = debata_db.connect()
+    karen_db = KarenDB(db)
+    conn = karen_db.connect()
     return _execute_cas_tx(conn, plan, close_on_exit=True)
 
 

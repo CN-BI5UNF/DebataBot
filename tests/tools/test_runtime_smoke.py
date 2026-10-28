@@ -193,7 +193,7 @@ async def test_all_tools_have_clear_results_in_simulated_runtime(tmp_path, monke
             "message_text": "提醒",
         },
         "describe_image": {"image_url": "https://example.com/a.jpg", "question": "看图"},
-        "web_search": {"query": "Debata"},
+        "web_search": {"query": "Karen"},
         "web_fetch": {"url": "https://example.com/a"},
         "get_weather": {"city": "北京", "days": 1},
         "send_voice_message": {
@@ -369,8 +369,8 @@ async def test_all_tools_have_clear_results_in_simulated_runtime(tmp_path, monke
     assert results["describe_image"]["summary"] == "一张测试图片"
     assert results["describe_image"]["data"]["image_ref"] == "example.com/..."
     assert "问题=看图" in results["describe_image"]["description"]
-    assert results["web_search"]["query"] == "Debata"
-    assert "https://example.com/search?q=Debata" in results["web_search"]["result"]
+    assert results["web_search"]["query"] == "Karen"
+    assert "https://example.com/search?q=Karen" in results["web_search"]["result"]
     assert results["get_weather"]["data"] == {"city": "北京", "days": 1}
     assert "北京 1 天天气晴" in results["get_weather"]["result"]
 

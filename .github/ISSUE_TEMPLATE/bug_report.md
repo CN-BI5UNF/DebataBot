@@ -1,6 +1,6 @@
 ---
 name: 报告 Bug
-about: 反馈 Debata 运行中遇到的问题
+about: 反馈 Karen 运行中遇到的问题
 title: "[Bug] "
 labels: bug
 assignees: []
@@ -24,5 +24,5 @@ assignees: []
 
 - OS: [Windows / Linux / macOS / 版本]
 - Python 版本: [3.10 / 3.11 / 3.12 / ...]
-- Debata 版本: [v0.9.0 / main / refactor/main / commit hash]
+- Karen 版本: [v0.9.0 / main / refactor/main / commit hash]
 - 使用的 LLM 平台: [DeepSeek / OpenAI / Anthropic / ...]

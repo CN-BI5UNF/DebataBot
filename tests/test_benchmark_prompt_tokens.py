@@ -38,4 +38,4 @@ def test_synthetic_benchmark_writes_json_without_database(tmp_path, capsys):
     assert images["guard_rejection_code"] == "image_request_count_exceeded"
     assert images["wire_has_data_url"] is True
     assert images["history_has_base64"] is False
-    assert "Debata 合成缓存/图片 benchmark" in capsys.readouterr().out
+    assert "Karen 合成缓存/图片 benchmark" in capsys.readouterr().out

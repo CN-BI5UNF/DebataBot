@@ -1,4 +1,4 @@
-"""debata.db 轻量仓储适配器。"""
+"""karen.db 轻量仓储适配器。"""
 
 from __future__ import annotations
 
@@ -54,7 +54,6 @@ from .archive_sqlite_records import (
     _row_to_record,
     real_chat_archive_records,
 )
-from .debata_db import DebataDB
 from .event_store import (
     _clamp_limit,
     _clean_optional,
@@ -66,6 +65,7 @@ from .event_store import (
     _positive_int_or_none,
     _row_to_event,
 )
+from .karen_db import KarenDB
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ def _parse_history_rows(rows: Iterable[Any], persona_id: str) -> list[dict]:
             record = orjson.loads(row["record_json"])
         except orjson.JSONDecodeError:
             logger.warning(
-                "跳过损坏的 debata history record persona_id=%s rowid=%s",
+                "跳过损坏的 karen history record persona_id=%s rowid=%s",
                 persona_id,
                 row["id"] if "id" in row.keys() else "?",
             )
@@ -129,19 +129,19 @@ def _parse_history_rows(rows: Iterable[Any], persona_id: str) -> list[dict]:
     return records
 
 
-class DebataHistoryStore:
-    """使用 debata.db 的 history_records 表实现 JsonlStore 等价接口。"""
+class KarenHistoryStore:
+    """使用 karen.db 的 history_records 表实现 JsonlStore 等价接口。"""
 
     def __init__(
         self,
-        db: DebataDB | str | Path,
+        db: KarenDB | str | Path,
         persona_id: str,
         *,
         page_cache_max_bytes: int = 32 * 1024 * 1024,
         page_size: int = 256,
         max_pages: int = 16,
     ) -> None:
-        self._db = db if isinstance(db, DebataDB) else DebataDB(db)
+        self._db = db if isinstance(db, KarenDB) else KarenDB(db)
         self.persona_id = str(persona_id).strip()
         if not self.persona_id:
             raise ValueError("persona_id must not be empty")
@@ -169,7 +169,7 @@ class DebataHistoryStore:
         self._schema_lock = threading.Lock()
 
     @property
-    def db(self) -> DebataDB:
+    def db(self) -> KarenDB:
         return self._db
 
     @property
@@ -425,7 +425,7 @@ class DebataHistoryStore:
                 record = orjson.loads(row["record_json"])
             except orjson.JSONDecodeError:
                 logger.warning(
-                    "跳过损坏的 debata history record persona_id=%s rowid=%s",
+                    "跳过损坏的 karen history record persona_id=%s rowid=%s",
                     self.persona_id,
                     row["id"],
                 )
@@ -636,14 +636,14 @@ class DebataHistoryStore:
         if not self._schema_ready:
             with self._schema_lock:
                 if not self._schema_ready:
-                    bootstrap = DebataDB(
+                    bootstrap = KarenDB(
                         self._db.path,
                         busy_timeout_ms=self._db.busy_timeout_ms,
                     )
                     bootstrap.load()
                     bootstrap.close()
                     self._schema_ready = True
-        db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
+        db = KarenDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
         return db.connect()
 
     def _insert_records(
@@ -682,18 +682,18 @@ class DebataHistoryStore:
         )
 
 
-class DebataArchiveStore:
-    """使用 debata.db 的 archive_messages 表实现 ArchiveStore 等价接口。"""
+class KarenArchiveStore:
+    """使用 karen.db 的 archive_messages 表实现 ArchiveStore 等价接口。"""
 
-    def __init__(self, db: DebataDB | str | Path, persona_id: str) -> None:
-        self._db = db if isinstance(db, DebataDB) else DebataDB(db)
+    def __init__(self, db: KarenDB | str | Path, persona_id: str) -> None:
+        self._db = db if isinstance(db, KarenDB) else KarenDB(db)
         self.persona_id = str(persona_id).strip()
         if not self.persona_id:
             raise ValueError("persona_id must not be empty")
         self._lock = asyncio.Lock()
 
     @property
-    def db(self) -> DebataDB:
+    def db(self) -> KarenDB:
         return self._db
 
     async def load(self, force_reload: bool = False) -> list[dict]:
@@ -740,7 +740,7 @@ class DebataArchiveStore:
             result = await asyncio.to_thread(self._filter_records_sync, query_dict)
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                "Debata archive filter_records 指标 persona_id=%s limit=%s offset=%s "
+                "Karen archive filter_records 指标 persona_id=%s limit=%s offset=%s "
                 "returned=%s total=%s elapsed_ms=%.3f",
                 self.persona_id,
                 result.get("limit"),
@@ -785,7 +785,7 @@ class DebataArchiveStore:
             return await asyncio.to_thread(self._media_records_sync, archive_id)
 
     def _connect(self) -> sqlite3.Connection:
-        db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
+        db = KarenDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
         db.load()
         return db.connect()
 
@@ -1143,18 +1143,18 @@ class DebataArchiveStore:
         return result
 
 
-class DebataImportantStore:
-    """使用 debata.db 的 important_memories 表实现 JsonStore 等价接口。"""
+class KarenImportantStore:
+    """使用 karen.db 的 important_memories 表实现 JsonStore 等价接口。"""
 
-    def __init__(self, db: DebataDB | str | Path, persona_id: str) -> None:
-        self._db = db if isinstance(db, DebataDB) else DebataDB(db)
+    def __init__(self, db: KarenDB | str | Path, persona_id: str) -> None:
+        self._db = db if isinstance(db, KarenDB) else KarenDB(db)
         self.persona_id = str(persona_id).strip()
         if not self.persona_id:
             raise ValueError("persona_id must not be empty")
         self._lock = asyncio.Lock()
 
     @property
-    def db(self) -> DebataDB:
+    def db(self) -> KarenDB:
         return self._db
 
     async def read(self, default: Any = None) -> Any:
@@ -1169,7 +1169,7 @@ class DebataImportantStore:
                 item = orjson.loads(row["item_json"])
             except orjson.JSONDecodeError:
                 logger.warning(
-                    "跳过损坏的 debata important memory persona_id=%s rowid=%s",
+                    "跳过损坏的 karen important memory persona_id=%s rowid=%s",
                     self.persona_id,
                     row["id"],
                 )
@@ -1210,7 +1210,7 @@ class DebataImportantStore:
                 conn.commit()
 
     def _connect(self):
-        db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
+        db = KarenDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
         db.load()
         return db.connect()
 
@@ -1273,8 +1273,8 @@ class DebataImportantStore:
         )
 
 
-class DebataPersonaDB:
-    """使用 debata.db persona_* 表实现 mind.db.PersonaDB 等价接口。"""
+class KarenPersonaDB:
+    """使用 karen.db persona_* 表实现 mind.db.PersonaDB 等价接口。"""
 
     _STATE_TYPES = ("PersonaState",)
     _EFFECT_TYPES = ("Effect", "PersonaEffect")
@@ -1285,15 +1285,15 @@ class DebataPersonaDB:
     _TRAJECTORY_TYPES = ("DailyTrajectory",)
     _MISSING = object()
 
-    def __init__(self, db: DebataDB | str | Path, persona_id: str) -> None:
-        self._db = db if isinstance(db, DebataDB) else DebataDB(db)
+    def __init__(self, db: KarenDB | str | Path, persona_id: str) -> None:
+        self._db = db if isinstance(db, KarenDB) else KarenDB(db)
         self.persona_id = str(persona_id).strip()
         if not self.persona_id:
             raise ValueError("persona_id must not be empty")
         self._lock = asyncio.Lock()
 
     @property
-    def db(self) -> DebataDB:
+    def db(self) -> KarenDB:
         return self._db
 
     async def load(self) -> None:
@@ -1635,7 +1635,7 @@ class DebataPersonaDB:
             return await asyncio.to_thread(self._important_count_sync)
 
     def _connect(self) -> sqlite3.Connection:
-        db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
+        db = KarenDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
         db.load()
         return db.connect()
 
@@ -2323,11 +2323,11 @@ class DebataPersonaDB:
         )
 
 
-class DebataRollingSummaryStore:
-    """使用 debata.db 的 rolling_summary 表实现 RollingSummaryStore 等价接口。"""
+class KarenRollingSummaryStore:
+    """使用 karen.db 的 rolling_summary 表实现 RollingSummaryStore 等价接口。"""
 
-    def __init__(self, db: DebataDB | str | Path, persona_id: str) -> None:
-        self._db = db if isinstance(db, DebataDB) else DebataDB(db)
+    def __init__(self, db: KarenDB | str | Path, persona_id: str) -> None:
+        self._db = db if isinstance(db, KarenDB) else KarenDB(db)
         self.persona_id = str(persona_id).strip()
         if not self.persona_id:
             raise ValueError("persona_id must not be empty")
@@ -2335,7 +2335,7 @@ class DebataRollingSummaryStore:
         self._data: dict[str, Any] = _default_rolling_summary_data()
 
     @property
-    def db(self) -> DebataDB:
+    def db(self) -> KarenDB:
         return self._db
 
     async def load(self) -> dict[str, Any]:
@@ -2446,7 +2446,7 @@ class DebataRollingSummaryStore:
                 conn.commit()
 
     def _connect(self):
-        db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
+        db = KarenDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
         db.load()
         return db.connect()
 
@@ -2455,13 +2455,13 @@ class DebataRollingSummaryStore:
             data = orjson.loads(row["summary_json"])
         except orjson.JSONDecodeError:
             logger.warning(
-                "回退读取损坏的 debata rolling summary summary_json persona_id=%s",
+                "回退读取损坏的 karen rolling summary summary_json persona_id=%s",
                 self.persona_id,
             )
             return None
         if not isinstance(data, dict):
             logger.warning(
-                "回退读取非对象 debata rolling summary summary_json persona_id=%s",
+                "回退读取非对象 karen rolling summary summary_json persona_id=%s",
                 self.persona_id,
             )
             return None
@@ -2472,7 +2472,7 @@ class DebataRollingSummaryStore:
             archived_until = orjson.loads(row["archived_until_json"])
         except orjson.JSONDecodeError:
             logger.warning(
-                "回退读取损坏的 debata rolling summary archived_until_json persona_id=%s",
+                "回退读取损坏的 karen rolling summary archived_until_json persona_id=%s",
                 self.persona_id,
             )
             archived_until = None
@@ -2530,22 +2530,22 @@ class DebataRollingSummaryStore:
             return None
 
 
-class DebataUsageStatsStore:
-    """使用 debata.db 的 usage_records 表实现 UsageStatsStore 等价接口。"""
+class KarenUsageStatsStore:
+    """使用 karen.db 的 usage_records 表实现 UsageStatsStore 等价接口。"""
 
     def __init__(
         self,
-        db: DebataDB | str | Path,
+        db: KarenDB | str | Path,
         persona_id: str | None = None,
     ) -> None:
-        self._db = db if isinstance(db, DebataDB) else DebataDB(db)
+        self._db = db if isinstance(db, KarenDB) else KarenDB(db)
         persona_text = "" if persona_id is None else str(persona_id).strip()
         self.persona_id = persona_text or None
         self._lock = asyncio.Lock()
         self._records: list[dict[str, Any]] | None = None
 
     @property
-    def db(self) -> DebataDB:
+    def db(self) -> KarenDB:
         return self._db
 
     async def load(self) -> None:
@@ -2649,14 +2649,14 @@ class DebataUsageStatsStore:
                 record = orjson.loads(row["record_json"])
             except orjson.JSONDecodeError:
                 logger.warning(
-                    "跳过损坏的 debata usage record_json persona_id=%s rowid=%s",
+                    "跳过损坏的 karen usage record_json persona_id=%s rowid=%s",
                     row["persona_id"],
                     row["id"],
                 )
                 continue
             if not isinstance(record, dict):
                 logger.warning(
-                    "跳过非对象 debata usage record_json persona_id=%s rowid=%s",
+                    "跳过非对象 karen usage record_json persona_id=%s rowid=%s",
                     row["persona_id"],
                     row["id"],
                 )
@@ -2701,20 +2701,20 @@ class DebataUsageStatsStore:
                 conn.commit()
 
     def _connect(self):
-        db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
+        db = KarenDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
         db.load()
         return db.connect()
 
 
-class DebataEventStore:
-    """使用 debata.db 的 event_log 表实现 EventJournal 可用的事件仓储。"""
+class KarenEventStore:
+    """使用 karen.db 的 event_log 表实现 EventJournal 可用的事件仓储。"""
 
     _PROJECTION_STATE_NAME = "last_projected_event_id"
     _schema_lock = threading.Lock()
     _schema_ready_paths: set[Path] = set()
 
-    def __init__(self, db: DebataDB | str | Path, persona_id: str) -> None:
-        self._db = db if isinstance(db, DebataDB) else DebataDB(db)
+    def __init__(self, db: KarenDB | str | Path, persona_id: str) -> None:
+        self._db = db if isinstance(db, KarenDB) else KarenDB(db)
         self._schema_path = self._db.path.expanduser().resolve()
         self.persona_id = str(persona_id).strip()
         if not self.persona_id:
@@ -2727,11 +2727,11 @@ class DebataEventStore:
         self._last_projected_event_id = 0
 
     @property
-    def db(self) -> DebataDB:
+    def db(self) -> KarenDB:
         return self._db
 
     async def start_projection(self) -> None:
-        """兼容 EventStore 入口：debata.db 写入即投影，无后台 worker。"""
+        """兼容 EventStore 入口：karen.db 写入即投影，无后台 worker。"""
 
         await self._ensure_loaded()
 
@@ -2783,7 +2783,7 @@ class DebataEventStore:
         await self._ensure_loaded()
         async with self._lock:
             if self._closed:
-                raise RuntimeError("DebataEventStore is closed")
+                raise RuntimeError("KarenEventStore is closed")
             ids, max_event_id = await asyncio.to_thread(self._append_events_sync, pending)
             self._last_appended_event_id = max_event_id
             self._last_projected_event_id = max_event_id
@@ -3213,7 +3213,7 @@ class DebataEventStore:
         with self._schema_lock:
             if self._schema_path in self._schema_ready_paths and self._schema_path.exists():
                 return
-            db = DebataDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
+            db = KarenDB(self._db.path, busy_timeout_ms=self._db.busy_timeout_ms)
             try:
                 db.load()
             finally:
@@ -3229,7 +3229,7 @@ class DebataEventStore:
         return conn
 
 
-_LEGACY_RAW_IMPORTANT_MEMORY_ID = "__debata_important_raw__"
+_LEGACY_RAW_IMPORTANT_MEMORY_ID = "__karen_important_raw__"
 _LEGACY_RAW_IMPORTANT_SCOPE = "__legacy_raw__"
 
 
@@ -3375,11 +3375,11 @@ def _default_rolling_summary_data() -> dict[str, Any]:
 
 
 __all__ = [
-    "DebataArchiveStore",
-    "DebataEventStore",
-    "DebataHistoryStore",
-    "DebataImportantStore",
-    "DebataPersonaDB",
-    "DebataRollingSummaryStore",
-    "DebataUsageStatsStore",
+    "KarenArchiveStore",
+    "KarenEventStore",
+    "KarenHistoryStore",
+    "KarenImportantStore",
+    "KarenPersonaDB",
+    "KarenRollingSummaryStore",
+    "KarenUsageStatsStore",
 ]

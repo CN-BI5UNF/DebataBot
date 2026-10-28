@@ -186,7 +186,7 @@ class ProviderUnsupportedError(ProviderError):
 # anthropic-sdk-python 发 `Anthropic/Python <ver>`。部分中转站拿这两个头做风控，
 # 见到就回 `403 Your request was blocked`，从 SDK 抛出来是 PermissionDeniedError，
 # 看着像密钥没权限 —— 其实和密钥无关：同一个 key、同一个 body，只换 UA 立刻 200。
-NEUTRAL_USER_AGENT = "Debata_Agent/1.0"
+NEUTRAL_USER_AGENT = "KarenBot/1.0"
 
 
 def headers_with_neutral_user_agent(

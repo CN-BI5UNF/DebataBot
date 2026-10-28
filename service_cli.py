@@ -1,17 +1,17 @@
-"""Debata 后台服务管理命令。
+"""Karen 后台服务管理命令。
 
 用法::
 
-    debata start       启动
-    debata stop        停止
-    debata restart     重启
-    debata status      查看状态
-    debata log         实时查看日志
-    debata enable      设置开机自启（并立即启动）
-    debata disable     取消开机自启
-    debata install     只安装服务，不启动
-    debata uninstall   卸载服务
-    debata help        查看帮助
+    karen start       启动
+    karen stop        停止
+    karen restart     重启
+    karen status      查看状态
+    karen log         实时查看日志
+    karen enable      设置开机自启（并立即启动）
+    karen disable     取消开机自启
+    karen install     只安装服务，不启动
+    karen uninstall   卸载服务
+    karen help        查看帮助
 
 优先使用 systemd 用户服务。如果当前机器没有可用的 systemd 用户会话
 （容器、WSL、精简系统等），自动回退到 PID 文件 + 独立后台进程模式，
@@ -33,22 +33,42 @@ import time
 from pathlib import Path
 from typing import Any
 
-SERVICE_NAME = "debata-agent"
+SERVICE_NAME = "karenbot"
+LEGACY_SERVICE_NAME = "debata-agent"
 PROJECT_ROOT = Path(__file__).resolve().parent
 UNIT_DIR = Path(
     os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
 ) / "systemd" / "user"
 UNIT_FILE = UNIT_DIR / f"{SERVICE_NAME}.service"
+LEGACY_UNIT_FILE = UNIT_DIR / f"{LEGACY_SERVICE_NAME}.service"
 INSTALLER = PROJECT_ROOT / "scripts" / "install_systemd_user.sh"
-LAUNCHER = Path.home() / ".local" / "bin" / "debata"
-LAUNCHER_MARKER = "# Debata Agent launcher"
+LAUNCHER = Path.home() / ".local" / "bin" / "karen"
+LAUNCHER_MARKER = "# KarenBot launcher"
 
-# fallback 模式的运行状态放在项目内，避免 DEBATA_DATA_ROOT 不同导致找不到进程。
-RUN_DIR = PROJECT_ROOT / ".debata-run"
-PID_FILE = RUN_DIR / "debata.pid"
-STATE_FILE = RUN_DIR / "debata.json"
+# fallback 模式的运行状态放在项目内，避免 KAREN_DATA_ROOT 不同导致找不到进程。
+RUN_DIR = PROJECT_ROOT / ".karen-run"
+LEGACY_RUN_DIR = PROJECT_ROOT / ".debata-run"
+PID_FILE = RUN_DIR / "karen.pid"
+STATE_FILE = RUN_DIR / "karen.json"
 SERVICE_ARGS_FILE = RUN_DIR / "args.txt"
 CONSOLE_LOG = RUN_DIR / "console.log"
+
+# 升级兼容：旧安装没有新运行目录时，继续管理旧后台进程。
+# 旧 systemd unit 仅在显式通过 `debata` 兼容入口调用时接管，避免测试/新命令
+# 因为宿主上恰好存在旧 unit 而误用旧服务名。
+if (
+    os.environ.get("KAREN_LEGACY_SERVICE") == "1"
+    and not UNIT_FILE.exists()
+    and LEGACY_UNIT_FILE.exists()
+):
+    SERVICE_NAME = LEGACY_SERVICE_NAME
+    UNIT_FILE = LEGACY_UNIT_FILE
+if not RUN_DIR.exists() and LEGACY_RUN_DIR.exists():
+    RUN_DIR = LEGACY_RUN_DIR
+    PID_FILE = RUN_DIR / "debata.pid"
+    STATE_FILE = RUN_DIR / "debata.json"
+    SERVICE_ARGS_FILE = RUN_DIR / "args.txt"
+    CONSOLE_LOG = RUN_DIR / "console.log"
 
 COMMANDS = (
     "start",
@@ -64,19 +84,19 @@ COMMANDS = (
     "help",
 )
 
-HELP = """Debata 后台服务管理
+HELP = """Karen 后台服务管理
 
 用法:
-  debata start       启动（首次会自动安装服务）
-  debata stop        停止
-  debata restart     重启
-  debata status      查看状态
-  debata log         实时查看日志（Ctrl+C 退出）
-  debata enable      设置开机自启（并立即启动）
-  debata disable     取消开机自启
-  debata install     只安装服务，不启动
-  debata uninstall   卸载服务
-  debata help        显示本帮助
+  karen start       启动（首次会自动安装服务）
+  karen stop        停止
+  karen restart     重启
+  karen status      查看状态
+  karen log         实时查看日志（Ctrl+C 退出）
+  karen enable      设置开机自启（并立即启动）
+  karen disable     取消开机自启
+  karen install     只安装服务，不启动
+  karen uninstall   卸载服务
+  karen help        显示本帮助
 
 说明:
   - 有 systemd 用户会话时优先使用 systemd，不需要 sudo。
@@ -113,7 +133,10 @@ def _systemd_available() -> bool:
     只检查 ``systemctl`` 是否存在不够：容器 / WSL / 精简系统里命令可能
     存在，但 ``systemctl --user`` 会报 “Failed to connect to bus”。
     """
-    if os.environ.get("DEBATA_FORCE_NO_SYSTEMD") == "1":
+    force_no_systemd = os.environ.get("KAREN_FORCE_NO_SYSTEMD") or os.environ.get(
+        "DEBATA_FORCE_NO_SYSTEMD"
+    )
+    if force_no_systemd == "1":
         return False
     if shutil.which("systemctl") is None:
         return False
@@ -132,7 +155,7 @@ def _systemd_available() -> bool:
 def _require_unit() -> bool:
     if UNIT_FILE.exists():
         return True
-    print("服务尚未安装。先运行: debata start")
+    print("服务尚未安装。先运行: karen start")
     return False
 
 
@@ -165,12 +188,15 @@ def _service_python() -> Path:
 
 def _configured_service_args() -> list[str]:
     """读取安装脚本保存的参数；环境变量优先，方便临时覆盖。"""
-    raw = os.environ.get("DEBATA_SERVICE_ARGS", "").strip()
+    raw = (
+        os.environ.get("KAREN_SERVICE_ARGS")
+        or os.environ.get("DEBATA_SERVICE_ARGS", "")
+    ).strip()
     if raw:
         try:
             return shlex.split(raw)
         except ValueError as exc:
-            print(f"DEBATA_SERVICE_ARGS 解析失败（{exc}），忽略该变量。")
+            print(f"KAREN_SERVICE_ARGS 解析失败（{exc}），忽略该变量。")
     try:
         lines = SERVICE_ARGS_FILE.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -228,7 +254,7 @@ def _process_alive(pid: int) -> bool:
     return True
 
 
-def _pid_is_debata(pid: int) -> bool:
+def _pid_is_karen(pid: int) -> bool:
     """确认 PID 仍然属于这个项目，避免误杀复用了 PID 的其它进程。"""
     try:
         raw = Path(f"/proc/{pid}/cmdline").read_bytes()
@@ -240,7 +266,7 @@ def _pid_is_debata(pid: int) -> bool:
 
 def _running_fallback_pid() -> int | None:
     pid = _read_pid()
-    if pid is not None and _process_alive(pid) and _pid_is_debata(pid):
+    if pid is not None and _process_alive(pid) and _pid_is_karen(pid):
         return pid
     if pid is not None:
         _clear_state()
@@ -258,8 +284,8 @@ def _tail_file(path: Path, lines: int = 20) -> str:
 def _fallback_start() -> int:
     pid = _running_fallback_pid()
     if pid is not None:
-        print(f"debata 已在运行（PID {pid}）。")
-        print("查看状态: debata status")
+        print(f"karen 已在运行（PID {pid}）。")
+        print("查看状态: karen status")
         return 0
 
     RUN_DIR.mkdir(parents=True, exist_ok=True)
@@ -310,9 +336,9 @@ def _fallback_start() -> int:
         return 1
 
     print(f"已在后台启动（PID {process.pid}，无 systemd）。")
-    print("日志: debata log")
+    print("日志: karen log")
     print(f"WebUI 令牌: {_token_path()}（首次启动后生成）")
-    print("停止: debata stop")
+    print("停止: karen stop")
     return 0
 
 
@@ -321,7 +347,7 @@ def _fallback_stop(quiet: bool = False) -> int:
     if pid is None:
         _clear_state()
         if not quiet:
-            print("debata 未在运行。")
+            print("karen 未在运行。")
         return 0
 
     def _signal(sig: int) -> bool:
@@ -368,19 +394,19 @@ def _fallback_stop(quiet: bool = False) -> int:
 
     _clear_state()
     if not quiet:
-        print(f"已停止 debata（PID {pid}）。")
+        print(f"已停止 karen（PID {pid}）。")
     return 0
 
 
 def _fallback_status() -> int:
     pid = _running_fallback_pid()
     if pid is None:
-        print("● debata 未运行（内置后台模式，无 systemd）")
-        print("  启动: debata start")
+        print("● karen 未运行（内置后台模式，无 systemd）")
+        print("  启动: karen start")
         return 3
 
     state = _read_state()
-    print("● debata 正在运行（内置后台模式，无 systemd）")
+    print("● karen 正在运行（内置后台模式，无 systemd）")
     print(f"  PID       : {pid}")
     started_at = state.get("started_at")
     if isinstance(started_at, (int, float)):
@@ -397,10 +423,18 @@ def _fallback_status() -> int:
 
 
 def _data_root() -> Path:
-    return Path(
-        os.environ.get("DEBATA_DATA_ROOT")
-        or (Path.home() / ".local" / "share" / "Debata_Agent")
+    from platformdirs import user_data_dir
+
+    env_root = os.environ.get("KAREN_DATA_ROOT") or os.environ.get(
+        "DEBATA_DATA_ROOT"
     )
+    if env_root:
+        return Path(env_root)
+    new_root = Path(user_data_dir("KarenBot", appauthor=False))
+    legacy_root = Path(user_data_dir("Debata_Agent", appauthor=False))
+    if not new_root.exists() and legacy_root.exists():
+        return legacy_root
+    return new_root
 
 
 def _token_path() -> Path:
@@ -408,7 +442,12 @@ def _token_path() -> Path:
 
 
 def _app_log_path() -> Path:
-    return _data_root() / "instances" / "default" / "logs" / "debata.log"
+    logs_dir = _data_root() / "instances" / "default" / "logs"
+    new_log = logs_dir / "karen.log"
+    legacy_log = logs_dir / "debata.log"
+    if not new_log.exists() and legacy_log.exists():
+        return legacy_log
+    return new_log
 
 
 # ============================================================
@@ -423,11 +462,11 @@ def cmd_start() -> int:
         return 1
     return_code = _run(_systemctl("start"))
     if return_code == 0:
-        print("已启动 debata-agent。")
-        print("日志: debata log")
+        print("已启动 karenbot。")
+        print("日志: karen log")
         print(f"WebUI 令牌: {_token_path()}（首次启动后生成）")
     else:
-        print("启动失败。运行 debata log 查看原因。")
+        print("启动失败。运行 karen log 查看原因。")
     return return_code
 
 
@@ -438,7 +477,7 @@ def cmd_stop() -> int:
         return 1
     return_code = _run(_systemctl("stop"))
     if return_code == 0:
-        print("已停止 debata-agent。")
+        print("已停止 karenbot。")
     return return_code
 
 
@@ -447,15 +486,15 @@ def cmd_restart() -> int:
         _fallback_stop(quiet=True)
         code = _fallback_start()
         if code == 0:
-            print("已重启 debata（内置后台模式）。")
+            print("已重启 karen（内置后台模式）。")
         return code
     if not _ensure_installed():
         return 1
     return_code = _run(_systemctl("restart"))
     if return_code == 0:
-        print("已重启 debata-agent。")
+        print("已重启 karenbot。")
     else:
-        print("重启失败。运行 debata log 查看原因。")
+        print("重启失败。运行 karen log 查看原因。")
     return return_code
 
 
@@ -578,7 +617,7 @@ def _enable_linger() -> bool:
 def cmd_enable() -> int:
     if not _systemd_available():
         print("当前环境没有可用的 systemd 用户会话，无法设置开机自启。")
-        print("请使用容器重启策略，或把 `debata start` 加入 cron @reboot。")
+        print("请使用容器重启策略，或把 `karen start` 加入 cron @reboot。")
         print("现在先启动内置后台进程。")
         return _fallback_start()
     if not _ensure_installed():
@@ -589,16 +628,16 @@ def cmd_enable() -> int:
         return return_code
     start_code = _run(_systemctl("start"))
     _enable_linger()
-    print("已设置开机自启：debata-agent")
+    print("已设置开机自启：karenbot")
     if start_code != 0:
-        print("当前启动失败；运行 debata log 查看原因。")
+        print("当前启动失败；运行 karen log 查看原因。")
     return 0
 
 
 def cmd_disable() -> int:
     if not _systemd_available():
         print("当前为内置后台模式，没有 systemd 开机自启需要取消。")
-        print("停止进程用: debata stop")
+        print("停止进程用: karen stop")
         return 0
     if not UNIT_FILE.exists():
         print("服务尚未安装。")
@@ -606,7 +645,7 @@ def cmd_disable() -> int:
     return_code = _run(["systemctl", "--user", "disable", SERVICE_NAME])
     if return_code == 0:
         print("已取消开机自启。")
-        print("当前进程仍在运行；停止用: debata stop")
+        print("当前进程仍在运行；停止用: karen stop")
     return return_code
 
 
@@ -617,7 +656,7 @@ def _install_launcher() -> None:
         except OSError:
             content = ""
         if LAUNCHER_MARKER not in content:
-            print(f"提示：{LAUNCHER} 已存在且不是 Debata 启动器，跳过安装。")
+            print(f"提示：{LAUNCHER} 已存在且不是 Karen 启动器，跳过安装。")
             return
     LAUNCHER.parent.mkdir(parents=True, exist_ok=True)
     LAUNCHER.write_text(
@@ -635,12 +674,12 @@ def cmd_install() -> int:
     if not _systemd_available():
         _install_launcher()
         print("当前环境没有可用的 systemd 用户会话，使用内置后台模式。")
-        print("无需安装服务，直接运行: debata start")
+        print("无需安装服务，直接运行: karen start")
         return 0
     if not _ensure_installed():
         return 1
     print(f"服务已安装: {UNIT_FILE}")
-    print("启动: debata start")
+    print("启动: karen start")
     return 0
 
 
@@ -667,7 +706,7 @@ def cmd_uninstall() -> int:
                 print(f"删除 unit 失败: {exc}")
                 return 1
         _remove_launcher()
-        print("已卸载 Debata 后台服务。")
+        print("已卸载 Karen 后台服务。")
         return 0
 
     if not UNIT_FILE.exists():
@@ -680,7 +719,7 @@ def cmd_uninstall() -> int:
             print(f"删除 unit 失败: {exc}")
             return 1
         _run(["systemctl", "--user", "daemon-reload"])
-        print("已卸载 debata-agent 服务。")
+        print("已卸载 karenbot 服务。")
 
     _remove_launcher()
     return 0

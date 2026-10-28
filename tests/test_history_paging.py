@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from memory.debata_stores import DebataHistoryStore
+from memory.karen_stores import KarenHistoryStore
 
 
 def _records(count: int) -> list[dict]:
@@ -22,7 +22,7 @@ def _records(count: int) -> list[dict]:
 
 @pytest.mark.asyncio
 async def test_paged_reads_do_not_require_full_cache(tmp_path):
-    store = DebataHistoryStore(tmp_path / "debata.db", "paging")
+    store = KarenHistoryStore(tmp_path / "karen.db", "paging")
     await store.append_many(_records(300))
 
     assert store._cache is None
@@ -52,8 +52,8 @@ async def test_paged_reads_do_not_require_full_cache(tmp_path):
 
 @pytest.mark.asyncio
 async def test_page_cache_respects_byte_and_page_limits(tmp_path):
-    store = DebataHistoryStore(
-        tmp_path / "debata.db",
+    store = KarenHistoryStore(
+        tmp_path / "karen.db",
         "bounded",
         page_cache_max_bytes=64 * 1024,
         page_size=16,
@@ -74,8 +74,8 @@ async def test_page_cache_respects_byte_and_page_limits(tmp_path):
 
 @pytest.mark.asyncio
 async def test_streaming_iteration_and_invalid_rows(tmp_path):
-    path = tmp_path / "debata.db"
-    store = DebataHistoryStore(path, "stream")
+    path = tmp_path / "karen.db"
+    store = KarenHistoryStore(path, "stream")
     await store.append_many(_records(5))
     with sqlite3.connect(path) as conn:
         conn.execute(
@@ -103,7 +103,7 @@ async def test_streaming_iteration_and_invalid_rows(tmp_path):
 
 @pytest.mark.asyncio
 async def test_mutation_invalidates_page_cache_and_keeps_length_exact(tmp_path):
-    store = DebataHistoryStore(tmp_path / "debata.db", "mutation")
+    store = KarenHistoryStore(tmp_path / "karen.db", "mutation")
     await store.append_many(_records(20))
     await store.fetch_suffix(10)
     before = await store.stats()

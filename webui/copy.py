@@ -10,7 +10,7 @@ DASHBOARD_COPY: dict[str, str] = {
     # ============================================================
     # 窗口标题
     # ============================================================
-    "window.title": "Debata_Agent",
+    "window.title": "KarenBot",
 
     # ============================================================
     # 导航
@@ -87,7 +87,7 @@ DASHBOARD_COPY: dict[str, str] = {
     "memory.edit_button": "编辑",
     "memory.delete_button": "移除",
     "memory.delete_confirm_title": "移除这条记忆？",
-    "memory.delete_confirm_body": "Debata 之后不会再用它做参考。这是不可逆的操作。",
+    "memory.delete_confirm_body": "Karen 之后不会再用它做参考。这是不可逆的操作。",
     "memory.export_button": "导出",
     "memory.import_button": "导入",
 
@@ -125,7 +125,7 @@ DASHBOARD_COPY: dict[str, str] = {
     "settings.unsaved_changes": "有未保存的修改",
     "settings.save_button": "记住",
     "settings.discard_button": "丢弃修改",
-    "settings.restart_required": "改动需要重启 Debata 才能生效",
+    "settings.restart_required": "改动需要重启 Karen 才能生效",
     "settings.restart_button": "立即重启",
 
     "settings.appearance_theme": "主题",
@@ -168,10 +168,10 @@ DASHBOARD_COPY: dict[str, str] = {
     "tray.menu_dashboard": "打开仪表盘",
     "tray.menu_pause": "暂停响应",
     "tray.menu_resume": "继续响应",
-    "tray.menu_restart": "重启 Debata",
+    "tray.menu_restart": "重启 Karen",
     "tray.menu_quit": "退出",
-    "tray.notify_connected": "Debata 已就位",
-    "tray.notify_disconnected": "Debata 断线了",
+    "tray.notify_connected": "Karen 已就位",
+    "tray.notify_disconnected": "Karen 断线了",
     "tray.notify_error_title": "出了点状况",
 
     # ============================================================

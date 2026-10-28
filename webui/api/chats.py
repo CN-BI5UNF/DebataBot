@@ -76,7 +76,7 @@ async def conversation(
         from core.chat_pagination import ChatPageRequest, ChatPaginationManager
         db_path = getattr(rt.paths, "DATA_DIR", None)
         if db_path is not None:
-            db_file = db_path / "debata.db"
+            db_file = db_path / "karen.db"
             if db_file.exists():
                 persona_id = getattr(rt, "persona_id", "default")
                 mgr = ChatPaginationManager(db_file)
@@ -135,7 +135,7 @@ async def chat_page(
     from core.chat_pagination import ChatPageRequest, ChatPaginationManager
 
     data_dir = getattr(rt.paths, "DATA_DIR", Path("data"))
-    db_file = data_dir / "debata.db"
+    db_file = data_dir / "karen.db"
     persona_id = getattr(rt, "persona_id", "default")
     mgr = ChatPaginationManager(db_file)
     res = mgr.fetch_page(

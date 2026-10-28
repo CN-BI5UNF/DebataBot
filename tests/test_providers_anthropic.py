@@ -20,11 +20,11 @@ from providers.protocols.anthropic_proto import AnthropicProvider
 
 def test_convert_messages_system_extracted():
     messages = [
-        {"role": "system", "content": "你是 Debata"},
+        {"role": "system", "content": "你是 Karen"},
         {"role": "user", "content": "你好"},
     ]
     system, msgs = AnthropicProvider._convert_messages(messages)
-    assert system == "你是 Debata"
+    assert system == "你是 Karen"
     assert len(msgs) == 1
     assert msgs[0]["role"] == "user"
 

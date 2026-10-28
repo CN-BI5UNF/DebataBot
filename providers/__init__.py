@@ -1,4 +1,4 @@
-"""Debata_Agent 多提供商系统。
+"""KarenBot 多提供商系统。
 
 公开 API：
     IProvider             —— 提供商抽象

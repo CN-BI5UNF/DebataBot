@@ -17,12 +17,12 @@ from core.d01 import (
     plan_restore_replay,
     tombstone_record,
 )
-from memory.debata_db import DebataDB
+from memory.karen_db import KarenDB
 
 
 def _db(tmp_path):
-    path = tmp_path / "debata.db"
-    db = DebataDB(path)
+    path = tmp_path / "karen.db"
+    db = KarenDB(path)
     db.load()
     db.close()
     with sqlite3.connect(path) as conn:

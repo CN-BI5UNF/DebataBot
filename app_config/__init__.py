@@ -1,4 +1,4 @@
-"""Debata_Agent 配置系统。
+"""KarenBot 配置系统。
 
 公开 API：
     AppPaths              —— 跨平台路径管理

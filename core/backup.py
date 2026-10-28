@@ -57,9 +57,9 @@ JOB_SCHEMA_VERSION = 1
 BACKUP_FORMAT = 2
 BACKUP_TYPE_USER_EXPORT = "user_export"
 BACKUP_TYPE_MIGRATION_SNAPSHOT = "migration_snapshot"
-BACKUP_PREFIX = "Debata_Backup_"
+BACKUP_PREFIX = "Karen_Backup_"
 BACKUP_SUFFIX = ".zip"
-BACKUP_NAME_RE = re.compile(r"^Debata_Backup_[A-Za-z0-9_.-]+\.zip$")
+BACKUP_NAME_RE = re.compile(r"^Karen_Backup_[A-Za-z0-9_.-]+\.zip$")
 SIDECAR_SUFFIX = ".json"
 CHUNK_SIZE = 1024 * 1024
 SPACE_MARGIN = 64 * 1024 * 1024
@@ -305,7 +305,7 @@ class BackupCoordinator:
             os.close(fd)
             raise BackupError(
                 "backup_running",
-                "另一个 Debata 进程正在备份；同一实例只允许一个备份任务",
+                "另一个 Karen 进程正在备份；同一实例只允许一个备份任务",
             ) from exc
         self._lock_fd = fd
 
@@ -342,10 +342,10 @@ class BackupCoordinator:
 
 
 def resolve_backup_directory(raw: str | None) -> Path:
-    """把配置值解析为绝对目录；空值使用用户主目录下的 Debata_Backups。"""
+    """把配置值解析为绝对目录；空值使用用户主目录下的 Karen_Backups。"""
     text = str(raw or "").strip()
     if not text:
-        return (Path.home() / "Debata_Backups").resolve()
+        return (Path.home() / "Karen_Backups").resolve()
     path = Path(text).expanduser()
     if not path.is_absolute():
         path = Path.home() / path
@@ -469,7 +469,7 @@ class BackupService:
                 raise BackupError(
                     "invalid_directory",
                     "备份目录不能是数据目录、人格目录或工作区的父目录；"
-                    "请选择独立目录（例如 ~/Debata_Backups）",
+                    "请选择独立目录（例如 ~/Karen_Backups）",
                 )
 
     def _ensure_directory(self) -> None:
@@ -2181,17 +2181,17 @@ class BackupService:
 
     def _restore_readme(self) -> str:
         return (
-            "Debata_Agent 用户数据备份\n"
+            "KarenBot 用户数据备份\n"
             "==========================\n\n"
             "此压缩包包含聊天数据库、RAG 向量库、工作区文件、配置、加密密钥库和\n"
             "RSA 私钥。拿到它就等于拿到 API 密钥的解密能力，请像密码一样保管，\n"
             "不要上传到公共网盘或通过不安全渠道发送。ZIP 本身没有加密；0600/0700\n"
             "只是本机文件权限，不是密码保护。\n\n"
             "恢复步骤（建议先备份当前数据）：\n"
-            "1. 停止 debata-agent 服务。\n"
+            "1. 停止 karenbot 服务。\n"
             "2. 解压本压缩包。\n"
             "3. 把 data/ 下的内容复制回当前实例数据目录（默认\n"
-            "   ~/.local/share/Debata_Agent/instances/default/）。\n"
+            "   ~/.local/share/KarenBot/instances/default/）。\n"
             "4. 把 personas/ 复制回项目根目录的 personas/。\n"
             "5. 确认 data/rsa_private.pem 权限为 0600。若原环境使用系统 keyring，\n"
             "   把 PEM 留在数据目录即可作为兜底；确认能解密模型密钥后再删除。\n"
