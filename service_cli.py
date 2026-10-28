@@ -411,8 +411,11 @@ def _fallback_status() -> int:
     started_at = state.get("started_at")
     if isinstance(started_at, (int, float)):
         print(f"  启动时间  : {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(started_at))}")
+    app_log = _app_log_path()
+    if not app_log.exists() and isinstance(state.get("app_log"), str):
+        app_log = Path(state["app_log"])
     print(f"  项目目录  : {PROJECT_ROOT}")
-    print(f"  应用日志  : {state.get('app_log') or _app_log_path()}")
+    print(f"  应用日志  : {app_log}")
     print(f"  控制台日志: {state.get('console_log') or CONSOLE_LOG}")
     return 0
 
