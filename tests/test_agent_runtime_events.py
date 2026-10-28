@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -335,20 +334,26 @@ class FailingProjectionStore(EventStore):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, projection_retry_delay=0.01, **kwargs)
         self.fail_projection = True
-        self.projection_failed = threading.Event()
 
     def _project_events_sync(self, events):  # noqa: ANN001
         if self.fail_projection:
-            self.projection_failed.set()
             raise RuntimeError("sqlite projection failed")
         return super()._project_events_sync(events)
 
 
-async def _wait_thread_event(event: threading.Event, timeout: float = 1.0) -> None:
-    assert await asyncio.wait_for(
-        asyncio.to_thread(event.wait, timeout),
-        timeout=timeout + 0.2,
-    )
+async def _wait_projection_error(
+    store: FailingProjectionStore, timeout: float = 1.0
+) -> dict[str, Any]:
+    """等待投影失败计数落账，避免依赖线程事件的时序竞态。"""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        stats = await store.stats()
+        if stats["projection_error_count"] >= 1:
+            return stats
+        if loop.time() >= deadline:
+            raise AssertionError(f"投影失败计数未在 {timeout}s 内增加: {stats!r}")
+        await asyncio.sleep(0.01)
 
 
 @pytest.mark.parametrize(
@@ -518,8 +523,7 @@ async def test_sqlite_projection_failure_does_not_stop_agent_tool_execution(tmp_
 
     assert result.finish_reason == "tool_stop"
     assert json.loads(result.records[1]["content"]) == tool_result
-    await _wait_thread_event(store.projection_failed)
-    stats = await store.stats()
+    stats = await _wait_projection_error(store)
     assert stats["last_appended_event_id"] == 2
     assert stats["projection_error_count"] >= 1
 
