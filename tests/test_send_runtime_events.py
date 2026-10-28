@@ -371,11 +371,13 @@ async def test_send_runtime_event_projection_lag_backpressures_without_dropping(
         assert [record["event_type"] for record in records] == ["send_batch_accepted"]
 
         event_store.fail_projection = False
-        result = await asyncio.wait_for(submit_task, timeout=1.0)
+        # Windows CI 在负载高时投影 worker 的重试调度可能超过 1s；这里等待
+        # 的是“最终恢复”，给足调度余量，避免把慢调度误判为丢事件。
+        result = await asyncio.wait_for(submit_task, timeout=5.0)
 
         assert result["status"] == "sent"
         assert pipeline.adapter.sent_texts[0][1] == "投影长期失败时不能静默丢事件"
-        assert await event_store.wait_projected(timeout=1.0)
+        assert await event_store.wait_projected(timeout=5.0)
         events = await event_store.iter_events(limit=10)
         assert [event["event_type"] for event in events] == [
             "send_batch_accepted",
