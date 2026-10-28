@@ -209,9 +209,9 @@ COPY: dict[str, str] = {
     # ============================================================
     "persona.source_title": "选个人格",
     "persona.source_repo": "用仓库自带的（推荐）",
-    "persona.source_repo_desc": "Debata 等仓库自带人格，开箱可用。先快速上手，之后再换。",
+    "persona.source_repo_desc": "大肥鱼 / deepseek 等仓库自带人格，开箱可用。先快速上手，之后再换。",
     "persona.source_create": "和我一起创造一个",
-    "persona.source_create_desc": "回答几个问题，Debata 会帮你写一份完整的人格设定。",
+    "persona.source_create_desc": "回答几个问题，AI 会帮你写一份完整的人格设定。",
     "persona.source_import": "导入已有人格",
     "persona.source_import_desc": "你已经写好了 persona_prompt.py 文件，从磁盘导入。",
 

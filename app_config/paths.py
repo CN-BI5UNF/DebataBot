@@ -99,7 +99,7 @@ class AppPaths:
         self.WORKSPACE_DIR: Path = self.DATA_DIR / "workspace"
 
         # === 仓库内 personas/ —— 所有人格平级（仓库自带 + 用户自创共存）===
-        # 仓库自带（如 debata/）入 git，其它由 .gitignore 排除
+        # 仓库自带（大肥鱼/、deepseek/）入 git，其它由 .gitignore 排除
         self.PERSONAS_DIR: Path = project_root / "personas"
 
         # === 仓库内置资源（git 追踪） ===

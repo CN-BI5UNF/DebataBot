@@ -663,6 +663,37 @@ def _patch_rag_runtime_network(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_runtime_start_heals_removed_persona_and_persists_config(assembled_project):
+    """旧配置 persona.active=debata 不应再导致启动失败。"""
+    project_root, paths = assembled_project
+    persona_dir = paths.PERSONAS_DIR / "deepseek"
+    persona_dir.mkdir(parents=True, exist_ok=True)
+    (persona_dir / "persona_prompt.py").write_text(
+        'PERSONA_PROMPT = "<identity>替代人格</identity>"\n'
+        'PERSONA_VARS = {"name": "替代人格", "admins": []}\n',
+        encoding="utf-8",
+    )
+    config_data = yaml.safe_load(paths.CONFIG_FILE.read_text(encoding="utf-8"))
+    config_data["persona"]["active"] = "debata"
+    paths.CONFIG_FILE.write_text(
+        yaml.safe_dump(config_data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    rt = Runtime(project_root=project_root)
+    try:
+        await rt.start()
+        assert rt.persona.name == "deepseek"
+        assert rt.config.persona.active == "deepseek"
+    finally:
+        await rt.shutdown()
+
+    saved = yaml.safe_load(paths.CONFIG_FILE.read_text(encoding="utf-8"))
+    assert saved["persona"]["active"] == "deepseek"
+    assert list((paths.DATA_DIR / "config_backups").glob("config-*.yaml"))
+
+
+@pytest.mark.asyncio
 async def test_runtime_start_assembles_all_components(assembled_project):
     """Runtime.start() 应完成 16 步装配，所有组件就位。"""
     project_root, paths = assembled_project

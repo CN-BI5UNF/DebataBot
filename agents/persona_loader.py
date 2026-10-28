@@ -6,7 +6,7 @@
     icon.ico             （可选）
 
 所有人格平级放在 personas/{name}/ 下：
-    - 仓库自带的（如 大肥鱼/、debata/）随仓库一起发布
+    - 仓库自带的（如 大肥鱼/、deepseek/）随仓库一起发布
     - 用户自创的由 .gitignore 排除，不上传
     程序加载时无差别对待。
 """
@@ -23,6 +23,16 @@ from typing import Any
 from app_config.paths import AppPaths
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_PERSONA_NAME = "大肥鱼"
+"""开箱默认人格；配置中的人格不可用时用于兜底。"""
+
+REMOVED_PERSONA_ALIASES: dict[str, str] = {"debata": "deepseek"}
+"""已从仓库移除的旧内置人格 → 替代人格。
+
+只有在 `personas/debata/` 确实不存在时才使用映射；用户自己保留/重建的
+同名人格仍然优先加载。
+"""
 
 # 人格名允许：中英文 / 数字 / 下划线 / 连字符。
 # 禁止 OS 路径敏感字符（/ \ : * ? " < > | 等），避免目录名引发问题。
@@ -142,6 +152,55 @@ def list_available_personas(paths: AppPaths) -> list[str]:
     if not found:
         logger.warning(
             f"personas 目录 {base} 下没有任何可用人格。"
-            f"请克隆仓库自带的 大肥鱼/ 或 debata/，或新建一个（参考 docs/persona_writing_guide.md）。"
+            f"请克隆仓库自带的 大肥鱼/ 或 deepseek/，或新建一个（参考 docs/persona_writing_guide.md）。"
         )
     return sorted(found)
+
+
+def resolve_persona_name(
+    paths: AppPaths,
+    requested: str,
+    *,
+    available: list[str] | None = None,
+    default: str = DEFAULT_PERSONA_NAME,
+    aliases: dict[str, str] | None = None,
+) -> tuple[str, str | None]:
+    """把配置中的人格名解析为实际可加载的人格。
+
+    - 请求的人格存在：原样返回（多余空白会被规范化）。
+    - 请求的是已移除的旧内置人格，且替代人格存在：使用替代人格。
+    - 否则优先默认人格，再退回第一个可用人格。
+
+    返回 ``(人格名, 自动修复提示)``；提示为 None 表示无需迁移。
+    没有任何可用人格时抛 FileNotFoundError。
+    """
+    names = list_available_personas(paths) if available is None else list(available)
+    if not names:
+        raise FileNotFoundError(
+            f"personas 目录 {paths.PERSONAS_DIR} 下没有任何可用人格。"
+        )
+
+    raw = requested if isinstance(requested, str) else ""
+    name = raw.strip()
+    if name in names:
+        if name != raw:
+            return name, f"人格名 {raw!r} 含多余空白，已规范化为 {name!r}。"
+        return name, None
+
+    alias_map = REMOVED_PERSONA_ALIASES if aliases is None else aliases
+    alias = alias_map.get(name) or alias_map.get(name.casefold())
+    if alias and alias in names:
+        return alias, (
+            f"配置中的人格 {name!r} 已从仓库移除，自动切换到替代人格 {alias!r}。"
+        )
+
+    listed = ", ".join(names)
+    if default in names:
+        return default, (
+            f"配置中的人格 {name!r} 不存在（可用: {listed}），"
+            f"自动切换到默认人格 {default!r}。"
+        )
+    return names[0], (
+        f"配置中的人格 {name!r} 不存在（可用: {listed}），"
+        f"自动切换到 {names[0]!r}。"
+    )

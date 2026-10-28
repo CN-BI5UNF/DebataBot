@@ -30,6 +30,7 @@
 
 ### Fixed
 
+- **升级后无法启动（重大）**：旧配置 `persona.active: debata` 在 `debata` 内置人格被移除后会让 Runtime 启动失败，WebUI 显示“读取配置失败：未找到人格 'debata'”；配置保存在实例数据目录，删除/重新拉取项目也无法修复。现在 Runtime 启动时会自动解析人格：已移除的 `debata` 优先映射到 `deepseek`，不可用则回退到默认「大肥鱼」，再否则选择第一个可用人格；成功后把修正写回 `config.yaml`（带 `config_backups/` 备份），写回失败时仍用兜底人格继续启动。用户自建的 `personas/debata/` 仍优先加载，不会被强制改名。CLI 向导默认人格和相关过时文案同步更新。
 - 黑话库内存索引未按 `max_entries` 截断，长期运行会无限增长。
 - 黑话学习在模型调用期间收到新消息时，可能把未发送的新消息一起从窗口删除；改为按对象身份移除已发送消息。
 - 「黑话」「知识」页的“设置”按钮只跳到设置页，但设置页硬编码 `await show('models')`，永远打开模型分页；现在通过 `ctx.section` 打开「功能」分页。另修复 `location.hash` 触发的 hashchange 重入：深链渲染期间会被一次无 `section` 的重复导航覆盖回默认分页，现在用导航序号挡住自身重入。
@@ -47,7 +48,9 @@
 
 ### Verification
 
-- 全量测试 2365 passed（Linux/aarch64、Python 3.12，忽略 `tests/test_kv_cache_real.py`）；`ruff check .`、`git diff --check`、`compileall`、bun browser bundle 全部通过。GitHub Actions `Test` 的 Ubuntu/Windows × Python 3.11/3.12 四个任务在 `main` 与 `refactor/main` 均已通过。
+- 全量测试 2375 passed（Linux/aarch64、Python 3.12，忽略 `tests/test_kv_cache_real.py`）；`ruff check .`、`git diff --check`、`compileall`、bun browser bundle 全部通过。
+- 升级自愈回归：新增 `resolve_persona_name` 单测（原人格存在、`debata`→`deepseek`、用户自建 `debata` 优先、默认/首个可用回退、大小写、空白、空目录）和 Runtime 装配测试（配置写 `persona.active: debata`，启动后使用 `deepseek` 并写回配置、生成备份）。
+- 模拟用户现场：临时实例 `persona.active: debata` 启动 WebUI，HTTP 200；配置自动写回 `deepseek`，`config_backups/config-*.yaml` 生成备份。
 - 知识/黑话改为按需查询：`task_context` 不再包含 `【群聊黑话表】` / `<network_knowledge>`；`lookup_slang` 和 `list_knowledge_notes` 返回 active/confirmed 条目、受查询上限约束，并带不可信内容提示。
 - 线上 compact profile 构建 53 个工具，`lookup_slang` / `list_knowledge_notes` 直接暴露（非 stub），写入类知识工具仍为 stub；浏览器验证知识页和设置页已显示“按需查询/查询返回上限”文案。
 - 知识查重实测：`deepseek` persona 从 79 条合并到 71 条，8 组保守重复被合并，“Phigros 基本介绍 / Phigros 基本资料”只保留一条；再次 dry-run 返回 0 条可合并，清理前已生成 `knowledge.json.dedupe-20261028-001451` 备份。

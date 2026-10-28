@@ -31,10 +31,13 @@ from .context_builder import (
 from .persona_agent import PersonaAgent
 from .persona_gen_agent import PersonaBrief, PersonaGenAgent
 from .persona_loader import (
+    DEFAULT_PERSONA_NAME,
+    REMOVED_PERSONA_ALIASES,
     Persona,
     find_persona_dir,
     list_available_personas,
     load_persona,
+    resolve_persona_name,
     validate_persona_name,
 )
 from .proactive_agent import ProactiveRouterAgent
@@ -53,7 +56,10 @@ __all__ = [
     "load_persona",
     "find_persona_dir",
     "list_available_personas",
+    "resolve_persona_name",
     "validate_persona_name",
+    "DEFAULT_PERSONA_NAME",
+    "REMOVED_PERSONA_ALIASES",
     # prompts
     "CORE_RULES",
     "CONVERSATION_PROTOCOL",

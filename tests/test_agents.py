@@ -5,10 +5,12 @@ from __future__ import annotations
 import pytest
 
 from agents.persona_loader import (
+    DEFAULT_PERSONA_NAME,
     Persona,
     find_persona_dir,
     list_available_personas,
     load_persona,
+    resolve_persona_name,
     validate_persona_name,
 )
 
@@ -127,3 +129,87 @@ def test_list_available_personas(tmp_paths):
     assert "p1" in found
     assert "p2" in found
     assert "_hidden" not in found
+
+
+def _write_persona(paths, name: str) -> None:
+    directory = paths.PERSONAS_DIR / name
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "persona_prompt.py").write_text(
+        'PERSONA_PROMPT = "x"', encoding="utf-8"
+    )
+
+
+def test_resolve_persona_name_keeps_existing(tmp_paths):
+    _write_persona(tmp_paths, "alice")
+
+    assert resolve_persona_name(tmp_paths, "alice") == ("alice", None)
+
+
+def test_resolve_persona_name_maps_removed_debata_to_deepseek(tmp_paths):
+    _write_persona(tmp_paths, "deepseek")
+    _write_persona(tmp_paths, "大肥鱼")
+
+    resolved, note = resolve_persona_name(tmp_paths, "debata")
+
+    assert resolved == "deepseek"
+    assert note is not None
+    assert "debata" in note and "deepseek" in note
+
+
+def test_resolve_persona_name_keeps_user_supplied_debata_directory(tmp_paths):
+    """用户自己保留了 personas/debata/ 时不能被强制改名。"""
+    _write_persona(tmp_paths, "debata")
+    _write_persona(tmp_paths, "deepseek")
+
+    assert resolve_persona_name(tmp_paths, "debata") == ("debata", None)
+
+
+def test_resolve_persona_name_alias_is_case_insensitive(tmp_paths):
+    _write_persona(tmp_paths, "deepseek")
+
+    resolved, note = resolve_persona_name(tmp_paths, "Debata")
+
+    assert resolved == "deepseek"
+    assert note is not None
+
+
+def test_resolve_persona_name_falls_back_to_default_then_first_available(tmp_paths):
+    _write_persona(tmp_paths, "alice")
+
+    resolved, note = resolve_persona_name(tmp_paths, "ghost")
+    assert resolved == "alice"
+    assert note is not None and "ghost" in note
+
+    _write_persona(tmp_paths, "大肥鱼")
+    resolved, note = resolve_persona_name(tmp_paths, "ghost")
+    assert resolved == "大肥鱼"
+    assert note is not None
+
+
+def test_resolve_persona_name_maps_debata_to_default_when_alias_missing(tmp_paths):
+    _write_persona(tmp_paths, "大肥鱼")
+
+    resolved, note = resolve_persona_name(tmp_paths, "debata")
+
+    assert resolved == "大肥鱼"
+    assert note is not None
+
+
+def test_resolve_persona_name_normalizes_whitespace(tmp_paths):
+    _write_persona(tmp_paths, "alice")
+
+    resolved, note = resolve_persona_name(tmp_paths, "  alice  ")
+
+    assert resolved == "alice"
+    assert note is not None and "规范化" in note
+
+
+def test_resolve_persona_name_without_personas_raises(tmp_paths):
+    with pytest.raises(FileNotFoundError):
+        resolve_persona_name(tmp_paths, "debata")
+
+
+def test_default_persona_name_matches_config_schema():
+    from app_config.schema import PersonaConfig
+
+    assert DEFAULT_PERSONA_NAME == PersonaConfig().active

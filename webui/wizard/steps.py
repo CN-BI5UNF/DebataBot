@@ -160,7 +160,7 @@ STEPS: dict[StepId, Step] = {
         id=StepId.PERSONA_CREATE,
         title="塑造你的角色",
         subtitle=(
-            "回答几个问题，Debata 会和你一起把这个角色具象化。\n"
+            "回答几个问题，AI 会和你一起把这个人格具象化。\n"
             "可以多轮调整，直到你满意为止。"
         ),
         fields=[

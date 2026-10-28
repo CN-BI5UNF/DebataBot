@@ -54,7 +54,7 @@ def _make_deepseek_provider() -> IProvider:
 
 
 def _make_persona() -> Persona:
-    """加载仓库自带 debata persona 作为真实大 system prompt。"""
+    """加载仓库自带的 deepseek 人格作为真实大 system prompt。"""
     from pathlib import Path
 
     from agents.persona_loader import load_persona
@@ -62,7 +62,7 @@ def _make_persona() -> Persona:
 
     project_root = Path(__file__).resolve().parent.parent
     paths = AppPaths(project_root=project_root)
-    return load_persona(paths, "debata")
+    return load_persona(paths, "deepseek")
 
 
 def _make_agent_cfg() -> AgentConfig:
@@ -368,7 +368,7 @@ async def test_tool_definitions_do_not_break_cache():
         features=FeaturesConfig(
             long_term_memory=LongTermMemoryConfig(mode="file"),
         ),
-        persona=PersonaConfig(active="debata"),
+        persona=PersonaConfig(active="deepseek"),
         behavior=BehaviorConfig(),
     )
 

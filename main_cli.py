@@ -460,7 +460,7 @@ def _run_cli_wizard_legacy(paths) -> None:
             existing = None
 
     cur_napcat = existing.adapters.get("default") if existing else None
-    cur_persona = existing.persona.active if existing else "debata"
+    cur_persona = existing.persona.active if existing else PersonaConfig().active
 
     print("=" * 60)
     if existing:
@@ -777,7 +777,7 @@ def _run_cli_wizard(paths) -> None:
 
     print("\n[人格]")
     cfg.persona = PersonaConfig(
-        active=_cli_text("人格目录名", cfg.persona.active or "debata")
+        active=_cli_text("人格目录名", cfg.persona.active or PersonaConfig().active)
     )
     admin_qq = _cli_text("管理员 QQ（可选，仅提示，不自动改 persona）", "")
 

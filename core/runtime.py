@@ -176,23 +176,47 @@ class Runtime:
 
         # ----- 2. 人格 -----
         stage_t0 = time.monotonic()
-        from agents import list_available_personas, load_persona
+        from agents import list_available_personas, load_persona, resolve_persona_name
 
         active = self.config.persona.active
         try:
-            self.persona = load_persona(self.paths, active)
+            resolved, recovery_note = resolve_persona_name(self.paths, active)
         except FileNotFoundError:
-            available = list_available_personas(self.paths)
-            if not available:
-                raise RuntimeError(
-                    f"未找到人格 {active!r}，且 {self.paths.PERSONAS_DIR} 下无任何可用人格。"
-                ) from None
             raise RuntimeError(
-                f"未找到人格 {active!r}。\n"
-                f"  可用人格: {available}\n"
-                f"  请编辑 {self.paths.CONFIG_FILE} 把 persona.active 改成上述之一，"
-                f"然后重新启动。"
+                f"未找到任何可用人格：{self.paths.PERSONAS_DIR} 下没有 persona_prompt.py。\n"
+                f"  请确认项目自带的 personas/ 目录完整，或新建一个人格后重新启动。"
             ) from None
+
+        if recovery_note:
+            logger.warning("人格配置需要自动修复：%s", recovery_note)
+            logger.warning(
+                "可用人格: %s", ", ".join(list_available_personas(self.paths))
+            )
+
+        try:
+            self.persona = load_persona(self.paths, resolved)
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"人格 {resolved!r} 在启动过程中消失，请检查 {self.paths.PERSONAS_DIR}。"
+            ) from None
+
+        if recovery_note:
+            self.config.persona.active = resolved
+            try:
+                from app_config.loader import save_config
+
+                save_config(self.paths, self.config)
+                logger.warning(
+                    "已将 persona.active 自动修正为 %r 并写回 %s",
+                    resolved,
+                    self.paths.CONFIG_FILE,
+                )
+            except Exception as save_exc:  # noqa: BLE001
+                logger.warning(
+                    "persona.active 自动修复未能写回配置（本次运行仍使用 %r）：%s",
+                    resolved,
+                    save_exc,
+                )
         logger.debug(f"人格已加载: {self.persona.name}")
         logger.debug("Runtime 阶段完成：人格加载 %.2fs", time.monotonic() - stage_t0)
 
