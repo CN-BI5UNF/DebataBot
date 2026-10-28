@@ -66,9 +66,37 @@ async def conversation(
     request: Request,
     conversation_id: str = Query(..., description="如 private:123456 / group:987654"),
     limit: int = Query(300, ge=1, le=5000),
+    cursor: str | None = Query(None, description="Keyset 游标"),
 ) -> dict[str, Any]:
-    """单个会话的记录（默认只回最近 limit 条）。"""
+    """单个会话的记录（支持 Keyset 游标与传统 limit）。"""
     rt = require_runtime(request)
+
+    # Q01: Keyset 游标快速路径
+    if cursor is not None:
+        from core.chat_pagination import ChatPageRequest, ChatPaginationManager
+        db_path = getattr(rt.paths, "DATA_DIR", None)
+        if db_path is not None:
+            db_file = db_path / "debata.db"
+            if db_file.exists():
+                persona_id = getattr(rt, "persona_id", "default")
+                mgr = ChatPaginationManager(db_file)
+                res = mgr.fetch_page(
+                    ChatPageRequest(
+                        persona_id=persona_id,
+                        conversation_id=conversation_id,
+                        cursor=cursor,
+                        limit=min(limit, 200),
+                    )
+                )
+                return {
+                    "conversation": {"key": conversation_id, "label": conversation_id},
+                    "records": [_record_to_json(r) for r in res.items],
+                    "truncated": res.has_more,
+                    "total": res.total_count,
+                    "next_cursor": res.next_cursor,
+                    "prev_cursor": res.prev_cursor,
+                }
+
     try:
         records = await _load_chat_page_records(rt)
     except Exception as e:  # noqa: BLE001
@@ -88,6 +116,46 @@ async def conversation(
         "records": [_record_to_json(r) for r in items],
         "truncated": truncated,
         "total": len(target.get("records") or []),
+    }
+
+
+@router.get("/page")
+async def chat_page(
+    request: Request,
+    conversation_id: str | None = Query(None, description="如 private:123456 / group:987654"),
+    cursor: str | None = Query(None, description="Keyset 游标"),
+    limit: int = Query(50, ge=1, le=200),
+    query: str | None = Query(None, description="搜索文本"),
+    direction: str = Query("backward", description="backward 或 forward"),
+) -> dict[str, Any]:
+    """Q01: 基于 SQLite Keyset 的稳定只读 Read Model 分页。"""
+    rt = require_runtime(request)
+    from pathlib import Path
+
+    from core.chat_pagination import ChatPageRequest, ChatPaginationManager
+
+    data_dir = getattr(rt.paths, "DATA_DIR", Path("data"))
+    db_file = data_dir / "debata.db"
+    persona_id = getattr(rt, "persona_id", "default")
+    mgr = ChatPaginationManager(db_file)
+    res = mgr.fetch_page(
+        ChatPageRequest(
+            persona_id=persona_id,
+            conversation_id=conversation_id,
+            cursor=cursor,
+            limit=limit,
+            query=query,
+            direction=direction,
+        )
+    )
+    return {
+        "items": [_record_to_json(r) for r in res.items],
+        "next_cursor": res.next_cursor,
+        "prev_cursor": res.prev_cursor,
+        "has_more": res.has_more,
+        "count": res.count,
+        "total_count": res.total_count,
+        "is_exact_count": res.is_exact_count,
     }
 
 

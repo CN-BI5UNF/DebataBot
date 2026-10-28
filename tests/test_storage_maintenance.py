@@ -305,3 +305,28 @@ async def test_memory_cache_clear_reports_entries(tmp_paths, monkeypatch):
     assert finished["state"] == "completed"
     assert finished["result"]["categories"]["chat_page_cache"]["entries_removed"] == 1
     assert chat_records.chat_page_cache_info()["entries"] == 0
+
+
+@pytest.mark.asyncio
+async def test_auto_maintenance_scheduler_lifecycle_and_low_disk(tmp_paths, monkeypatch):
+    """测试定时抖动自动维护调度器的生命周期与低盘背压（A01/A02，E35）。"""
+    from core.storage_maintenance import AutoMaintenanceScheduler
+
+    runtime = _runtime(tmp_paths)
+    service = StorageMaintenanceService(runtime)
+    scheduler = AutoMaintenanceScheduler(
+        service,
+        initial_delay=0.01,
+        interval_seconds=0.05,
+        jitter_seconds=0.01,
+    )
+
+    # 1. 测试单次运行
+    res = await scheduler.run_once()
+    assert res["status"] == "completed"
+
+    # 2. 测试启动循环与优雅停止
+    scheduler.start()
+    await asyncio.sleep(0.08)
+    await scheduler.stop()
+    assert scheduler._task is None

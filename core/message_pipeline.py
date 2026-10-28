@@ -268,6 +268,7 @@ class MessagePipeline(
         self.subconscious_agent = subconscious_agent
         self.persona_db = persona_db
         self.eat_tool = bool(eat_tool)
+        self._action_ledger_mgr = None
         self.sleep_tool = bool(sleep_tool)
         self.main_model_images_enabled = bool(main_model_images_enabled)
         self.image_limits = image_limits or ImageLimits()
@@ -325,6 +326,18 @@ class MessagePipeline(
         self._group_members_cache: dict[str, tuple[float, set[int]]] = {}
         self._group_members_ttl_seconds: float = 300.0
         self._warn_context_compaction_invariants()
+
+    @property
+    def action_ledger(self):
+        if self._action_ledger_mgr is None:
+            db = getattr(getattr(self, "history", None), "db", None) or getattr(
+                getattr(self, "rolling_summary", None), "db", None
+            )
+            if db is not None:
+                from core.action_ledger import ActionLedgerManager
+
+                self._action_ledger_mgr = ActionLedgerManager(db)
+        return self._action_ledger_mgr
 
     def _sync_blacklist(self) -> None:
         """把黑名单配置摊平成两个 set，供入站热路径 O(1) 查询。"""

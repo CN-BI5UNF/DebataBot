@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from typing import Any
 
 from adapters.types import Target
@@ -198,6 +199,56 @@ class PipelineTurnsMixin:
                 return await base_executor(tool_name, args, tool_call_id=tool_call_id)
 
             executor = _guarded_executor
+
+        # S03: 接入 action_ledger 状态机（prepared -> started -> result_committed / unknown）
+        ledger = getattr(self, "action_ledger", None)
+        persona_id = getattr(self, "persona_id", "default")
+        current_turn_id = f"turn_{int(time.time() * 1000)}"
+        underlying_executor = executor
+
+        async def _ledger_tracked_executor(
+            tool_name: str,
+            args: dict[str, Any],
+            *,
+            tool_call_id: str | None = None,
+        ) -> dict[str, Any]:
+            aid = tool_call_id or f"act_{tool_name}_{int(time.time() * 1000)}"
+            if ledger is not None:
+                try:
+                    ledger.prepare_action(
+                        persona_id,
+                        aid,
+                        turn_id=current_turn_id,
+                        tool_name=tool_name,
+                        args_summary=str(args),
+                    )
+                    ledger.start_action(persona_id, aid)
+                except Exception:
+                    pass
+            try:
+                res = await underlying_executor(tool_name, args, tool_call_id=tool_call_id)
+                if ledger is not None:
+                    try:
+                        ledger.commit_action_result(
+                            persona_id,
+                            aid,
+                            receipt={
+                                "tool_name": tool_name,
+                                "ok": bool(res.get("ok", True)) if isinstance(res, dict) else True,
+                            },
+                        )
+                    except Exception:
+                        pass
+                return res
+            except BaseException as e:
+                if ledger is not None:
+                    try:
+                        ledger.mark_action_unknown(persona_id, aid, error_detail=str(e))
+                    except Exception:
+                        pass
+                raise
+
+        executor = _ledger_tracked_executor
 
         async def _rebuild_messages() -> list[dict[str, Any]]:
             member_qqs: set[int] | None = None

@@ -193,7 +193,7 @@ async def test_summary_agent_rolling_prompt_documents_important_memory_contract(
             return CompletionResult(
                 content=json.dumps(
                     {
-                        "summary_text": "合并后的摘要",
+                        "summary_text": "合并后的滚动摘要内容",
                         "new_important": [{"content": "用户长期偏好测试"}],
                     },
                     ensure_ascii=False,
@@ -232,10 +232,11 @@ async def test_summary_agent_rolling_prompt_documents_important_memory_contract(
     assert "不要把 private:QQ 当 scope 返回" in prompt
     assert "pinned 可选" in prompt
     assert "conversation_id=private:123" in prompt
-    assert result == {
-        "summary_text": "合并后的摘要",
-        "new_important": [{"content": "用户长期偏好测试"}],
-    }
+    assert result is not None
+    assert result["summary_text"] == "合并后的滚动摘要内容"
+    assert result["new_important"] == [{"content": "用户长期偏好测试"}]
+    # S01 起额外返回结构化字段，供 CAS 摘要提交使用；保留旧字段兼容。
+    assert isinstance(result["structured"], dict)
 
 
 def test_group_relevance_uses_clear_addressee_rules():

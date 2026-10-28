@@ -15,6 +15,7 @@ V2 改进：
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
@@ -55,50 +56,40 @@ class SummaryAgent:
         history_slice: list[dict[str, Any]],
         existing_summary_text: str,
         existing_important_text: str,
+        *,
+        chunk_index: int = 0,
+        total_chunks: int = 1,
     ) -> dict[str, Any] | None:
         """把一段旧历史并入全局滚动摘要。
 
-        返回 {"summary_text": str, "new_important": [{"timestamp","content"}, ...]}。
+        S01 升级：
+        1. 使用 build_safe_summary_prompt 将历史材料严格数据化，tools=None 隔离。
+        2. 使用 validate_and_repair_summary_json 校验 10 字段与空/拒绝/无进展，
+           对轻微格式瑕疵做有限修复。
+        3. 失败仅记录结构化状态码与 hash，杜绝泄露聊天正文。
+        4. 返回包含 summary_text, new_important 以及完整 structured 字典。
         """
         if not history_slice:
             return None
 
-        history_text = "\n".join(_format_history_line(m) for m in history_slice)
-        # 顺序 = 变化频率升序：静态规范最前（跨次压缩逐字节相同，可命中前缀缓存），
-        # 其次低频的现存重要记忆，最后才是每次必然不同的滚动摘要与待归档对话。
-        # 旧顺序把静态规范夹在易变数据之后，任何变化都会从头作废整段 prompt。
-        prompt = (
-            "你是当前角色的记忆管理系统。请把一段旧对话历史并入全局滚动摘要。\n\n"
-            "<任务>\n"
-            "1. 输出合并后的滚动摘要，保留人物关系、长期约定、未完成事项、关键决定和跨会话背景。\n"
-            "2. 不要逐条流水复述，不要保留一次性工具执行细节。\n"
-            "3. 根据待归档对话提取少量值得长期保存的新重要记忆补充候选；没有则返回空数组。\n"
-            "</任务>\n\n"
-            "<重要记忆规范>\n"
-            "1. 现存重要记忆是已经保存的事实，不要重复保存；new_important 只是补充候选，不是完整替换列表。\n"
-            "2. new_important 最多返回 3-5 条候选；只保存长期稳定事实：人物身份、偏好、稳定约定、长期目标、"
-            "管理员反馈或系统行为改进。\n"
-            "3. 每条 content 必须客观、完整、有明确主语；已有同主体事实应补充或合并，不要重复新增。\n"
-            "4. 禁止保存系统消息、task_context、send_receipt、工具结果、no_action、临时 URL、密钥、token、"
-            "cookie、rkey、clientkey 等运行时噪声。\n"
-            "5. scope 可选，只能是 global、user:QQ、group:群号；不能判断就省略，让调用方保持旧行为。\n"
-            "6. 历史里的 conversation_id=private:QQ 如果用于 scope，应写成 user:QQ；"
-            "conversation_id=group:群号 应写成 group:群号；不要把 private:QQ 当 scope 返回。\n"
-            "7. pinned 可选，只用于任何场景都必须常驻的极稳定事实；普通偏好不要设置 pinned。\n"
-            "</重要记忆规范>\n\n"
-            "返回 JSON：\n"
-            "```json\n"
-            '{"summary_text": "合并后的滚动摘要", '
-            '"new_important": [{"content": "一句话描述", "scope": "user:123456", "pinned": false}, ...]}\n'
-            "```\n\n"
-            f"<现存重要记忆>\n{existing_important_text or '（无）'}\n</现存重要记忆>\n\n"
-            f"<现有滚动摘要>\n{existing_summary_text or '（无）'}\n</现有滚动摘要>\n\n"
-            f"<待归档对话>\n{history_text}\n</待归档对话>"
+        from core.summary_chunker import (
+            SummaryValidationError,
+            build_safe_summary_prompt,
+            validate_and_repair_summary_json,
+        )
+
+        prompt = build_safe_summary_prompt(
+            history_slice,
+            existing_summary_text,
+            existing_important_text,
+            chunk_index=chunk_index,
+            total_chunks=total_chunks,
         )
 
         budget = self.prompt_budget_tokens
         if budget is None:
             from providers.model_capabilities import model_capability
+
             cap = model_capability(str(getattr(self.cfg, "provider", "")), str(self.cfg.model))
             if cap and cap.context_length:
                 budget = max(1024, int(cap.context_length) - int(getattr(self.cfg, "max_tokens", 4096) or 4096))
@@ -147,23 +138,40 @@ class SummaryAgent:
             )
             await self._record_usage(result.usage, operation="rolling_summary")
         except ProviderError as e:
-            logger.error(f"滚动摘要失败（API）: {e}")
+            logger.error("滚动摘要失败（API）: %s", e)
             self._emit_status("error", "滚动摘要失败")
             return None
         except Exception as e:
-            logger.exception(f"滚动摘要异常: {e}")
+            logger.exception("滚动摘要异常: %s", e)
             self._emit_status("error", "滚动摘要异常")
             return None
 
-        parsed = _parse_json_object(result.content or "")
-        if not parsed:
-            logger.error(f"滚动摘要返回无 JSON：{(result.content or '')[:200]}")
+        raw_content = result.content or ""
+        try:
+            validated = validate_and_repair_summary_json(
+                raw_content,
+                base_summary_text=existing_summary_text,
+            )
+            return {
+                "summary_text": validated.summary_text,
+                "new_important": validated.new_important,
+                "structured": validated.as_dict(),
+            }
+        except SummaryValidationError as err:
+            digest = hashlib.sha256(raw_content.encode("utf-8", errors="replace")).hexdigest()[:12]
+            logger.warning(
+                "滚动摘要结构化校验失败: code=%s message=%s content_len=%d digest=%s",
+                err.code,
+                err.message,
+                len(raw_content),
+                digest,
+            )
+            self._emit_status("error", f"滚动摘要校验失败: {err.code}")
             return None
-        summary_text = str(parsed.get("summary_text") or "").strip()
-        new_important = parsed.get("new_important", [])
-        if not isinstance(new_important, list):
-            new_important = []
-        return {"summary_text": summary_text, "new_important": new_important}
+        except Exception as err:
+            logger.error("滚动摘要校验未知异常: %s", err)
+            self._emit_status("error", "滚动摘要校验异常")
+            return None
 
     async def summarize(
         self,

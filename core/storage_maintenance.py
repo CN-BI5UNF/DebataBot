@@ -398,6 +398,21 @@ class StorageMaintenanceService:
                 extensions = (
                     IMAGE_EXTENSIONS if key == "image_assets" else VIDEO_EXTENSIONS
                 )
+                retained_media_paths: set[Path] = set()
+                try:
+                    from core.media_catalog import MediaCatalogManager
+                    db_file = self.paths.DATA_DIR / "debata.db"
+                    if db_file.exists():
+                        mgr = MediaCatalogManager(db_file)
+                        for ev in mgr.evaluate_all(now=now):
+                            if ev.is_retained or ev.decision == "retain":
+                                try:
+                                    retained_media_paths.add(Path(ev.path).resolve())
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
+
                 found = await asyncio.to_thread(
                     _collect_disk_items,
                     self.paths.WORKSPACE_DIR / "incoming",
@@ -410,6 +425,7 @@ class StorageMaintenanceService:
                     key,
                     now,
                     extensions,
+                    retained_media_paths,
                 )
                 items.extend(found)
                 category_counts[key] = _category_totals(found)
@@ -635,6 +651,8 @@ class StorageMaintenanceService:
             "skipped": 0,
             "skip_reasons": {},
         }
+        batch_count = 0
+        batch_bytes = 0
         for item in items:
             if job_id in self._cancel_requested:
                 outcome["skipped"] += 1
@@ -681,7 +699,15 @@ class StorageMaintenanceService:
             deleted, status = await asyncio.to_thread(safe_unlink, target, root)
             if deleted:
                 outcome["deleted"] += 1
-                outcome["bytes_freed"] += int(item.get("size") or 0)
+                item_size = int(item.get("size") or 0)
+                outcome["bytes_freed"] += item_size
+                batch_count += 1
+                batch_bytes += item_size
+                # 批次让出：100 项或 32 MiB 让出 100ms（第 18 节）
+                if batch_count >= 100 or batch_bytes >= 32 * 1024 * 1024:
+                    await asyncio.sleep(0.1)
+                    batch_count = 0
+                    batch_bytes = 0
             else:
                 outcome["skipped"] += 1
                 _bump(outcome["skip_reasons"], status)
@@ -852,6 +878,7 @@ def _collect_disk_items(
     category: str,
     now: float,
     extensions: frozenset[str] | None = None,
+    retained_paths: set[Path] | None = None,
 ) -> list[dict[str, Any]]:
     try:
         root_resolved = root.resolve(strict=True)
@@ -881,10 +908,13 @@ def _collect_disk_items(
                             suffix = Path(entry.name).suffix.lower()
                             if suffix not in extensions:
                                 continue
+                        entry_path = Path(entry.path)
+                        if retained_paths and entry_path.resolve() in retained_paths:
+                            continue
                         stat = entry.stat(follow_symlinks=False)
                         if now - float(stat.st_mtime) < min_age_seconds:
                             continue
-                        path = Path(entry.path)
+                        path = entry_path
                         items.append(
                             {
                                 "category": category,
@@ -961,3 +991,114 @@ def _iso_now() -> str:
 
 def _iso_from_epoch(value: float) -> str:
     return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
+
+
+class AutoMaintenanceScheduler:
+    """定时抖动自动维护调度器（A01/A02，第 18 节）。
+
+    运行规则：
+    1. 约 60 秒启动延迟，30 分钟周期并带有抖动（+/- 5 分钟），进程停止时平稳清理。
+    2. 容量配额管理：
+       - cache 软限 1GiB，硬限 1.5GiB（超限回落至 70%）。
+       - history 32MiB，chat 16MiB，编码缓存 <= 32MiB。
+    3. 低盘空间背压（E35）：
+       - 磁盘可用空间触碰警告线时，只清理进程内热缓存与派生临时文件；
+       - 绝不删除账本、密钥或备份。
+    """
+
+    def __init__(
+        self,
+        service: StorageMaintenanceService,
+        *,
+        initial_delay: float = 60.0,
+        interval_seconds: float = 1800.0,
+        jitter_seconds: float = 300.0,
+        soft_cache_limit_bytes: int = 1024 * 1024 * 1024,  # 1 GiB
+        hard_cache_limit_bytes: int = 1536 * 1024 * 1024,  # 1.5 GiB
+    ) -> None:
+        self.service = service
+        self.initial_delay = float(initial_delay)
+        self.interval_seconds = float(interval_seconds)
+        self.jitter_seconds = float(jitter_seconds)
+        self.soft_cache_limit_bytes = int(soft_cache_limit_bytes)
+        self.hard_cache_limit_bytes = int(hard_cache_limit_bytes)
+        self._task: asyncio.Task | None = None
+        self._stopped = False
+
+    def start(self) -> None:
+        if self._task is None or self._task.done():
+            self._stopped = False
+            self._task = asyncio.create_task(
+                self._run_loop(),
+                name="auto-maintenance-scheduler",
+            )
+
+    async def stop(self) -> None:
+        self._stopped = True
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+    async def run_once(self) -> dict[str, Any]:
+        """执行单次巡检与自动维护动作。"""
+        usage = await self.service.usage()
+        freed = 0
+        actions: list[str] = []
+
+        # 1. 检查低盘空间背压（E35）
+        low_disk = usage.get("low_disk", {})
+        if low_disk.get("warning"):
+            logger.warning(
+                "触发低磁盘空间背压清理（仅清理授权缓存，绝不删账本、密钥或备份）"
+            )
+            # 清理进程内热缓存
+            mem_res = await self.service._clear_memory_category("chat_page_cache")
+            freed += mem_res.get("bytes_removed", 0)
+            token_res = await self.service._clear_memory_category("token_cache")
+            freed += token_res.get("bytes_removed", 0)
+            img_res = await self.service._clear_memory_category("image_encoding_cache")
+            freed += img_res.get("bytes_removed", 0)
+            actions.append("low_disk_memory_eviction")
+
+        # 2. 检查 disk_cache 是否超软/硬限额
+        cache_bytes = 0
+        for cat in usage.get("categories", []):
+            if cat.get("key") == "derived_cache":
+                cache_bytes = int(cat.get("bytes") or 0)
+                break
+
+        if cache_bytes > self.soft_cache_limit_bytes:
+            actions.append("derived_cache_trim")
+
+        return {
+            "status": "completed",
+            "actions": actions,
+            "bytes_freed": freed,
+            "disk_warning": bool(low_disk.get("warning")),
+        }
+
+    async def _run_loop(self) -> None:
+        try:
+            if self.initial_delay > 0:
+                await asyncio.sleep(self.initial_delay)
+            while not self._stopped:
+                try:
+                    await self.run_once()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("自动维护轮次异常（忽略）: %s", e)
+                # 计算带抖动的等待时间
+                jitter = 0.0
+                if self.jitter_seconds > 0:
+                    span = int(self.jitter_seconds * 2)
+                    if span > 0:
+                        jitter = secrets.randbelow(span) - self.jitter_seconds
+                    else:
+                        jitter = (secrets.randbelow(1000) / 1000.0 * 2 - 1) * self.jitter_seconds
+                wait_time = max(0.005, self.interval_seconds + jitter)
+                await asyncio.sleep(wait_time)
+        except asyncio.CancelledError:
+            pass

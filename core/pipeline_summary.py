@@ -30,6 +30,7 @@ from .compaction import CompactionPlanner
 from .model_view import build_model_view, runtime_kind
 from .pipeline_history import _record_timestamp
 from .state import PendingMessageItem, ProtectedInput
+from .summary_cas import SummaryCASConflictError, SummaryCASPlan, commit_summary_cas
 
 logger = logging.getLogger(__name__)
 
@@ -588,6 +589,31 @@ class PipelineSummaryMixin:
         summary_input = [
             record for record in summary_slice if runtime_kind(record) is None
         ]
+
+        # S02: 在发起耗时的 LLM 总结之前，先捕获当前底层 corpus_state 的版本基线
+        rolling_db = getattr(self.rolling_summary, "db", None)
+        persona_id = str(getattr(self.rolling_summary, "persona_id", getattr(self, "persona_id", "default")))
+        expected_mutation_gen: int | None = None
+        expected_lifecycle_epoch: int | None = None
+        expected_base_summary_gen: int | None = None
+        if rolling_db is not None:
+            try:
+                conn = rolling_db.connect()
+                cur = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='corpus_state'"
+                )
+                if cur.fetchone():
+                    c_row = conn.execute(
+                        "SELECT mutation_gen, lifecycle_epoch, current_summary_gen FROM corpus_state WHERE persona_id = ?",
+                        (persona_id,),
+                    ).fetchone()
+                    if c_row is not None:
+                        expected_mutation_gen = int(c_row[0])
+                        expected_lifecycle_epoch = int(c_row[1])
+                        expected_base_summary_gen = int(c_row[2])
+            except Exception as e:
+                logger.debug("读取 corpus_state 基准代次失败（忽略）: %s", e)
+
         try:
             if summary_input:
                 # R01: 每次调用前动态绑定当前预算，不让启动时预算快照永久冻结
@@ -660,51 +686,92 @@ class PipelineSummaryMixin:
         archive_key = self._compaction_archive_key(active_start, slice_records)
         partial_archives = self._partial_compaction_archives()
         archive_reused = archive_key in partial_archives
-        try:
-            if archive_reused:
-                logger.warning(
-                    "检测到上次滚动摘要 archive 已提交但游标未更新，"
-                    "本次重试跳过重复 archive append: reason=%s active_start=%s count=%s",
-                    reason,
-                    active_start,
-                    len(slice_records),
+
+        # S02: 若底层存在 debata.db，优先执行原子 CAS 事务提交
+        rolling_db = getattr(self.rolling_summary, "db", None)
+        persona_id = str(getattr(self.rolling_summary, "persona_id", getattr(self, "persona_id", "default")))
+        used_cas = False
+        if rolling_db is not None:
+            try:
+                cas_plan = SummaryCASPlan(
+                    persona_id=persona_id,
+                    expected_base_summary_gen=expected_base_summary_gen,
+                    expected_mutation_gen=expected_mutation_gen,
+                    expected_lifecycle_epoch=expected_lifecycle_epoch,
+                    expected_active_start=active_start,
+                    new_active_start=new_active_start,
+                    summary_text=summary_text,
+                    structured_data=result.get("structured") or {},
+                    slice_records=slice_records,
                 )
-            else:
-                await self.archive.append_many(slice_records)
-                partial_archives[archive_key] = {
-                    "active_start": active_start,
-                    "count": len(slice_records),
-                    "reason": reason,
-                }
-            await self.rolling_summary.update(
-                summary_text,
-                archived_until={
-                    "last_compaction_count": len(slice_records),
-                    "last_timestamp": _record_timestamp(slice_records[-1]),
-                },
-                updated_at=get_time(),
-                active_start_index=new_active_start,
-            )
-        except Exception as e:
-            logger.warning(
-                "滚动摘要提交失败，未移动活跃起点；如果 archive 已提交，"
-                "同进程重试会跳过重复归档: %s",
-                e,
-            )
-            return SummaryAttemptResult(
-                status="failed",
-                reason="commit_error",
-                active_start_before=active_start,
-                active_start_after=active_start,
-                active_records=len(active),
-                active_tokens=view_tokens,
-                raw_active_tokens=raw_tokens,
-                view_active_tokens=view_tokens,
-                target_after_tokens=target_after,
-                partial_archive_committed=archive_key in partial_archives,
-                archive_reused=archive_reused,
-            )
-        partial_archives.pop(archive_key, None)
+                cas_res = await asyncio.to_thread(commit_summary_cas, rolling_db, cas_plan)
+                used_cas = cas_res.committed
+                # 同步更新内存缓存
+                if hasattr(self.rolling_summary, "_data") and isinstance(self.rolling_summary._data, dict):
+                    self.rolling_summary._data["summary_text"] = summary_text
+                    self.rolling_summary._data["active_start_index"] = new_active_start
+            except SummaryCASConflictError as cas_err:
+                logger.warning("滚动摘要 CAS 冲突中止: %s", cas_err)
+                return SummaryAttemptResult(
+                    status="failed",
+                    reason=cas_err.code,
+                    active_start_before=active_start,
+                    active_start_after=active_start,
+                    active_records=len(active),
+                    active_tokens=view_tokens,
+                    raw_active_tokens=raw_tokens,
+                    view_active_tokens=view_tokens,
+                    target_after_tokens=target_after,
+                )
+            except Exception as cas_exc:
+                logger.debug("原子 CAS 提交异常，回退常规提交: %s", cas_exc)
+
+        if not used_cas:
+            try:
+                if archive_reused:
+                    logger.warning(
+                        "检测到上次滚动摘要 archive 已提交但游标未更新，"
+                        "本次重试跳过重复 archive append: reason=%s active_start=%s count=%s",
+                        reason,
+                        active_start,
+                        len(slice_records),
+                    )
+                else:
+                    await self.archive.append_many(slice_records)
+                    partial_archives[archive_key] = {
+                        "active_start": active_start,
+                        "count": len(slice_records),
+                        "reason": reason,
+                    }
+                await self.rolling_summary.update(
+                    summary_text,
+                    archived_until={
+                        "last_compaction_count": len(slice_records),
+                        "last_timestamp": _record_timestamp(slice_records[-1]),
+                    },
+                    updated_at=get_time(),
+                    active_start_index=new_active_start,
+                )
+            except Exception as e:
+                logger.warning(
+                    "滚动摘要提交失败，未移动活跃起点；如果 archive 已提交，"
+                    "同进程重试会跳过重复归档: %s",
+                    e,
+                )
+                return SummaryAttemptResult(
+                    status="failed",
+                    reason="commit_error",
+                    active_start_before=active_start,
+                    active_start_after=active_start,
+                    active_records=len(active),
+                    active_tokens=view_tokens,
+                    raw_active_tokens=raw_tokens,
+                    view_active_tokens=view_tokens,
+                    target_after_tokens=target_after,
+                    partial_archive_committed=archive_key in partial_archives,
+                    archive_reused=archive_reused,
+                )
+            partial_archives.pop(archive_key, None)
 
         saved_important_count = 0
         if isinstance(new_important_items, list) and new_important_items:

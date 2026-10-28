@@ -281,12 +281,41 @@ class AgentRunner:
                     image_limits,
                     provider_limit_bytes=provider_limit_bytes,
                 )
-                self._guard_prompt_budget(
-                    msgs,
-                    tools,
-                    prompt_budget_tokens,
-                    budget_estimator,
-                )
+                try:
+                    self._guard_prompt_budget(
+                        msgs,
+                        tools,
+                        prompt_budget_tokens,
+                        budget_estimator,
+                    )
+                except AgentPromptBudgetExceeded:
+                    # S03 / C05: 单轮工具循环中追加工具导致超预算时，触发循环内局部压缩
+                    if loop_count > 1 and prompt_budget_tokens is not None:
+                        from core.action_ledger import compact_turn_loop
+
+                        compact_res = compact_turn_loop(
+                            msgs,
+                            input_budget=int(prompt_budget_tokens),
+                            estimator=budget_estimator,
+                        )
+                        if compact_res.compacted:
+                            logger.info(
+                                "循环内局部紧缩生效（轮次 %s）：紧缩 %s 条记录，节约 %s tokens",
+                                loop_count,
+                                compact_res.compacted_records_count,
+                                compact_res.saved_tokens,
+                            )
+                            msgs = compact_res.remaining_messages
+                            self._guard_prompt_budget(
+                                msgs,
+                                tools,
+                                prompt_budget_tokens,
+                                budget_estimator,
+                            )
+                        else:
+                            raise
+                    else:
+                        raise
                 self._emit_status(
                     status_callback,
                     state="thinking",
