@@ -159,8 +159,8 @@ class AppPaths:
         legacy_root = Path(user_data_dir(LEGACY_APP_DATA_DIR_NAME, appauthor=False))
         if not new_root.exists() and legacy_root.exists():
             logger.warning(
-                "检测到旧数据目录 %s；本次继续使用旧目录。迁移到 %s 请运行 "
-                "`karen migrate`（会先备份，不删除旧目录）。",
+                "检测到旧数据目录 %s；本次继续使用旧目录。迁移到 %s 前请先备份"
+                "旧目录；自动迁移命令尚未实装。",
                 legacy_root,
                 new_root,
             )
