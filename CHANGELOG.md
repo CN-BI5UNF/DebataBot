@@ -4,6 +4,19 @@
 
 > 项目已由 Debata_Agent 更名为 KarenBot。以下历史条目保留当时的旧名称，以便追溯；上游项目仍为 [binglang001/Debata_Agent](https://github.com/binglang001/Debata_Agent)。
 
+## [Unreleased] — KarenBot 改名
+
+### Changed
+
+- 项目更名为 **KarenBot**（仓库 `CN-BI5UNF/KarenBot`），发行包 `karenbot`，CLI `karen`，服务 `karenbot`，默认数据目录 `KarenBot`。
+- 保留旧 `debata` 命令、`DEBATA_*` 环境变量、`debata-agent` 服务/运行目录、`Debata_Agent` 数据目录、旧发行包元数据和旧游标密钥兼容。
+- 新增 `NOTICE`，重写中文/英文 README，保留 `binglang001/Debata_Agent` 上游链接、版权与 Apache-2.0 声明。
+
+### Fixed
+
+- 聊天分页 cursor 签名是任意二进制，可能包含分隔符 `.`；解码改为固定签名长度，避免合法 cursor 被误判为篡改。
+- 新增改名兼容测试：旧数据目录、旧环境变量、旧发行包版本元数据和旧 cursor 密钥。
+
 ## [Unreleased] — 大肥鱼人格 / 联网知识 / 表情包工具 / 依赖自动安装
 
 ### Added
