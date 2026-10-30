@@ -67,6 +67,7 @@ class ProviderPayload(BaseModel):
     id: str | None = Field(None, description="仅新增时使用；编辑时忽略")
     display_name: str | None = None
     preset: str | None = None
+    model_vendor: str | None = None
     protocol: str | None = None
     base_url: str | None = None
     api_key_id: str | None = None
@@ -153,6 +154,7 @@ def list_providers(
                 "id": pid,
                 "display_name": getattr(provider, "display_name", None) or pid,
                 "preset": getattr(provider, "preset", None) or "",
+                "model_vendor": getattr(provider, "model_vendor", None) or "",
                 "protocol": getattr(provider, "protocol", None) or "",
                 "base_url": getattr(provider, "base_url", None) or "",
                 "api_key_id": key_id,
@@ -322,6 +324,7 @@ def _config_fields(payload: ProviderPayload, *, is_create: bool) -> dict[str, An
     names = (
         "display_name",
         "preset",
+        "model_vendor",
         "protocol",
         "base_url",
         "api_key_id",
@@ -394,6 +397,7 @@ class ProbeTarget(NamedTuple):
     base_url: str
     api_key: str
     model: str
+    vendor: str = ""
 
 
 def resolve_probe_target(
@@ -462,11 +466,22 @@ def resolve_probe_target(
     if not model:
         raise ProviderAdminError("还没填模型 ID：测试连接需要发一次真实请求，得知道用哪个模型")
 
+    from providers.model_vendors import resolve_model_vendor
+
+    vendor = resolve_model_vendor(
+        model,
+        explicit=(
+            payload.model_vendor
+            or (getattr(existing, "model_vendor", None) if existing else None)
+        ),
+        preset=preset_id,
+    )
     return ProbeTarget(
         protocol=protocol,
         base_url=normalize_base_url(base_url, protocol),
         api_key=api_key,
         model=model,
+        vendor=vendor,
     )
 
 

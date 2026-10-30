@@ -177,6 +177,8 @@ class ToolContext:
     """知识/热梗笔记本服务；由 Runtime 注入，用于 save/research/lookup 类工具。"""
     slang_service: Any | None = None
     """群聊黑话服务；由 Runtime 注入，用于 lookup_slang 按需查询。"""
+    container: Any | None = None
+    """受控 Docker 容器服务；未启用/未就绪时为 None。"""
     weather: IWeatherService | None = None
     tts: ITTSService | None = None
     """TTS 服务实例。启用本地 TTS 插件时由 Runtime 注入。"""

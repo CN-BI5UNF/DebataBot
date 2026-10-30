@@ -68,6 +68,33 @@ def test_build_overrides_base_url(builtin_presets, secrets):
     assert provider.base_url == "https://proxy.example.com/v1"
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://api.deepseek.com", "https://api.deepseek.com/v1"),
+        ("https://relay.example.com/v1", "https://relay.example.com/v1"),
+        (
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+        ),
+        ("https://relay.example.com/openai/", "https://relay.example.com/openai"),
+        ("https://relay.example.com/v2beta/openai", "https://relay.example.com/v2beta/openai"),
+    ],
+)
+def test_normalize_base_url_keeps_google_openai_compatible_paths(raw, expected):
+    from providers.registry import normalize_base_url
+
+    assert normalize_base_url(raw, "openai_compat") == expected
+
+
+def test_gemini_preset_build_keeps_openai_compatible_base_url(builtin_presets, secrets):
+    cfg = ProviderConfig(preset="gemini", api_key_id="ds_key")
+    provider = build_provider("gem", cfg, secrets, builtin_presets)
+    assert provider.base_url == (
+        "https://generativelanguage.googleapis.com/v1beta/openai"
+    )
+
+
 def test_build_custom_provider(secrets):
     cfg = ProviderConfig(
         protocol="openai_compat",

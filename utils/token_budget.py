@@ -553,6 +553,10 @@ def _is_image_block(block: Any) -> bool:
     return str(block.get("type") or "") in {"image_url", "image"}
 
 
+def _is_video_block(block: Any) -> bool:
+    return isinstance(block, dict) and str(block.get("type") or "") == "video_url"
+
+
 def _positive_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
@@ -605,9 +609,14 @@ def _image_token_cost(profile: ImageBudgetProfile) -> int:
 
 
 def _sanitize_content_blocks(content: list[Any]) -> list[Any]:
-    """把图片块替换成极小的占位，避免 base64/data URL 进入文字 tokenizer。"""
+    """把图片/视频块替换成极小的占位，避免 base64/data URL 进入文字 tokenizer。"""
     sanitized: list[Any] = []
     for block in content:
+        if _is_video_block(block):
+            sanitized.append(
+                {"type": "video_url", "video_url": {"url": "<video>"}}
+            )
+            continue
         if not _is_image_block(block):
             sanitized.append(block)
             continue

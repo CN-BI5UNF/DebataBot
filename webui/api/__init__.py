@@ -20,6 +20,7 @@ from __future__ import annotations
 from . import (
     backup,
     chats,
+    container,
     context,
     emoji,
     knowledge,
@@ -52,6 +53,7 @@ ALL_ROUTERS = [
     emoji.router,
     providers.router,
     settings.router,
+    container.router,
     storage.router,
     context.router,
     update.router,

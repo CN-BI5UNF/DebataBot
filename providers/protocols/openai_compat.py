@@ -62,6 +62,10 @@ _DATA_IMAGE_RE = re.compile(
     r"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+",
     re.IGNORECASE,
 )
+_DATA_VIDEO_RE = re.compile(
+    r"data:video/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+",
+    re.IGNORECASE,
+)
 _HTTP_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 
 
@@ -536,7 +540,7 @@ def _raw_prompt_dump_payload(*, provider: str, kwargs: dict[str, Any]) -> dict[s
 
 
 def _safe_dump_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
-    """递归安全日志表示：图片只保留类型/MIME/hash/长度，不复制 data URL。"""
+    """递归安全日志表示：图片/视频只保留类型/MIME/hash/长度，不复制 data URL。"""
     if depth > 12:
         return "<max-depth>"
     if isinstance(value, str):
@@ -566,15 +570,24 @@ def _safe_dump_string(value: str, *, key: str = "") -> str:
     lowered = value.lower()
     if lowered.startswith("data:image/"):
         return _image_data_url_marker(value)
+    if lowered.startswith("data:video/"):
+        return _video_data_url_marker(value)
     if lowered.startswith(("http://", "https://")) or key in {
         "url",
         "image_url",
+        "video_url",
         "message_url",
     }:
         return _safe_dump_url(value)
     if "data:image/" in lowered:
         value = _DATA_IMAGE_RE.sub(
             lambda match: _image_data_url_marker(match.group(0)),
+            value,
+        )
+        lowered = value.lower()
+    if "data:video/" in lowered:
+        value = _DATA_VIDEO_RE.sub(
+            lambda match: _video_data_url_marker(match.group(0)),
             value,
         )
         lowered = value.lower()
@@ -599,8 +612,16 @@ def _safe_dump_url(value: str) -> str:
 
 
 def _image_data_url_marker(value: str) -> str:
+    return _data_url_marker(value, kind="image")
+
+
+def _video_data_url_marker(value: str) -> str:
+    return _data_url_marker(value, kind="video")
+
+
+def _data_url_marker(value: str, *, kind: str) -> str:
     header, separator, payload = value.partition(",")
-    mime = "image/unknown"
+    mime = f"{kind}/unknown"
     if header.lower().startswith("data:"):
         mime = header[5:].split(";", 1)[0].strip().lower() or mime
     if not separator:
@@ -611,7 +632,7 @@ def _image_data_url_marker(value: str) -> str:
             payload[offset : offset + 8192].encode("ascii", "replace")
         )
     return (
-        f"<image-data:mime={mime};sha256={hasher.hexdigest()[:16]};"
+        f"<{kind}-data:mime={mime};sha256={hasher.hexdigest()[:16]};"
         f"chars={len(payload)}>"
     )
 

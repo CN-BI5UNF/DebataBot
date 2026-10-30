@@ -20,7 +20,7 @@ import inspect
 import json
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -46,6 +46,11 @@ from utils.image_contracts import (
 from utils.model_records import ModelViewPolicy, project_model_record
 from utils.token_budget import TokenEstimator
 from utils.tool_result_state import no_action_succeeded, tool_result_blocks_completion
+from utils.video_budget import (
+    assert_wire_video_request_fits,
+    count_video_inputs,
+)
+from utils.video_contracts import VideoAssetError, VideoLimits
 
 from .base import (
     AgentPromptBudgetExceeded,
@@ -59,6 +64,18 @@ from .base import (
 from .context_builder import first_tail_block_index
 
 logger = logging.getLogger(__name__)
+
+
+def _without_pending_media(record: dict[str, Any]) -> dict[str, Any]:
+    """Safety fallback: keep text placeholders but drop unmatched media refs."""
+    copied = dict(record)
+    metadata = record.get("metadata")
+    if isinstance(metadata, Mapping):
+        clean = dict(metadata)
+        clean.pop("image_assets", None)
+        clean.pop("video_assets", None)
+        copied["metadata"] = clean
+    return copied
 
 
 # 兼容旧导出；runner 不再根据这个集合提前结束。
@@ -128,6 +145,10 @@ class AgentRunner:
         tool_executor: ToolExecutor,
         task_contract: str | None = None,
         pending_context_provider: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None,
+        pending_media_projector: Callable[
+            [dict[str, Any]], Awaitable[dict[str, Any]]
+        ]
+        | None = None,
         max_loops: int | None = None,
         usage_recorder: UsageRecorder | None = None,
         status_callback: StatusCallback | None = None,
@@ -139,6 +160,8 @@ class AgentRunner:
         auto_finish_after_send: bool = False,
         model_view_policy: ModelViewPolicy | None = None,
         image_limits: ImageLimits | None = None,
+        video_limits: VideoLimits | None = None,
+        video_token_reserve: int = 0,
         provider_limit_bytes: int | None = None,
         prompt_budget_tokens: int | None = None,
         token_estimator: TokenEstimator | None = None,
@@ -218,8 +241,19 @@ class AgentRunner:
             pending = await pending_context_provider()
             if not pending:
                 return False
-            msgs.extend(project_for_model(record) for record in pending)
-            records.extend(pending)
+            for record in pending:
+                model_record = record
+                if pending_media_projector is not None:
+                    try:
+                        model_record = await pending_media_projector(record)
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "待注入消息媒体投影失败，仅保留文本占位"
+                        )
+                        model_record = _without_pending_media(record)
+                msgs.append(project_for_model(model_record))
+                # 历史仍保存原始 refs；媒体只投影到模型可见副本。
+                records.append(record)
             logger.info("注入发送回执/新消息上下文 %s 条", len(pending))
             return True
 
@@ -275,10 +309,11 @@ class AgentRunner:
                 )
 
             try:
-                self._guard_outgoing_images(
+                self._guard_outgoing_media(
                     msgs,
                     tools,
                     image_limits,
+                    video_limits,
                     provider_limit_bytes=provider_limit_bytes,
                 )
                 try:
@@ -287,6 +322,9 @@ class AgentRunner:
                         tools,
                         prompt_budget_tokens,
                         budget_estimator,
+                        reserved_tokens=(
+                            video_token_reserve * count_video_inputs(msgs)
+                        ),
                     )
                 except AgentPromptBudgetExceeded:
                     # S03 / C05: 单轮工具循环中追加工具导致超预算时，触发循环内局部压缩
@@ -311,6 +349,10 @@ class AgentRunner:
                                 tools,
                                 prompt_budget_tokens,
                                 budget_estimator,
+                                reserved_tokens=(
+                                    video_token_reserve
+                                    * count_video_inputs(msgs)
+                                ),
                             )
                         else:
                             raise
@@ -637,6 +679,8 @@ class AgentRunner:
                 kv_diagnostics_mode=kv_diagnostics_mode,
                 stable_prefix_end=initial_stable_prefix_end,
                 image_limits=image_limits,
+                video_limits=video_limits,
+                video_token_reserve=video_token_reserve,
                 provider_limit_bytes=provider_limit_bytes,
                 prompt_budget_tokens=prompt_budget_tokens,
                 token_estimator=budget_estimator,
@@ -816,43 +860,66 @@ class AgentRunner:
         tools: list[dict[str, Any]] | None,
         budget_tokens: int | None,
         estimator: TokenEstimator,
+        *,
+        reserved_tokens: int = 0,
     ) -> None:
         if budget_tokens is None:
             return
-        estimated = int(estimator.estimate_prompt(messages, tools))
+        estimated = int(estimator.estimate_prompt(messages, tools)) + max(
+            0, int(reserved_tokens)
+        )
         if estimated > int(budget_tokens):
             raise AgentPromptBudgetExceeded(estimated, int(budget_tokens))
 
     @staticmethod
-    def _guard_outgoing_images(
+    def _guard_outgoing_media(
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
-        limits: ImageLimits | None,
+        image_limits: ImageLimits | None,
+        video_limits: VideoLimits | None,
         *,
         provider_limit_bytes: int | None = None,
     ) -> None:
         """每次 provider 网络调用前的最后多媒体护栏。
 
-        纯文字请求直接放行；含图请求在数量/结构/编码字节/JSON 总量超限时
-        抛出 ProviderUnsupportedError，保证不发出超限 payload。
+        先校验图片，再把实际图片编码字节交给视频护栏，确保图文混合请求仍按
+        完整请求体判断。任一超限抛 ProviderUnsupportedError，不发送超限 payload。
         """
-        if limits is None:
-            return
-        try:
-            assert_wire_request_fits(
-                messages,
-                tools_schema=tools,
-                limits=limits,
-                provider_limit_bytes=provider_limit_bytes,
-            )
-        except ImageAssetError as exc:
-            logger.error(
-                "provider 请求图片护栏拒绝发送 code=%s",
-                exc.code,
-            )
-            raise ProviderUnsupportedError(
-                f"请求图片资源超出限制：{exc.safe_message()}"
-            ) from None
+        image_bytes = 0
+        if image_limits is not None:
+            try:
+                _, image_bytes = assert_wire_request_fits(
+                    messages,
+                    tools_schema=tools,
+                    limits=image_limits,
+                    provider_limit_bytes=provider_limit_bytes,
+                )
+            except ImageAssetError as exc:
+                logger.error(
+                    "provider 请求图片护栏拒绝发送 code=%s",
+                    exc.code,
+                )
+                raise ProviderUnsupportedError(
+                    f"请求图片资源超出限制：{exc.safe_message()}"
+                ) from None
+        if video_limits is not None:
+            try:
+                assert_wire_video_request_fits(
+                    messages,
+                    tools_schema=tools,
+                    limits=video_limits,
+                    provider_limit_bytes=provider_limit_bytes,
+                    encoded_image_bytes=image_bytes,
+                )
+            except VideoAssetError as exc:
+                logger.error(
+                    "provider 请求视频护栏拒绝发送 code=%s",
+                    exc.code,
+                )
+                raise ProviderUnsupportedError(
+                    f"请求视频资源超出限制：{exc.safe_message()}"
+                ) from None
+        return None
 
     async def _finalize_tool_loop(
         self,
@@ -864,6 +931,8 @@ class AgentRunner:
         kv_diagnostics_mode: str = "summary",
         stable_prefix_end: int | None = None,
         image_limits: ImageLimits | None = None,
+        video_limits: VideoLimits | None = None,
+        video_token_reserve: int = 0,
         provider_limit_bytes: int | None = None,
         prompt_budget_tokens: int | None = None,
         token_estimator: TokenEstimator | None = None,
@@ -873,10 +942,11 @@ class AgentRunner:
         这一步不再传 tools，避免模型继续循环；结果只作为记录和上层 fallback 使用。
         """
         try:
-            self._guard_outgoing_images(
+            self._guard_outgoing_media(
                 messages,
                 None,
                 image_limits,
+                video_limits,
                 provider_limit_bytes=provider_limit_bytes,
             )
             self._guard_prompt_budget(
@@ -884,6 +954,7 @@ class AgentRunner:
                 None,
                 prompt_budget_tokens,
                 token_estimator or TokenEstimator(model=str(self.cfg.model or "")),
+                reserved_tokens=video_token_reserve * count_video_inputs(messages),
             )
             self._emit_status(
                 status_callback,

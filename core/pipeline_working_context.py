@@ -8,7 +8,7 @@ selection logic while moving methods.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +27,19 @@ from utils.image_contracts import (
     ImageLimits,
 )
 from utils.token_budget import TokenBudget, TokenEstimator
+from utils.video_budget import (
+    assert_wire_video_request_fits,
+    estimate_video_refs_budget,
+    resolve_video_budget_profile,
+)
+from utils.video_contracts import (
+    DEFAULT_VIDEO_TOKEN_RESERVE,
+    VideoAssetError,
+    VideoBudgetProfile,
+    VideoLimits,
+    build_video_budget_messages,
+    group_validated_video_refs,
+)
 
 from .model_binding import (
     EffectiveModelBinding,
@@ -54,6 +67,10 @@ class MainPromptBudgetResult:
     contains_images: bool = False
     image_count: int = 0
     image_bytes: int = 0
+    contains_videos: bool = False
+    video_count: int = 0
+    video_bytes: int = 0
+    video_tokens: int = 0
     request_body_bytes: int = 0
     budget_basis: str = "text_only"
     model_call_snapshot: ModelCallSnapshot | None = None
@@ -69,6 +86,10 @@ class MainPromptBudgetUsage:
     basis: str
     contains_images: bool
     budget_messages: list[dict[str, Any]]
+    contains_videos: bool = False
+    video_count: int = 0
+    encoded_video_bytes: int = 0
+    video_tokens: int = 0
 
 
 class PipelineWorkingContextMixin:
@@ -169,6 +190,26 @@ class PipelineWorkingContextMixin:
         self._image_budget_profile = profile
         return profile
 
+    def _main_prompt_video_limits(self) -> VideoLimits:
+        limits = getattr(self, "video_limits", None)
+        return limits if isinstance(limits, VideoLimits) else VideoLimits()
+
+    def _main_prompt_video_profile(self) -> VideoBudgetProfile | None:
+        enabled = bool(getattr(self, "main_model_videos_enabled", False))
+        if not enabled:
+            return None
+        profile = getattr(self, "_video_budget_profile", None)
+        if isinstance(profile, VideoBudgetProfile):
+            return profile
+        profile = resolve_video_budget_profile(
+            enabled=True,
+            reserve_tokens=int(
+                getattr(self, "video_token_reserve", DEFAULT_VIDEO_TOKEN_RESERVE)
+            ),
+        )
+        self._video_budget_profile = profile
+        return profile
+
     def _provider_request_body_limit_bytes(self) -> int | None:
         provider = getattr(getattr(self, "chat_agent", None), "provider", None)
         for owner in (self, provider):
@@ -194,11 +235,11 @@ class PipelineWorkingContextMixin:
         contains_images: bool = False,
     ) -> None:
         if contains_images:
-            # 图片使用显式 reserve，与 provider 的真实 prompt_tokens 口径不同；
+            # 图片/视频使用显式 reserve，与 provider 的真实 prompt_tokens 口径不同；
             # 把差值当文字误差会把校准系数带偏。只记录跳过，不伪造 0 误差样本。
             self._last_calibration_skipped_reason = "multimodal_prompt"
             logger.info(
-                "跳过纯文字 token 校准：本轮请求含图片 estimated=%s actual=%s",
+                "跳过纯文字 token 校准：本轮请求含多媒体 estimated=%s actual=%s",
                 estimated,
                 actual_prompt_tokens,
             )
@@ -545,9 +586,11 @@ class PipelineWorkingContextMixin:
         tools_schema: list[dict[str, Any]] | None,
         budget_tokens: int,
     ) -> MainPromptBudgetUsage:
-        """构造轻量预算视图；严格校验 refs，但不读取图片文件。"""
+        """构造轻量预算视图；严格校验媒体 refs，但不读取文件。"""
         estimator = self._token_estimator()
-        if not getattr(self, "main_model_images_enabled", False):
+        images_enabled = bool(getattr(self, "main_model_images_enabled", False))
+        videos_enabled = bool(getattr(self, "main_model_videos_enabled", False))
+        if not images_enabled and not videos_enabled:
             return MainPromptBudgetUsage(
                 estimated_tokens=estimator.estimate_prompt(messages, tools_schema),
                 budget_tokens=budget_tokens,
@@ -559,37 +602,93 @@ class PipelineWorkingContextMixin:
                 budget_messages=messages,
             )
 
-        limits = self._main_prompt_image_limits()
-        profile = self._main_prompt_image_profile()
-        grouped = group_validated_refs(
-            messages,
-            limits=limits,
-            enforce_request_limits=False,
-        )
-        refs = [ref for group in grouped.values() for ref in group]
-        budget_messages = (
-            build_budget_messages(messages, grouped) if refs else messages
-        )
+        budget_messages = messages
+        image_refs: list[dict[str, Any]] = []
+        image_estimate = None
+        if images_enabled:
+            limits = self._main_prompt_image_limits()
+            profile = self._main_prompt_image_profile()
+            grouped = group_validated_refs(
+                budget_messages,
+                limits=limits,
+                enforce_request_limits=False,
+            )
+            image_refs = [ref for group in grouped.values() for ref in group]
+            if image_refs:
+                budget_messages = build_budget_messages(
+                    budget_messages, grouped
+                )
+            image_estimate = estimate_refs_budget(image_refs, profile=profile)
+
+        video_refs: list[dict[str, Any]] = []
+        video_estimate = None
+        if videos_enabled:
+            video_limits = self._main_prompt_video_limits()
+            video_profile = self._main_prompt_video_profile()
+            video_grouped = group_validated_video_refs(
+                budget_messages,
+                limits=video_limits,
+                enforce_request_limits=False,
+            )
+            video_refs = [
+                ref for group in video_grouped.values() for ref in group
+            ]
+            if video_refs:
+                budget_messages = build_video_budget_messages(
+                    budget_messages, video_grouped
+                )
+            video_estimate = estimate_video_refs_budget(
+                video_refs, profile=video_profile
+            )
+
         estimated = estimator.estimate_prompt(budget_messages, tools_schema)
-        image_estimate = estimate_refs_budget(refs, profile=profile)
+        if video_estimate is not None:
+            estimated += video_estimate.video_tokens
+        image_bytes = (
+            image_estimate.encoded_image_bytes if image_estimate is not None else 0
+        )
+        video_bytes = (
+            video_estimate.encoded_video_bytes if video_estimate is not None else 0
+        )
         body_bytes = (
             estimate_wire_request_body_bytes(
                 budget_messages,
                 tools_schema,
-                encoded_image_bytes=image_estimate.encoded_image_bytes,
+                encoded_image_bytes=image_bytes,
+                encoded_video_bytes=video_bytes,
             )
-            if refs
+            if image_refs or video_refs
             else 0
         )
+        if image_refs:
+            basis = image_estimate.basis if image_estimate is not None else "configured_reserve"
+        elif video_refs:
+            basis = (
+                video_estimate.basis
+                if video_estimate is not None
+                else "configured_reserve"
+            )
+        else:
+            basis = "text_only"
         return MainPromptBudgetUsage(
             estimated_tokens=estimated,
             budget_tokens=budget_tokens,
-            image_count=image_estimate.image_count,
-            encoded_image_bytes=image_estimate.encoded_image_bytes,
+            image_count=(
+                image_estimate.image_count if image_estimate is not None else 0
+            ),
+            encoded_image_bytes=image_bytes,
             request_body_bytes=body_bytes,
-            basis=image_estimate.basis if refs else "text_only",
-            contains_images=bool(refs),
+            basis=basis,
+            contains_images=bool(image_refs),
             budget_messages=budget_messages,
+            contains_videos=bool(video_refs),
+            video_count=(
+                video_estimate.video_count if video_estimate is not None else 0
+            ),
+            encoded_video_bytes=video_bytes,
+            video_tokens=(
+                video_estimate.video_tokens if video_estimate is not None else 0
+            ),
         )
 
     def _main_prompt_budget_failure(
@@ -609,9 +708,29 @@ class PipelineWorkingContextMixin:
                     "image_request_bytes_exceeded",
                     "请求图片编码字节超过限制",
                 )
-            body_limit = request_body_limit(
-                limits,
-                provider_limit_bytes=self._provider_request_body_limit_bytes(),
+        video_limits = self._main_prompt_video_limits()
+        if usage.contains_videos:
+            if usage.video_count > video_limits.max_videos_per_request:
+                return (
+                    "video_request_count_exceeded",
+                    "请求视频数量超过限制",
+                )
+            if usage.encoded_video_bytes > video_limits.max_encoded_video_bytes:
+                return (
+                    "video_request_bytes_exceeded",
+                    "请求视频编码字节超过限制",
+                )
+        if usage.contains_images or usage.contains_videos:
+            body_limit = (
+                request_body_limit(
+                    video_limits,
+                    provider_limit_bytes=self._provider_request_body_limit_bytes(),
+                )
+                if usage.contains_videos
+                else request_body_limit(
+                    limits,
+                    provider_limit_bytes=self._provider_request_body_limit_bytes(),
+                )
             )
             if usage.request_body_bytes > body_limit:
                 return (
@@ -668,6 +787,10 @@ class PipelineWorkingContextMixin:
             contains_images=usage.contains_images,
             image_count=usage.image_count,
             image_bytes=usage.encoded_image_bytes,
+            contains_videos=usage.contains_videos,
+            video_count=usage.video_count,
+            video_bytes=usage.encoded_video_bytes,
+            video_tokens=usage.video_tokens,
             request_body_bytes=usage.request_body_bytes,
             budget_basis=usage.basis,
             model_call_snapshot=call_snapshot,
@@ -703,6 +826,10 @@ class PipelineWorkingContextMixin:
             contains_images=usage.contains_images if usage is not None else False,
             image_count=usage.image_count if usage is not None else 0,
             image_bytes=usage.encoded_image_bytes if usage is not None else 0,
+            contains_videos=usage.contains_videos if usage is not None else False,
+            video_count=usage.video_count if usage is not None else 0,
+            video_bytes=usage.encoded_video_bytes if usage is not None else 0,
+            video_tokens=usage.video_tokens if usage is not None else 0,
             request_body_bytes=usage.request_body_bytes if usage is not None else 0,
             budget_basis=usage.basis if usage is not None else "text_only",
         )
@@ -723,10 +850,144 @@ class PipelineWorkingContextMixin:
             failure_code=failure_code,
             image_count=result.image_count,
             image_bytes=result.image_bytes,
+            video_count=result.video_count,
+            video_bytes=result.video_bytes,
         )
         return result
 
+    async def _project_pending_media_record(
+        self,
+        record: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Project media for a user record appended inside a running tool loop.
+
+        Such records are built by ``_consume_send_receipts`` after the main prompt
+        was already projected. They must be projected onto the model copy, while
+        the raw record (with trusted refs) remains the history record. If one
+        media kind fails or is disabled, only that kind is stripped from the
+        model copy so the provider guard cannot see unmatched refs.
+        """
+        if record.get("role") != "user":
+            return record
+        metadata = record.get("metadata")
+        if not isinstance(metadata, Mapping):
+            return record
+        if "image_assets" not in metadata and "video_assets" not in metadata:
+            return record
+
+        projected = record
+        if metadata.get("image_assets"):
+            if bool(getattr(self, "main_model_images_enabled", False)):
+                try:
+                    store = self._image_asset_store()
+                    if store is None:
+                        raise ImageAssetError(
+                            "未配置图片 workspace，无法向主模型提供图片",
+                            code="image_source_unavailable",
+                        )
+                    projected = await store.project_record(dict(projected))
+                except Exception as exc:  # noqa: BLE001
+                    code = (
+                        exc.code
+                        if isinstance(exc, ImageAssetError)
+                        else "image_projection_failed"
+                    )
+                    safe = (
+                        exc.safe_message()
+                        if isinstance(exc, ImageAssetError)
+                        else "图片投影失败"
+                    )
+                    logger.warning(
+                        "待注入消息图片投影失败，仅保留文本占位 code=%s message=%s",
+                        code,
+                        safe,
+                    )
+                    projected = self._strip_pending_media(
+                        projected, ("image_assets",)
+                    )
+            else:
+                projected = self._strip_pending_media(
+                    projected, ("image_assets",)
+                )
+
+        projected_metadata = projected.get("metadata")
+        if (
+            isinstance(projected_metadata, Mapping)
+            and projected_metadata.get("video_assets")
+        ):
+            if bool(getattr(self, "main_model_videos_enabled", False)):
+                try:
+                    store = self._video_asset_store()
+                    if store is None:
+                        raise VideoAssetError(
+                            "未配置视频 workspace，无法向主模型提供视频",
+                            code="video_source_unavailable",
+                        )
+                    projected = await store.project_record(dict(projected))
+                except Exception as exc:  # noqa: BLE001
+                    code = (
+                        exc.code
+                        if isinstance(exc, VideoAssetError)
+                        else "video_projection_failed"
+                    )
+                    safe = (
+                        exc.safe_message()
+                        if isinstance(exc, VideoAssetError)
+                        else "视频投影失败"
+                    )
+                    logger.warning(
+                        "待注入消息视频投影失败，仅保留文本占位 code=%s message=%s",
+                        code,
+                        safe,
+                    )
+                    projected = self._strip_pending_media(
+                        projected, ("video_assets",)
+                    )
+            else:
+                projected = self._strip_pending_media(
+                    projected, ("video_assets",)
+                )
+        return projected
+
+    @staticmethod
+    def _strip_pending_media(
+        record: dict[str, Any],
+        keys: tuple[str, ...],
+    ) -> dict[str, Any]:
+        copied = dict(record)
+        metadata = record.get("metadata")
+        if isinstance(metadata, Mapping):
+            clean = dict(metadata)
+            for key in keys:
+                clean.pop(key, None)
+            copied["metadata"] = clean
+        return copied
+
     async def _finalize_main_prompt_images(
+        self,
+        result: MainPromptBudgetResult,
+        *,
+        conversation_id: str | None,
+        phase: str,
+        tools_schema: list[dict[str, Any]] | None,
+    ) -> MainPromptBudgetResult:
+        """先实体化图片，再追加完整视频；任一步失败都显式拒绝本次请求。"""
+        result = await self._finalize_main_prompt_images_only(
+            result,
+            conversation_id=conversation_id,
+            phase=phase,
+            tools_schema=tools_schema,
+        )
+        if not result.ok:
+            return result
+        return await self._finalize_main_prompt_videos(
+            result,
+            conversation_id=conversation_id,
+            phase=phase,
+            tools_schema=tools_schema,
+        )
+
+    async def _finalize_main_prompt_images_only(
         self,
         result: MainPromptBudgetResult,
         *,
@@ -767,7 +1028,10 @@ class PipelineWorkingContextMixin:
                     "图片投影数量与声明不一致",
                     code="image_projection_failed",
                 )
-            estimated = self._estimate_main_prompt_tokens(projected, tools_schema)
+            estimated = (
+                self._estimate_main_prompt_tokens(projected, tools_schema)
+                + result.video_tokens
+            )
             if estimated > result.budget_tokens:
                 raise ImageAssetError(
                     "图片消息组装后超过上下文预算",
@@ -777,14 +1041,16 @@ class PipelineWorkingContextMixin:
                 projected,
                 tools_schema,
                 encoded_image_bytes=image_bytes,
+                encoded_video_bytes=result.video_bytes,
             )
-        except ImageAssetError as exc:
+        except (ImageAssetError, VideoAssetError) as exc:
             result.ok = False
             result.failure_reason = exc.code
             result.failure_code = exc.code
-            result.attempts.append(f"images:{exc.code}:{exc.safe_message()}")
+            kind = "videos" if isinstance(exc, VideoAssetError) else "images"
+            result.attempts.append(f"{kind}:{exc.code}:{exc.safe_message()}")
             logger.error(
-                "主模型图片最终投影失败 code=%s phase=%s", exc.code, phase
+                "主模型媒体最终投影失败 code=%s phase=%s", exc.code, phase
             )
             await self._record_main_prompt_budget_failure(
                 conversation_id=conversation_id,
@@ -795,6 +1061,8 @@ class PipelineWorkingContextMixin:
                 failure_code=exc.code,
                 image_count=result.image_count,
                 image_bytes=result.image_bytes,
+                video_count=result.video_count,
+                video_bytes=result.video_bytes,
             )
             return result
         except Exception:
@@ -812,6 +1080,8 @@ class PipelineWorkingContextMixin:
                 failure_code="image_projection_failed",
                 image_count=result.image_count,
                 image_bytes=result.image_bytes,
+                video_count=result.video_count,
+                video_bytes=result.video_bytes,
             )
             return result
         result.messages = projected
@@ -821,6 +1091,105 @@ class PipelineWorkingContextMixin:
         result.request_body_bytes = body_bytes
         result.budget_basis = usage.basis
         result.contains_images = True
+        return result
+
+    async def _finalize_main_prompt_videos(
+        self,
+        result: MainPromptBudgetResult,
+        *,
+        conversation_id: str | None,
+        phase: str,
+        tools_schema: list[dict[str, Any]] | None,
+    ) -> MainPromptBudgetResult:
+        """图片实体化后追加完整视频；失败显式拒绝本次请求，不抽帧降级。"""
+        if not getattr(self, "main_model_videos_enabled", False):
+            return result
+        if not result.contains_videos:
+            return result
+        limits = self._main_prompt_video_limits()
+        profile = self._main_prompt_video_profile()
+        try:
+            store = self._video_asset_store()
+            if store is None:
+                raise VideoAssetError(
+                    "未配置视频 workspace，无法向主模型提供视频",
+                    code="video_source_unavailable",
+                )
+            projected = await store.project_records(result.messages)
+            video_count, video_bytes = assert_wire_video_request_fits(
+                projected,
+                tools_schema=tools_schema,
+                limits=limits,
+                provider_limit_bytes=self._provider_request_body_limit_bytes(),
+                encoded_image_bytes=result.image_bytes,
+            )
+            if video_count != result.video_count:
+                raise VideoAssetError(
+                    "视频投影数量与声明不一致",
+                    code="video_projection_failed",
+                )
+            estimated = self._estimate_main_prompt_tokens(projected, tools_schema)
+            if profile is not None:
+                estimated += video_count * profile.per_video_tokens
+            if estimated > result.budget_tokens:
+                raise VideoAssetError(
+                    "视频消息组装后超过上下文预算",
+                    code="prompt_token_budget_exceeded",
+                )
+            body_bytes = estimate_wire_request_body_bytes(
+                projected,
+                tools_schema,
+                encoded_image_bytes=result.image_bytes,
+                encoded_video_bytes=video_bytes,
+            )
+        except VideoAssetError as exc:
+            result.ok = False
+            result.failure_reason = exc.code
+            result.failure_code = exc.code
+            result.attempts.append(f"videos:{exc.code}:{exc.safe_message()}")
+            logger.error(
+                "主模型视频最终投影失败 code=%s phase=%s", exc.code, phase
+            )
+            await self._record_main_prompt_budget_failure(
+                conversation_id=conversation_id,
+                phase=phase,
+                estimated_tokens=result.estimated_tokens,
+                budget_tokens=result.budget_tokens,
+                attempts=result.attempts,
+                failure_code=exc.code,
+                image_count=result.image_count,
+                image_bytes=result.image_bytes,
+                video_count=result.video_count,
+                video_bytes=result.video_bytes,
+            )
+            return result
+        except Exception:
+            logger.exception("主模型视频投影发生未预期错误 phase=%s", phase)
+            result.ok = False
+            result.failure_reason = "video_projection_failed"
+            result.failure_code = "video_projection_failed"
+            result.attempts.append("videos:video_projection_failed")
+            await self._record_main_prompt_budget_failure(
+                conversation_id=conversation_id,
+                phase=phase,
+                estimated_tokens=result.estimated_tokens,
+                budget_tokens=result.budget_tokens,
+                attempts=result.attempts,
+                failure_code="video_projection_failed",
+                image_count=result.image_count,
+                image_bytes=result.image_bytes,
+                video_count=result.video_count,
+                video_bytes=result.video_bytes,
+            )
+            return result
+        result.messages = projected
+        result.estimated_tokens = estimated
+        result.video_count = video_count
+        result.video_bytes = video_bytes
+        if profile is not None:
+            result.video_tokens = video_count * profile.per_video_tokens
+        result.request_body_bytes = body_bytes
+        result.contains_videos = True
         return result
 
     async def _prepare_main_prompt_for_model(
@@ -864,7 +1233,7 @@ class PipelineWorkingContextMixin:
 
         try:
             messages, usage = await load_checked()
-        except ImageAssetError as exc:
+        except (ImageAssetError, VideoAssetError) as exc:
             return await self._failed_budget_result(
                 code=exc.code,
                 message=exc.safe_message(),
@@ -880,7 +1249,7 @@ class PipelineWorkingContextMixin:
         if pre_summary.status == "success":
             try:
                 messages, usage = await load_checked()
-            except ImageAssetError as exc:
+            except (ImageAssetError, VideoAssetError) as exc:
                 return await self._failed_budget_result(
                     code=exc.code,
                     message=exc.safe_message(),
@@ -940,7 +1309,7 @@ class PipelineWorkingContextMixin:
             )
             try:
                 messages, usage = await load_checked()
-            except ImageAssetError as exc:
+            except (ImageAssetError, VideoAssetError) as exc:
                 return await self._failed_budget_result(
                     code=exc.code,
                     message=exc.safe_message(),
@@ -985,7 +1354,7 @@ class PipelineWorkingContextMixin:
         )
         try:
             messages, usage = await load_checked()
-        except ImageAssetError as exc:
+        except (ImageAssetError, VideoAssetError) as exc:
             return await self._failed_budget_result(
                 code=exc.code,
                 message=exc.safe_message(),
@@ -1072,13 +1441,16 @@ class PipelineWorkingContextMixin:
         failure_code: str = "",
         image_count: int = 0,
         image_bytes: int = 0,
+        video_count: int = 0,
+        video_bytes: int = 0,
     ) -> None:
         note = (
             "[上下文预算] 主模型输入预检失败，已跳过本轮模型调用；"
             f"phase={phase}，code={failure_code or 'unknown'}，"
             f"estimated={estimated_tokens} tokens，"
             f"budget={budget_tokens} tokens，images={image_count}，"
-            f"image_bytes={image_bytes}，attempts={'; '.join(attempts)}。"
+            f"image_bytes={image_bytes}，videos={video_count}，"
+            f"video_bytes={video_bytes}，attempts={'; '.join(attempts)}。"
         )
         logger.error(note)
         await self.history.add_system_note(

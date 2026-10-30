@@ -71,6 +71,12 @@ from utils.image_contracts import (
     ImageLimits,
 )
 from utils.request_history import partition_request_history
+from utils.video_budget import resolve_video_budget_profile
+from utils.video_contracts import (
+    DEFAULT_VIDEO_TOKEN_RESERVE,
+    VideoBudgetProfile,
+    VideoLimits,
+)
 
 from .agent_task_helpers import (
     _agent_task_timeout_seconds as _agent_task_timeout_seconds,
@@ -209,6 +215,7 @@ class MessagePipeline(
         web_search: IWebSearchService | None = None,
         web_fetch: Any = None,
         weather: IWeatherService | None = None,
+        container: Any = None,
         slang_service: Any = None,
         knowledge_service: Any = None,
         asr: Any = None,
@@ -225,6 +232,11 @@ class MessagePipeline(
         image_limits: ImageLimits | None = None,
         image_budget_profile: str | ImageBudgetProfile = "auto",
         image_token_reserve: int = DEFAULT_IMAGE_TOKEN_RESERVE,
+        gif_mode: str = "native",
+        main_model_videos_enabled: bool = False,
+        video_limits: VideoLimits | None = None,
+        video_budget_profile: str | VideoBudgetProfile = "auto",
+        video_token_reserve: int = DEFAULT_VIDEO_TOKEN_RESERVE,
     ) -> None:
         self.adapter = adapter
         self.chat_agent = chat_agent
@@ -256,6 +268,7 @@ class MessagePipeline(
         self.web_search = web_search
         self.web_fetch = web_fetch
         self.weather = weather
+        self.container = container
         self.slang_service = slang_service
         self.knowledge_service = knowledge_service
         self.asr = asr
@@ -272,6 +285,7 @@ class MessagePipeline(
         self.sleep_tool = bool(sleep_tool)
         self.main_model_images_enabled = bool(main_model_images_enabled)
         self.image_limits = image_limits or ImageLimits()
+        self.gif_mode = gif_mode if gif_mode in {"native", "first_frame"} else "native"
         if isinstance(image_budget_profile, ImageBudgetProfile):
             self.image_budget_profile_name = image_budget_profile.name
             self.image_token_reserve = int(image_budget_profile.per_image_tokens)
@@ -285,6 +299,21 @@ class MessagePipeline(
                 enabled=self.main_model_images_enabled,
                 profile=self.image_budget_profile_name,
                 reserve_tokens=self.image_token_reserve,
+            )
+        self.main_model_videos_enabled = bool(main_model_videos_enabled)
+        self.video_limits = video_limits or VideoLimits()
+        if isinstance(video_budget_profile, VideoBudgetProfile):
+            self.video_budget_profile_name = video_budget_profile.name
+            self.video_token_reserve = int(video_budget_profile.per_video_tokens)
+            self._video_budget_profile = (
+                video_budget_profile if self.main_model_videos_enabled else None
+            )
+        else:
+            self.video_budget_profile_name = str(video_budget_profile or "auto")
+            self.video_token_reserve = int(video_token_reserve)
+            self._video_budget_profile = resolve_video_budget_profile(
+                enabled=self.main_model_videos_enabled,
+                reserve_tokens=self.video_token_reserve,
             )
         self._active_input_guards: list[Any] = []
 
@@ -626,6 +655,7 @@ class MessagePipeline(
                     pending_context_provider=lambda: self._consume_send_receipts(
                         conversation_id
                     ),
+                    pending_media_projector=self._project_pending_media_record,
                     runtime_event_callback=self._runtime_event_callback(conversation_id),
                     estimated_prompt_tokens=estimated_prompt_tokens,
                     calib_ratio=self._token_calib_ratio,
@@ -636,7 +666,21 @@ class MessagePipeline(
                     kv_diagnostics_mode=str(
                         getattr(self.behavior_cfg, "kv_prompt_diagnostics", "summary")
                     ),
-                    image_limits=self._main_prompt_image_limits(),
+                    image_limits=(
+                        self._main_prompt_image_limits()
+                        if getattr(self, "main_model_images_enabled", False)
+                        else None
+                    ),
+                    video_limits=(
+                        self._main_prompt_video_limits()
+                        if getattr(self, "main_model_videos_enabled", False)
+                        else None
+                    ),
+                    video_token_reserve=(
+                        int(getattr(self, "video_token_reserve", 0))
+                        if getattr(self, "main_model_videos_enabled", False)
+                        else 0
+                    ),
                     provider_limit_bytes=self._provider_request_body_limit_bytes(),
                     prompt_budget_tokens=active_budget.input_budget,
                     token_estimator=self._token_estimator(),
@@ -671,7 +715,10 @@ class MessagePipeline(
             self._calibrate_tokens(
                 estimated_prompt_tokens,
                 result.first_prompt_tokens,
-                contains_images=budget_result.contains_images,
+                contains_images=(
+                    budget_result.contains_images
+                    or budget_result.contains_videos
+                ),
             )
             self.mark_activity()
             self._schedule_persona_after_turn(

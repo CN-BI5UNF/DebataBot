@@ -102,3 +102,35 @@ def test_build_message_action_image_url():
     assert action["kind"] == "image"
     assert action["image_url"] == "https://example.com/a.png"
     assert action["label"] == "[图片]"
+
+
+@pytest.mark.parametrize(
+    ("face", "expected_id", "expected_label"),
+    [
+        ("5", "5", "[流眼泪]"),
+        ("流泪", "5", "[流眼泪]"),
+        ("流眼泪", "5", "[流眼泪]"),
+        ("[表情5]", "5", "[流眼泪]"),
+        ("doge", "179", "[doge]"),
+    ],
+)
+def test_build_message_action_face_by_id_name_and_alias(
+    face, expected_id, expected_label
+):
+    action = build_message_action(
+        None, None, None, None, None, face=face
+    )
+    assert action["kind"] == "face"
+    assert action["face_id"] == expected_id
+    assert action["content"] == f"[CQ:face,id={expected_id}]"
+    assert action["label"] == expected_label
+
+
+def test_build_message_action_rejects_unknown_face():
+    with pytest.raises(MessageBuildError, match="未知 QQ 表情"):
+        build_message_action(None, None, None, None, None, face="完全不存在的表情")
+
+
+def test_build_message_action_rejects_multiple_payloads():
+    with pytest.raises(MessageBuildError, match="只能填写一个"):
+        build_message_action("hi", None, None, None, None, face="流泪")

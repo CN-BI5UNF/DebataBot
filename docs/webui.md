@@ -57,12 +57,13 @@ WebUI 能读到全部聊天记录、改配置、换 API Key，所以**默认必�
 | 人格 | `webui/api/personas.py` | `ui/dashboard/personas_page.py` |
 | 模型管理 | `webui/api/models.py` | `ui/dashboard/models_page.py` |
 | **表情包** | `webui/api/emoji.py` | `ui/dashboard/emoji_section.py`（WebUI 独立成页） |
+| **容器** | `webui/api/container.py` | 无（WebUI 新增；见 `docs/container.md`） |
 | **存储与缓存** | `webui/api/storage.py` | 无（WebUI 新增；见 `docs/storage_maintenance.md`） |
 | **黑名单** | `webui/api/settings.py` | 无（WebUI 新增） |
 | 设置 | `webui/api/settings.py` | `ui/dashboard/settings_page.py` |
 
-> 「模型管理」管的是**本地插件模型**（TTS / 本地 embedding 的下载与依赖）；
-> LLM 提供商的增删改在 设置 →「模型」，见下面「模型接入」。
+> 「模型管理」同时管**云端 LLM 提供商/Agent 模型**和**本地插件模型**（TTS / 本地
+> embedding 的下载与依赖）；设置页不再单独放「模型」分页。左侧导航可折叠成纯图标。
 
 另有 `webui/api/system.py`：登录、运行状态、首次配置向导、重启 / 退出，桌面端由窗口和托盘承担。
 

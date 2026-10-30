@@ -148,6 +148,12 @@ async def _send_action_direct(ctx: ToolContext, target: Target, action: dict) ->
             ),
             image_url=str(action.get("image_url") or "") or None,
         )
+    if kind == "face":
+        face_id = str(action.get("face_id") or "")
+        content = str(action.get("content") or "")
+        if not content and face_id:
+            content = f"[CQ:face,id={face_id}]"
+        return await ctx.adapter.send_text(target, content)  # type: ignore[union-attr]
     return await ctx.adapter.send_text(target, str(action.get("content") or ""))  # type: ignore[union-attr]
 
 
@@ -159,7 +165,8 @@ async def _send_action_direct(ctx: ToolContext, target: Target, action: dict) ->
 @tool(
     name="send_private_messages",
     description=(
-        "向 QQ 用户发送私聊消息。可混合文字/表情包/图片，按 order 排序，delay 控制间隔。"
+        "向 QQ 用户发送私聊消息。可混合文字/表情包/图片/QQ 原生表情，按 order 排序，delay 控制间隔。"
+        "原生表情用 face 字段按中文名（如“流泪”“笑哭”）发送。"
         "可在 content 开头加 [CQ:reply,id=消息ID] 引用回复。"
         "发送后如本轮已结束，继续调用 no_action 收尾。"
     ),
@@ -184,6 +191,7 @@ async def send_private_messages(args: SendPrivateArgs, ctx: ToolContext) -> dict
                 t.image,
                 ctx.emoji_dir,
                 ctx.workspace_dir,
+                face=t.face,
             )
         except MessageBuildError as e:
             errors.append(
@@ -269,7 +277,8 @@ async def send_private_messages(args: SendPrivateArgs, ctx: ToolContext) -> dict
 @tool(
     name="send_group_message",
     description=(
-        "向 QQ 群发送消息。可混合文字/表情包/图片，按 order 排序，delay 控制间隔。"
+        "向 QQ 群发送消息。可混合文字/表情包/图片/QQ 原生表情，按 order 排序，delay 控制间隔。"
+        "原生表情用 face 字段按中文名（如“流泪”“笑哭”）发送。"
         "可在 content 开头加 [CQ:reply,id=msg_id] 引用；@人用 [CQ:at,qq=QQ号]。"
         "发送后如本轮已结束，继续调用 no_action 收尾。"
     ),
@@ -293,6 +302,7 @@ async def send_group_message(args: SendGroupArgs, ctx: ToolContext) -> dict:
                 t.image,
                 ctx.emoji_dir,
                 ctx.workspace_dir,
+                face=t.face,
             )
         except MessageBuildError as e:
             errors.append(str(e))

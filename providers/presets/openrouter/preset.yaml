@@ -45,7 +45,7 @@ models:
 
   - id: google/gemini-2.5-flash
     display_name: Gemini 2.5 Flash（via OpenRouter）
-    capabilities: [chat, tool_call, vision, web_search]
+    capabilities: [chat, tool_call, vision, video, web_search]
     context_length: 1000000
     search_channel: openrouter_web_plugin
     search_payload:

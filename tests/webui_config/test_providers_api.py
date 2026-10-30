@@ -118,6 +118,8 @@ async def test_list_presets(req, presets):
     }
     v26 = next(m for m in mimo["models"] if m["id"] == "mimo-v2.6-pro")
     assert v26["search_channel"] == "mimo_chat_web_search"
+    vendor_ids = {v["id"] for v in data["vendors"]}
+    assert {"gemini", "anthropic", "openai"} <= vendor_ids
 
 
 # ============================================================
@@ -133,11 +135,13 @@ async def test_create_relay(rt, req):
             protocol="openai_compat",
             base_url="https://relay.example.com/v1",
             api_key="sk-relay",
+            model_vendor="gemini",
         ),
     )
     assert result["ok"] is True
     assert result["id"] == "relay01"
     assert result["needs_restart"] is True
+    assert rt.config.providers["relay01"].model_vendor == "gemini"
     assert rt.config.providers["relay01"].base_url == "https://relay.example.com/v1"
     assert rt.secrets.data["relay01_key"] == "sk-relay"
     assert req._host.saved == 1

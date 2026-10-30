@@ -34,11 +34,12 @@ KarenBot 是一个通用聊天智能体框架。你给它一个人格，它就�
 - **QQ / NapCat 接入**：WebSocket 客户端/服务端模式、私聊/群聊、发送队列。
 - **长期记忆**：重要记忆文件与 RAG 两种模式，归档不改写原始历史。
 - **多轮工具循环**：发送、撤回、记忆、搜索、天气、定时唤醒、子 Agent 等。
-- **WebUI**：FastAPI 后端 + 无构建步骤的静态前端；向导、设置、聊天、记忆、日志、更新。
-- **多 Provider**：OpenAI、Anthropic、DeepSeek、GLM、Qwen、Gemini、OpenRouter 等预设，也支持自定义兼容端点。
-- **原生视觉 / 独立视觉**：图片可进入主模型请求，也可按需走独立视觉接口。
+- **WebUI**：FastAPI 后端 + 无构建步骤的静态前端；向导、设置、聊天、记忆、日志、更新；模型配置集中在「模型管理」，侧栏可折叠为纯图标。
+- **多 Provider**：OpenAI、Anthropic、DeepSeek、GLM、Qwen、Gemini、OpenRouter 等预设，也支持自定义兼容端点；中转站可标记 Gemini/Claude 等上游厂商，自动套用对应能力表。
+- **原生视觉 / 独立视觉**：图片、完整 GIF 动图和完整视频可进入支持的主模型请求；也可按需走独立视觉接口。视频以受管 data URL 发送完整文件、不抽帧，模型不支持时只保留 workspace 占位。
 - **知识与群聊黑话**：按需查询，不再每轮把词表/知识注入动态上下文；支持逐条共享与去重。
-- **表情包工具**：LLM 可以列出、下载、从群聊图片保存、重命名和删除表情包。
+- **表情包与 QQ 原生表情**：LLM 可以列出、下载、从群聊图片保存、重命名和删除表情包；入站 QQ 表情显示中文名（如 `[流眼泪]` 对应 `[表情5]`），发送工具支持按中文名发原生表情。
+- **受控 Docker 容器**：LLM 可执行命令、读写 `/workspace`、导入导出文件；默认无网络、无特权、非 root，内存/CPU/pids/存储可配置。默认 B 命名卷免管理员、开箱即用；C 固定大小镜像为高级硬上限。支持 Docker 镜像加速前缀、一键准备/启动，Windows 提供 VHDX 安装脚本（见 [容器文档](docs/container.md)）。
 - **存储与配置安全**：滚动摘要、CAS 提交、媒体生命周期、范围删除/恢复、配置事务与备份。
 - **在线更新**：设置 → 更新，从 GitHub Releases/tag 选择更新或回退；只改源码，不覆盖数据。
 
@@ -84,6 +85,13 @@ uv sync --extra perf
 ```
 
 `uv sync` 会创建 `.venv` 并安装 `karen` 命令入口；旧的 `debata` 入口在过渡期继续可用。
+
+正常启动（WebUI 或 `--no-gui`）会在导入应用前自动检查 `pyproject.toml` 里的
+基础依赖：缺失或版本不符时，优先用 `uv pip install --python <当前解释器> -e .`，
+没有 uv 时回退到 `python -m pip install -e .`。可选依赖（`perf`、本地 TTS、
+本地 embedding、`dev`）不会在启动时自动安装。检查不会在 `karen start/stop`
+等服务管理子命令中触发；可用 `KAREN_DISABLE_DEPENDENCY_CHECK=1` 关闭检查，
+或用 `KAREN_DISABLE_DEPENDENCY_INSTALL=1` 只检查、不安装。
 
 ### 3. 首次启动（WebUI）
 
@@ -139,7 +147,7 @@ uv sync
 uv run python main.py --host 127.0.0.1 --port 8000
 ```
 
-Windows 上没有 systemd 时，直接使用 `uv run python main.py`；数据目录默认在 `%LOCALAPPDATA%\KarenBot`。Docker 容器、多媒体与 Windows 服务化仍在后续阶段推进。
+Windows 上没有 systemd 时，直接使用 `uv run python main.py`；数据目录默认在 `%LOCALAPPDATA%\KarenBot`。Docker Desktop 的容器功能可用，C 存储的 VHDX 脚本尚待真实 Windows 机器验收；Windows 服务化仍在后续阶段。
 
 ## karen 指令
 
@@ -221,14 +229,12 @@ LLM 可调用 `list_emoji`、`save_emoji_from_url`、`save_emoji_from_workspace`
 
 ### 更新
 
-设置 → 更新可以从 GitHub Releases/tag 选择版本；只更新源码，不覆盖实例数据。依赖文件变化时默认尝试安装依赖并支持回滚。
+设置 → 更新可以从 GitHub Releases/tag 选择版本；只更新源码，不覆盖实例数据。依赖文件变化时默认尝试安装依赖并支持回滚。日常启动也会做基础依赖预检；缺失时自动拉取安装（见“克隆并安装依赖”）。
 
 ## 路线图
 
 以下功能在方案中，尚未在本版本全部落地：
 
-- **Docker 容器工具**：固定大小镜像（C，推荐）/ 持久卷软配额（B），内存/CPU/pids/存储限制，Windows VHDX/WSL2 适配。
-- **GIF/视频输入**：GIF 多帧采样，视频帧 + 可选音轨转写。
 - **工具分层路由**：工具集 + `load_toolset` 动态加载，减少全量 schema token。
 
 ## 测试与质量
@@ -286,7 +292,7 @@ KarenBot/
 ## 已知限制
 
 - 这是开发快照，接口和配置仍可能调整；未执行生产迁移、备份恢复或 launcher 安装。
-- Docker 容器、GIF/视频输入和工具分层路由仍在后续阶段。
+- 工具分层路由仍在后续阶段；完整 GIF/视频输入仅对已核实支持的主模型开启（当前内置能力表包含 Qwen3.6-Plus / Qwen3-VL / OpenRouter Gemini）。Docker 容器 C 模式需要一次性管理员初始化（Linux sudo 密码弹窗 / Windows UAC），Windows VHDX 脚本待实机验收；容器启用后启动时会后台自动拉取缺失镜像。
 - 旧 `debata` 数据目录默认继续使用；迁移前请先备份。
 - NapCat 未连接时 QQ 不会收发；以日志中的连接状态为准。
 

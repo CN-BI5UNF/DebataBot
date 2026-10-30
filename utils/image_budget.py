@@ -35,9 +35,11 @@ from utils.image_contracts import (
 
 RESERVE_PROFILE_NAME = "reserve_v1"
 _BUDGET_IMAGE_URL = "<managed-image>"
+_BUDGET_VIDEO_URL = "<managed-video>"
 _MANAGED_DATA_URL_PREFIXES = (
     "data:image/jpeg;base64,",
     "data:image/png;base64,",
+    "data:image/gif;base64,",
 )
 
 
@@ -111,11 +113,16 @@ def estimate_request_body_bytes(
     *,
     text_serialized_bytes: int,
     encoded_image_bytes: int,
+    encoded_video_bytes: int = 0,
 ) -> int:
     """保守估算完整请求体；是否超限由调用方按项目/provider 上限判断。"""
-    if text_serialized_bytes < 0 or encoded_image_bytes < 0:
+    if (
+        text_serialized_bytes < 0
+        or encoded_image_bytes < 0
+        or encoded_video_bytes < 0
+    ):
         raise ValueError("byte counts must be non-negative")
-    return text_serialized_bytes + encoded_image_bytes
+    return text_serialized_bytes + encoded_image_bytes + encoded_video_bytes
 
 
 def group_validated_refs(
@@ -239,8 +246,9 @@ def estimate_wire_request_body_bytes(
     tools_schema: Sequence[Mapping[str, Any]] | None,
     *,
     encoded_image_bytes: int,
+    encoded_video_bytes: int = 0,
 ) -> int:
-    """估算完整请求体：redacted messages+tools 的 JSON 字节 + 实际图片编码。"""
+    """估算完整请求体：redacted messages+tools 的 JSON 字节 + 实际媒体编码。"""
     text_bytes = len(
         _canonical_json(
             {
@@ -252,6 +260,7 @@ def estimate_wire_request_body_bytes(
     return estimate_request_body_bytes(
         text_serialized_bytes=text_bytes,
         encoded_image_bytes=encoded_image_bytes,
+        encoded_video_bytes=encoded_video_bytes,
     )
 
 
@@ -324,6 +333,10 @@ def _is_image_block(block: Any) -> bool:
     }
 
 
+def _is_video_block(block: Any) -> bool:
+    return isinstance(block, Mapping) and str(block.get("type") or "") == "video_url"
+
+
 def _contains_image_block(content: Any) -> bool:
     return isinstance(content, list) and any(
         _is_image_block(block) for block in content
@@ -348,6 +361,14 @@ def _redacted_messages(
         if isinstance(content, list):
             blocks: list[Any] = []
             for block in content:
+                if _is_video_block(block):
+                    blocks.append(
+                        {
+                            "type": "video_url",
+                            "video_url": {"url": _BUDGET_VIDEO_URL},
+                        }
+                    )
+                    continue
                 if not _is_image_block(block):
                     blocks.append(block)
                     continue

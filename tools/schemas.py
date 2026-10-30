@@ -39,15 +39,21 @@ class PrivateMessageTarget(_ToolArgs):
     target_qq: int = Field(..., description="接收者 QQ 号")
     content: str | None = Field(
         default=None,
-        description="消息正文；可在开头加 [CQ:reply,id=msg_id] 引用回复。content、emoji、image 三选一。",
+        description="消息正文；可加 [CQ:reply,id=msg_id] 引用。",
     )
     emoji: str | None = Field(
         default=None,
-        description="表情包名称，不带文件后缀；必须从 task_context 的可用表情包列表中选择。content、emoji、image 三选一。",
+        description="表情包名称，不带后缀；从 task_context 列表选择。",
     )
     image: str | None = Field(
         default=None,
-        description="要发送的图片 URL 或 workspace 相对路径；不是表情包。content、emoji、image 三选一。",
+        description="图片 URL 或 workspace 路径；不是表情包。",
+    )
+    face: str | None = Field(
+        default=None,
+        description=(
+            "QQ 原生表情名（如“流泪”“笑哭”），也可填 ID。"
+        ),
     )
     order: int = Field(..., description="发送顺序，从小到大")
     delay: float = Field(
@@ -66,11 +72,11 @@ class PrivateMessageTarget(_ToolArgs):
     def validate_payload_choice(self) -> PrivateMessageTarget:
         values = [
             value
-            for value in (self.content, self.emoji, self.image)
+            for value in (self.content, self.emoji, self.image, self.face)
             if str(value or "").strip()
         ]
         if len(values) != 1:
-            raise ValueError("content、emoji、image 必须且只能填写一个")
+            raise ValueError("content、emoji、image、face 必须且只能填写一个")
         return self
 
 
@@ -139,15 +145,21 @@ class GroupMessageTarget(_ToolArgs):
 
     content: str | None = Field(
         default=None,
-        description="消息正文；@人用 [CQ:at,qq=QQ号]；引用用 [CQ:reply,id=msg_id]。",
+        description="消息正文；@人用 [CQ:at,qq=QQ号]，引用用 [CQ:reply,id=msg_id]。",
     )
     emoji: str | None = Field(
         default=None,
-        description="表情包名称，不带文件后缀；必须从 task_context 的可用表情包列表中选择。content、emoji、image 三选一。",
+        description="表情包名称，不带后缀；从 task_context 列表选择。",
     )
     image: str | None = Field(
         default=None,
-        description="要发送的图片 URL 或 workspace 相对路径；不是表情包。content、emoji、image 三选一。",
+        description="图片 URL 或 workspace 路径；不是表情包。",
+    )
+    face: str | None = Field(
+        default=None,
+        description=(
+            "QQ 原生表情名（如“流泪”“笑哭”），也可填 ID。"
+        ),
     )
     order: int = Field(..., description="发送顺序，从小到大")
     delay: float = Field(
@@ -166,11 +178,11 @@ class GroupMessageTarget(_ToolArgs):
     def validate_payload_choice(self) -> GroupMessageTarget:
         values = [
             value
-            for value in (self.content, self.emoji, self.image)
+            for value in (self.content, self.emoji, self.image, self.face)
             if str(value or "").strip()
         ]
         if len(values) != 1:
-            raise ValueError("content、emoji、image 必须且只能填写一个")
+            raise ValueError("content、emoji、image、face 必须且只能填写一个")
         return self
 
 
@@ -1383,3 +1395,44 @@ class SleepArgs(_ToolArgs):
 
     duration_minutes: int = Field(..., ge=1, le=720, description="睡眠或休息分钟数，1-720")
     reason: str = Field(..., min_length=1, description="睡眠或休息原因")
+
+
+class ContainerArgs(_ToolArgs):
+    """container 多路复用工具参数。
+
+    ``exec`` 在受控容器内执行命令；其余 action 只操作 /workspace。
+    """
+
+    action: Literal[
+        "exec",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "list_files",
+        "import_file",
+        "export_file",
+        "reset",
+        "status",
+        "storage",
+    ] = Field(..., description="要执行的操作。")
+    command: str = Field(
+        default="", max_length=64 * 1024, description="exec 的 shell 命令。"
+    )
+    path: str = Field(default="", max_length=1024, description="容器内 /workspace 路径。")
+    content: str = Field(
+        default="",
+        max_length=8 * 1024 * 1024,
+        description="write_file 的文本内容（最多 8 MiB）。",
+    )
+    old: str = Field(default="", max_length=8 * 1024 * 1024, description="edit_file 的原文本。")
+    new: str = Field(default="", max_length=8 * 1024 * 1024, description="edit_file 的新文本。")
+    host_path: str = Field(
+        default="", max_length=1024, description="import/export 的宿主 workspace 相对路径。"
+    )
+    container_path: str = Field(
+        default="", max_length=1024, description="import/export 的容器内 /workspace 路径。"
+    )
+    timeout_seconds: float | None = Field(
+        default=None, ge=1, le=1800, description="exec 超时覆盖（秒）。"
+    )
+    overwrite: bool = Field(default=False, description="export_file 是否覆盖已存在目标。")

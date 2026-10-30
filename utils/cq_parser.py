@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from utils.qq_faces import face_label
+
 # CQ 参数分隔正则：按 ",key=" 分割，避免值中含逗号被误切
 _PARAM_SPLIT_RE = re.compile(r",(?=\w+=)")
 
@@ -93,7 +95,7 @@ def _render_cq_segment(cq: str, bot_qq: str) -> str:
 
     if cq_type == "face":
         face_id = params.get("id", "")
-        return f"[表情{face_id}]"
+        return face_label(face_id)
 
     if cq_type == "forward":
         fid = params.get("id", "")

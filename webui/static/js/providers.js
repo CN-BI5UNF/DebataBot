@@ -1,7 +1,7 @@
 // 模型提供商面板：列表 + 添加/编辑/删除 + 测试连接 + 拉取模型列表。
 //
 // 对应原 GUI 的 ui/dashboard/settings/model.py（那是 900 行的 Qt 表单）。
-// 这里做成两个可复用面板，设置页「模型」分页直接用；
+// 这里做成两个可复用面板，模型管理页直接用；
 // 首次向导也复用 providerForm()，避免两处各写一份 provider 表单。
 //
 // 设计要点：
@@ -30,6 +30,72 @@ const REASONING_STYLES = [
 ];
 
 const CUSTOM = '__custom__';
+const VENDOR_LABELS = {
+  gemini: 'Google Gemini',
+  anthropic: 'Anthropic Claude',
+  openai: 'OpenAI',
+  deepseek: 'DeepSeek',
+  qwen: '通义千问 Qwen',
+  glm: '智谱 GLM',
+  moonshot: '月之暗面 Kimi',
+  xai: 'xAI Grok',
+  volcengine: '火山引擎豆包',
+  mimo: '小米 MiMo',
+};
+const VENDOR_PREFIXES = [
+  [['gemini', 'gemma'], 'gemini'],
+  [['claude'], 'anthropic'],
+  [['gpt', 'chatgpt', 'o1', 'o3', 'o4'], 'openai'],
+  [['deepseek'], 'deepseek'],
+  [['qwen', 'qwq'], 'qwen'],
+  [['glm', 'chatglm'], 'glm'],
+  [['kimi', 'moonshot'], 'moonshot'],
+  [['grok'], 'xai'],
+  [['doubao', 'skylark'], 'volcengine'],
+  [['mimo'], 'mimo'],
+];
+
+/** 从模型 ID 自动识别上游厂商；显式 model_vendor/preset 优先。 */
+export function detectModelVendor(modelId) {
+  let text = String(modelId || '').trim().toLowerCase();
+  if (!text) return '';
+  text = text.split('/').pop().split(':')[0];
+  for (const [prefixes, vendor] of VENDOR_PREFIXES) {
+    if (prefixes.some((prefix) => text.startsWith(prefix))) return vendor;
+  }
+  return '';
+}
+
+export function resolveProviderVendor(provider, modelId, presets = []) {
+  const explicit = String(provider?.model_vendor || '').trim().toLowerCase();
+  const preset = String(provider?.preset || '').trim().toLowerCase();
+  if (explicit && presets.some((p) => p.id === explicit)) return explicit;
+  if (preset && presets.some((p) => p.id === preset)) return preset;
+  const detected = detectModelVendor(modelId);
+  if (detected && presets.some((p) => p.id === detected)) return detected;
+  return '';
+}
+
+export function resolvePresetModel(presets, provider, modelId) {
+  const vendor = resolveProviderVendor(provider, modelId, presets);
+  if (!vendor) return { preset: null, model: null, vendor: '' };
+  const preset = presets.find((p) => p.id === vendor) || null;
+  const models = preset?.models || [];
+  const full = String(modelId || '').trim();
+  const tail = full.split('/').pop();
+  const model = models.find((m) => m.id === full)
+    || models.find((m) => m.id.split('/').pop() === tail)
+    || null;
+  return { preset, model, vendor };
+}
+
+function vendorOptions(vendors) {
+  if (Array.isArray(vendors) && vendors.length) {
+    return vendors.map((v) => [v.id, v.label]);
+  }
+  return Object.entries(VENDOR_LABELS);
+}
+
 const EFFORT_LABELS = {
   minimal: '最小',
   low: '低',
@@ -41,12 +107,13 @@ const EFFORT_LABELS = {
 const FALLBACK_EFFORT_OPTIONS = ['low', 'medium', 'high'];
 
 // ============================================================
-// 设置页「模型」分页
+// 模型管理页
 // ============================================================
 
 export async function renderModelsPanel(host, ctx, { markRestart } = {}) {
   let data;
   let presets = [];
+  let vendors = [];
   try {
     const [providerData, presetData] = await Promise.all([
       endpoints.providers(),
@@ -54,6 +121,7 @@ export async function renderModelsPanel(host, ctx, { markRestart } = {}) {
     ]);
     data = providerData;
     presets = presetData.presets || [];
+    vendors = presetData.vendors || [];
   } catch (e) {
     fill(host, empty('模型配置没能读出来', { subtitle: e.message, iconName: 'models' }));
     return;
@@ -66,7 +134,7 @@ export async function renderModelsPanel(host, ctx, { markRestart } = {}) {
     h('div', { class: 'row', style: { marginTop: '12px' } },
       h('button', {
         class: 'btn btn-primary',
-        onclick: () => openProviderDialog(null, reload),
+        onclick: () => openProviderDialog(null, reload, presets, vendors),
       }, icon('add', { size: 16 }), '添加提供商'),
     ),
   );
@@ -102,7 +170,13 @@ function providerTable(providers, onChanged) {
           : null,
       ),
       h('td', {}, p.display_name,
-        h('div', { class: 'field-help' }, p.preset ? `预设 ${p.preset}` : '自定义')),
+        h('div', { class: 'field-help' },
+          [
+            p.preset ? `预设 ${p.preset}` : '自定义',
+            p.model_vendor
+              ? `厂商 ${VENDOR_LABELS[p.model_vendor] || p.model_vendor}`
+              : '',
+          ].filter(Boolean).join(' · '))),
       h('td', { class: 'mono', style: { wordBreak: 'break-all' } }, p.base_url || '—'),
       h('td', {}, keyBadge(p)),
       h('td', {}, healthBadge(p.health)),
@@ -185,7 +259,9 @@ async function removeProvider(provider, onDone) {
  *            modelList, keyInput, keyToggle, styleSelect, timeoutInput, statusLine,
  *            setStatus: Function, syncFromPreset: Function}}
  */
-export function providerFields(state, { includeId = true, idLocked = false, presets = null } = {}) {
+export function providerFields(state, {
+  includeId = true, idLocked = false, presets = null, vendors = [],
+} = {}) {
   const available = presets || state.presets || [];
   const p = state.provider;
 
@@ -216,6 +292,23 @@ export function providerFields(state, { includeId = true, idLocked = false, pres
   }
   presetSelect.value = p.preset || CUSTOM;
 
+  const vendorSelect = h('select', {
+    onchange: (e) => {
+      p.model_vendor = e.target.value || null;
+      refreshVendorHint();
+    },
+  });
+  vendorSelect.append(h('option', { value: '' }, '自动识别（按模型 ID）'));
+  for (const [value, label] of vendorOptions(vendors)) {
+    vendorSelect.append(h('option', { value, selected: p.model_vendor === value }, label));
+  }
+  if (p.model_vendor && !vendorOptions(vendors).some(([value]) => value === p.model_vendor)) {
+    vendorSelect.append(h('option', { value: p.model_vendor, selected: true },
+      p.model_vendor));
+  }
+  vendorSelect.value = p.model_vendor || '';
+  const vendorHint = h('p', { class: 'field-help' });
+
   const protocolSelect = h('select', {
     onchange: (e) => { p.protocol = e.target.value; },
   });
@@ -231,9 +324,12 @@ export function providerFields(state, { includeId = true, idLocked = false, pres
   });
   const modelInput = h('input', {
     value: p.model || '',
-    placeholder: '模型 ID，如 mimo-v2.5-pro',
+    placeholder: '模型 ID，如 gemini-2.5-flash / claude-sonnet-4-6',
     list: 'provider-model-options',
-    oninput: (e) => { p.model = e.target.value.trim(); },
+    oninput: (e) => {
+      p.model = e.target.value.trim();
+      refreshVendorHint();
+    },
   });
 
   const keyInput = h('input', {
@@ -329,6 +425,26 @@ export function providerFields(state, { includeId = true, idLocked = false, pres
 
   syncFromPreset();
 
+  function refreshVendorHint() {
+    const explicit = String(p.model_vendor || '').toLowerCase();
+    if (explicit) {
+      vendorHint.textContent = `能力识别使用 ${VENDOR_LABELS[explicit] || explicit} 的模型表；不会改变协议或地址。`;
+      return;
+    }
+    const detected = detectModelVendor(p.model);
+    if (detected) {
+      vendorHint.textContent = `自动识别为 ${VENDOR_LABELS[detected] || detected}；` +
+        '如果识别不对，可在上面手动选择。';
+      return;
+    }
+    if (p.preset) {
+      vendorHint.textContent = '能力默认跟随所选预设；中转站混合模型建议手动选择厂商。';
+      return;
+    }
+    vendorHint.textContent = '识别失败时不会猜能力；可手动选择厂商，或把视觉/视频策略改成“开启”。';
+  }
+  refreshVendorHint();
+
   const nodes = [];
   if (includeId) {
     nodes.push(h('div', { class: 'grid grid-2' },
@@ -338,6 +454,9 @@ export function providerFields(state, { includeId = true, idLocked = false, pres
   }
   nodes.push(
     field('预设', presetSelect),
+    field('上游模型厂商（能力识别）', vendorSelect,
+      '中转站可同时挂 Gemini/Claude/OpenAI 等模型；选对厂商才能自动应用视觉、视频和上下文能力。'),
+    vendorHint,
     h('div', { class: 'grid grid-2' },
       field('协议', protocolSelect, '选预设时由预设决定'),
       field('Base URL', baseUrlInput, '不以 /v1 结尾会自动补上'),
@@ -354,9 +473,9 @@ export function providerFields(state, { includeId = true, idLocked = false, pres
   );
 
   return {
-    nodes, idInput, presetSelect, protocolSelect, baseUrlInput,
+    nodes, idInput, presetSelect, vendorSelect, protocolSelect, baseUrlInput,
     modelInput, keyInput, keyToggle, styleSelect, timeoutInput, statusLine,
-    setStatus, syncFromPreset,
+    setStatus, syncFromPreset, refreshVendorHint,
   };
 }
 
@@ -381,12 +500,17 @@ export function readProviderFields(state, fields, { requireKey = true } = {}) {
 // 添加 / 编辑弹窗
 // ============================================================
 
-async function openProviderDialog(existing, onDone) {
-  let presets = [];
-  try {
-    presets = (await endpoints.providerPresets()).presets || [];
-  } catch {
-    // 预设拉不到也能用：自定义端点这条路不依赖预设
+async function openProviderDialog(existing, onDone, knownPresets = null, knownVendors = null) {
+  let presets = knownPresets || [];
+  let vendors = knownVendors || [];
+  if (!presets.length || !vendors.length) {
+    try {
+      const data = await endpoints.providerPresets();
+      presets = data.presets || presets;
+      vendors = data.vendors || vendors;
+    } catch {
+      // 预设拉不到也能用：自定义端点这条路不依赖预设
+    }
   }
 
   const isEdit = !!existing;
@@ -397,6 +521,7 @@ async function openProviderDialog(existing, onDone) {
           id: existing.id,
           display_name: existing.display_name,
           preset: existing.preset || null,
+          model_vendor: existing.model_vendor || null,
           protocol: existing.protocol || 'openai_compat',
           base_url: existing.base_url || '',
           model: '',
@@ -408,6 +533,7 @@ async function openProviderDialog(existing, onDone) {
       : {
           id: '',
           display_name: '',
+          model_vendor: null,
           // 和 CLI、首次向导一致默认 deepseek。原先取 presets[0]，而预设是字母序的，
           // 于是"默认"落到 anthropic——只改 Base URL 接中转站的用户会被静默锁成
           // anthropic 协议，请求打到 /v1/messages 直接 403。
@@ -422,7 +548,9 @@ async function openProviderDialog(existing, onDone) {
         },
   };
 
-  const fields = providerFields(state, { includeId: true, idLocked: isEdit, presets });
+  const fields = providerFields(state, {
+    includeId: true, idLocked: isEdit, presets, vendors,
+  });
   const { setStatus } = fields;
 
   // 编辑已有 provider 时，模型 ID 从它的预设里带一个出来，好让「测试连接」有东西可用
@@ -438,6 +566,7 @@ async function openProviderDialog(existing, onDone) {
     const p = state.provider;
     const out = {
       preset: p.preset || null,
+      model_vendor: p.model_vendor || null,
       protocol: p.protocol || null,
       base_url: p.base_url || null,
       display_name: p.display_name || null,
@@ -480,13 +609,29 @@ async function openProviderDialog(existing, onDone) {
       fields.modelInput.setAttribute('list', 'provider-model-options');
       const list = document.getElementById('provider-model-options');
       if (list) {
-        list.replaceChildren(...models.map((m) =>
-          h('option', { value: m.id }, m.display_name || m.id)));
+        list.replaceChildren(...models.map((m) => {
+          const vendor = m.vendor || detectModelVendor(m.id);
+          const vendorText = vendor ? ` · ${VENDOR_LABELS[vendor] || vendor}` : '';
+          const caps = (m.capabilities || []).length
+            ? ` · ${m.capabilities.join('/')}` : '';
+          return h('option', { value: m.id },
+            `${m.display_name || m.id}${vendorText}${caps}`);
+        }));
       }
       if (!state.provider.model && models.length) {
         state.provider.model = models[0].id;
         fields.modelInput.value = models[0].id;
       }
+      // 模型列表只属于一个厂商时自动勾选；混合中转站保持“自动识别”，
+      // 让每个 Agent 的模型 ID 各自判断，避免一个 provider 被锁死。
+      const detectedVendors = [...new Set(models
+        .map((m) => m.vendor || detectModelVendor(m.id))
+        .filter(Boolean))];
+      if (!state.provider.model_vendor && detectedVendors.length === 1) {
+        state.provider.model_vendor = detectedVendors[0];
+        fields.vendorSelect.value = detectedVendors[0];
+      }
+      fields.refreshVendorHint();
       setStatus(`拿到 ${models.length} 个模型，可在上面输入框里选或手填`, 'ok');
     } catch (e) {
       setStatus(`${e.message}（可以直接手填模型 ID）`, 'error');
@@ -572,8 +717,9 @@ function agentCard(name, agent, providers, ctx, markRestart, onSaved, presets = 
 
   function effortOptionsFor(providerId, modelId) {
     const provider = providers.find((p) => p.id === providerId);
-    const preset = presets.find((p) => p.id === provider?.preset);
-    const model = (preset?.models || []).find((m) => m.id === modelId);
+    const matched = resolvePresetModel(presets, provider, modelId);
+    const preset = matched.preset;
+    const model = matched.model;
     if (!model) return [...FALLBACK_EFFORT_OPTIONS];
     return model.reasoning_effort_options?.length
       ? [...model.reasoning_effort_options]
@@ -644,7 +790,7 @@ function agentCard(name, agent, providers, ctx, markRestart, onSaved, presets = 
 
   return card(title, `当前：${agent.provider}`,
     field('提供商', providerSelect),
-    field('模型 ID', modelInput),
+    field('模型 ID', modelInput, '厂商和能力按 provider 的 model_vendor 或模型 ID 自动识别'),
     h('div', { class: 'grid grid-2' },
       field('温度', tempInput),
       field('top_p', topPInput),

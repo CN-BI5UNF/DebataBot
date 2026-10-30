@@ -15,6 +15,8 @@ from typing import Any
 
 import yaml
 
+from .model_vendors import resolve_model_vendor
+
 
 @dataclass(slots=True)
 class ModelCapability:
@@ -106,8 +108,56 @@ def model_capability(provider_id: str, model_id: str) -> ModelCapability | None:
     return None
 
 
-def model_supports(provider_id: str, model_id: str, capability: str) -> bool:
-    info = model_capability(provider_id, model_id)
+def resolve_model_capability(
+    provider_id: str,
+    model_id: str,
+    *,
+    vendor: str = "",
+    preset: str = "",
+) -> tuple[ModelCapability | None, str]:
+    """Resolve capability through explicit vendor, preset, then model ID.
+
+    This is what makes a custom relay usable: the provider has no preset, but a
+    Gemini/Claude model still needs vision/video/context metadata.
+    """
+    effective_vendor = resolve_model_vendor(
+        model_id, explicit=vendor, preset=preset
+    )
+    candidates: list[str] = []
+    if effective_vendor:
+        candidates.append(effective_vendor)
+    if provider_id:
+        candidates.append(provider_id)
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        info = model_capability(candidate, model_id)
+        if info is not None:
+            return info, candidate
+    # Last resort: match a known model ID/tail across all capability tables.
+    # Unknown models still return None; we do not guess capabilities.
+    for candidate in load_model_capabilities():
+        if candidate in seen:
+            continue
+        info = model_capability(candidate, model_id)
+        if info is not None:
+            return info, candidate
+    return None, ""
+
+
+def model_supports(
+    provider_id: str,
+    model_id: str,
+    capability: str,
+    *,
+    vendor: str = "",
+    preset: str = "",
+) -> bool:
+    info, _ = resolve_model_capability(
+        provider_id, model_id, vendor=vendor, preset=preset
+    )
     return bool(info and info.supports(capability))
 
 
@@ -246,6 +296,7 @@ __all__ = [
     "load_model_capabilities",
     "model_capability",
     "model_supports",
+    "resolve_model_capability",
     "recommended_provider",
     "recommended_model",
 ]

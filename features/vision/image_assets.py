@@ -40,6 +40,9 @@ import httpx
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from utils.image_contracts import (
+    GIF_TRANSFORM_VERSION,
+    MAX_GIF_FRAMES,
+    MAX_GIF_TOTAL_PIXELS,
     MAX_IMAGE_BYTES,
     TRANSFORM_VERSION_V1,
     TRANSFORM_VERSION_V2,
@@ -53,7 +56,11 @@ from utils.image_contracts import (
 
 TRANSFORM_VERSION = TRANSFORM_VERSION_V2
 _SUPPORTED_FORMATS = frozenset({"JPEG", "PNG", "GIF", "WEBP"})
-_OUTPUT_FORMATS = {"image/jpeg": ("JPEG", ".jpg"), "image/png": ("PNG", ".png")}
+_OUTPUT_FORMATS = {
+    "image/jpeg": ("JPEG", ".jpg"),
+    "image/png": ("PNG", ".png"),
+    "image/gif": ("GIF", ".gif"),
+}
 _MAX_REDIRECTS = 3
 _HTTP_TOTAL_TIMEOUT = 30.0
 
@@ -91,14 +98,21 @@ def _check_dimensions(size: tuple[int, int], limits: ImageLimits) -> None:
         )
 
 
-def _normalise_image(data: bytes, limits: ImageLimits) -> tuple[bytes, str, int, int]:
-    """Freeze frame zero, apply EXIF orientation, scale, discard metadata.
+def _normalise_image(
+    data: bytes,
+    limits: ImageLimits,
+    *,
+    gif_mode: str = "native",
+) -> tuple[bytes, str, int, int]:
+    """Normalize static images; optionally preserve a complete GIF.
 
-    JPEG stays RGB JPEG (quality=85, 4:2:0, no optimize/progressive); all other
-    supported inputs become RGB/RGBA PNG (compression=6). Source and output must
-    fit the configured byte limit; output is scaled to at most max_image_side
-    without upscaling.
+    ``gif_mode="native"`` stores the original GIF bytes and sends the full
+    animation. ``gif_mode="first_frame"`` keeps the legacy first-frame PNG path.
+    JPEG stays RGB JPEG (quality=85, 4:2:0, no optimize/progressive); other
+    static inputs become RGB/RGBA PNG (compression=6).
     """
+    if gif_mode not in {"native", "first_frame"}:
+        raise ImageAssetError("GIF 处理模式无效", code="image_unsupported_format")
     _check_size(data, limits.max_image_bytes)
     try:
         with warnings.catch_warnings():
@@ -111,6 +125,21 @@ def _normalise_image(data: bytes, limits: ImageLimits) -> tuple[bytes, str, int,
                     )
                 _check_dimensions(probe.size, limits)
                 image_format = probe.format
+                width, height = probe.size
+                frames = int(getattr(probe, "n_frames", 1) or 1)
+                if image_format == "GIF" and gif_mode == "native":
+                    if frames > MAX_GIF_FRAMES:
+                        raise ImageAssetError(
+                            f"GIF 帧数超过限制（最多 {MAX_GIF_FRAMES} 帧）",
+                            code="image_pixel_limit",
+                        )
+                    if width * height * frames > MAX_GIF_TOTAL_PIXELS:
+                        raise ImageAssetError(
+                            "GIF 总解码像素超过安全限制",
+                            code="image_pixel_limit",
+                        )
+                    probe.verify()
+                    return data, "image/gif", width, height
                 probe.verify()
             with Image.open(io.BytesIO(data)) as source:
                 _check_dimensions(source.size, limits)
@@ -256,13 +285,28 @@ async def _checked_remote_url(source: str) -> tuple[httpx.URL, str, int, str]:
     return url, host, port, addresses[0]
 
 
-async def _download_image(source: str, limits: ImageLimits) -> bytes:
+async def _download_image(
+    source: str,
+    limits: ImageLimits,
+    *,
+    max_bytes: int | None = None,
+    accept: str = "image/jpeg,image/png,image/gif,image/webp",
+    request_timeout: float = 20.0,
+    total_timeout: float = _HTTP_TOTAL_TIMEOUT,
+) -> bytes:
     """Check every hop and pin its public IP, including HTTPS SNI/Host.
 
     The transport API avoids AsyncClient's INFO logging of signed request URLs.
     No environment proxy, cookies, automatic redirects or HTTP decompression are
     used. DNS cannot be rebound between validation and connection.
+
+    ``max_bytes``/``accept`` allow the video store to reuse the same SSRF and
+    redirect guards without weakening image limits. The size cap and HTTP
+    timeout are explicit; callers must not silently increase them.
     """
+    cap = limits.max_image_bytes if max_bytes is None else max_bytes
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap <= 0:
+        raise ImageAssetError("图片下载大小限制无效", code="image_source_unavailable")
 
     async def download() -> bytes:
         current = source
@@ -276,12 +320,15 @@ async def _download_image(source: str, limits: ImageLimits) -> bytes:
                 url.copy_with(host=address),
                 headers={
                     "Host": authority,
-                    "Accept": "image/jpeg,image/png,image/gif,image/webp",
+                    "Accept": accept,
                     "Accept-Encoding": "identity",
                 },
                 extensions={
                     "sni_hostname": host,
-                    "timeout": httpx.Timeout(20.0, connect=5.0).as_dict(),
+                    "timeout": httpx.Timeout(
+                        request_timeout,
+                        connect=min(5.0, request_timeout),
+                    ).as_dict(),
                 },
             )
             # A transport per hop also prevents TLS pooling across different
@@ -323,20 +370,20 @@ async def _download_image(source: str, limits: ImageLimits) -> bytes:
                                 "图片下载大小无效",
                                 code="image_source_unavailable",
                             ) from None
-                        if declared_size < 0 or declared_size > limits.max_image_bytes:
+                        if declared_size < 0 or declared_size > cap:
                             raise ImageAssetError(
                                 "图片超过字节限制",
                                 code="image_too_large",
                             )
                     buffer = bytearray()
                     async for chunk in response.aiter_raw(chunk_size=64 * 1024):
-                        if len(buffer) + len(chunk) > limits.max_image_bytes:
+                        if len(buffer) + len(chunk) > cap:
                             raise ImageAssetError(
                                 "图片超过字节限制",
                                 code="image_too_large",
                             )
                         buffer.extend(chunk)
-                    return _check_size(bytes(buffer), limits.max_image_bytes)
+                    return _check_size(bytes(buffer), cap)
                 finally:
                     await response.aclose()
         raise ImageAssetError(
@@ -345,7 +392,7 @@ async def _download_image(source: str, limits: ImageLimits) -> bytes:
         )
 
     try:
-        return await asyncio.wait_for(download(), timeout=_HTTP_TOTAL_TIMEOUT)
+        return await asyncio.wait_for(download(), timeout=total_timeout)
     except ImageAssetError:
         raise
     except (httpx.HTTPError, OSError, ValueError, asyncio.TimeoutError):
@@ -373,6 +420,33 @@ async def download_remote_image_bytes(
         )
     )
     return await _download_image(source, limits)
+
+
+async def download_remote_media_bytes(
+    source: str,
+    *,
+    max_bytes: int,
+    request_timeout: float = 60.0,
+    total_timeout: float = 180.0,
+) -> bytes:
+    """Download one remote media file with the same SSRF/redirect guards.
+
+    It is used by the video store with a larger cap and timeout, but deliberately
+    does not relax public-IP pinning, redirect limits, or identity encoding.
+    """
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        raise ValueError("max_bytes must be a positive integer")
+    return await _download_image(
+        source,
+        ImageLimits(),
+        max_bytes=max_bytes,
+        accept=(
+            "video/mp4,video/webm,video/quicktime,video/mpeg,"
+            "application/octet-stream"
+        ),
+        request_timeout=request_timeout,
+        total_timeout=total_timeout,
+    )
 
 
 def _local_path(source: str | Path) -> Path:
@@ -518,8 +592,12 @@ class ImageAssetStore:
         *,
         cache_max_bytes: int | None = None,
         limits: ImageLimits | None = None,
+        gif_mode: str = "native",
     ) -> None:
+        if gif_mode not in {"native", "first_frame"}:
+            raise ValueError("gif_mode must be 'native' or 'first_frame'")
         self.limits = limits or ImageLimits()
+        self.gif_mode = gif_mode
         if cache_max_bytes is None:
             cache_max_bytes = self.limits.cache_max_bytes
         if isinstance(cache_max_bytes, bool) or not isinstance(cache_max_bytes, int):
@@ -604,9 +682,21 @@ class ImageAssetStore:
                 _normalise_image,
                 raw,
                 self.limits,
+                gif_mode=self.gif_mode,
+            )
+            transform_version = (
+                GIF_TRANSFORM_VERSION
+                if mime == "image/gif"
+                else self.transform_version
             )
             sha256 = hashlib.sha256(data).hexdigest()
-            path = await asyncio.to_thread(self._persist, data, sha256, mime)
+            path = await asyncio.to_thread(
+                self._persist,
+                data,
+                sha256,
+                mime,
+                transform_version,
+            )
         ref = {
             "sha256": sha256,
             "mime": mime,
@@ -617,7 +707,7 @@ class ImageAssetStore:
             "detail": "auto",
             "message_id": str(message_id),
             "index": index,
-            "transform_version": self.transform_version,
+            "transform_version": transform_version,
         }
         self._ingest_count += 1
         return validate_image_asset_ref(ref)
@@ -685,8 +775,13 @@ class ImageAssetStore:
         """Project in order without modifying history or dropping failed assets."""
         return [await self.project_record(record) for record in records]
 
-    def _relative_path(self, sha256: str, mime: str) -> str:
-        return asset_relative_path(self.transform_version, sha256, mime)
+    def _relative_path(
+        self,
+        sha256: str,
+        mime: str,
+        version: str | None = None,
+    ) -> str:
+        return asset_relative_path(version or self.transform_version, sha256, mime)
 
     def _checked_reference(self, asset: Mapping[str, Any]) -> dict[str, Any]:
         return validate_image_asset_ref(asset, limits=self.limits)
@@ -781,8 +876,14 @@ class ImageAssetStore:
                 max_bytes,
             )
 
-    def _persist(self, data: bytes, sha256: str, mime: str) -> str:
-        relative = self._relative_path(sha256, mime)
+    def _persist(
+        self,
+        data: bytes,
+        sha256: str,
+        mime: str,
+        version: str | None = None,
+    ) -> str:
+        relative = self._relative_path(sha256, mime, version)
         directory = Path(relative).parent
         path = self._checked_path(relative)
         with self._directory(directory, create=True) as (directory_path, directory_fd):
@@ -929,6 +1030,7 @@ __all__ = [
     "ImageAssetError",
     "ImageAssetStore",
     "download_remote_image_bytes",
+    "download_remote_media_bytes",
     "prepare_image_data_url",
     "TRANSFORM_VERSION",
     "TRANSFORM_VERSION_V1",

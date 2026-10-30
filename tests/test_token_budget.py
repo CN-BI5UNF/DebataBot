@@ -497,6 +497,31 @@ def test_image_base64_growth_does_not_inflate_text_tokens():
     )
 
 
+def test_video_base64_growth_does_not_inflate_text_tokens():
+    def video_message(payload: str) -> dict:
+        return {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "看视频"},
+                {
+                    "type": "video_url",
+                    "video_url": {"url": "data:video/mp4;base64," + payload},
+                },
+            ],
+        }
+
+    estimator = TokenEstimator(model="video-model", include_image_assets=True)
+    small_message = video_message("A" * 100)
+    large_message = video_message("A" * 100_000)
+
+    assert estimator.raw_message_tokens([small_message]) == (
+        estimator.raw_message_tokens([large_message])
+    )
+    assert estimator.estimate_messages([small_message]) == (
+        estimator.estimate_messages([large_message])
+    )
+
+
 def test_image_reserve_does_not_depend_on_declared_dimensions():
     estimator = TokenEstimator(model="vision-model", include_image_assets=True)
     for overrides in (

@@ -23,7 +23,7 @@ export function render(container, ctx) {
     personas: [],
     // 收集中的配置
     provider: {
-      id: '', preset: null, display_name: '', protocol: 'openai_compat',
+      id: '', preset: null, model_vendor: null, display_name: '', protocol: 'openai_compat',
       base_url: '', model: '', api_key: '', reasoning_style: '', timeout_seconds: 120,
       has_key: false,
     },

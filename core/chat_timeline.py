@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 from adapters.types import IncomingMessage, MediaSegment, MediaType
 from utils import get_time
+from utils.qq_faces import face_label
 
 _PARAM_SPLIT_RE = re.compile(r",(?=\w+=)")
 logger = logging.getLogger(__name__)
@@ -485,7 +486,7 @@ def _format_attachment_compact(item: dict[str, Any], item_type: str) -> str:
         return "[图片]"
     if item_type == "face":
         face_id = item.get("id") or item.get("file")
-        return f"[表情{face_id}]" if face_id else "[表情]"
+        return face_label(face_id) if face_id else "[表情]"
     if item_type == "forward":
         forward_id = item.get("forward_id") or item.get("id")
         return f"[合并转发 id={forward_id}]" if forward_id else "[合并转发]"

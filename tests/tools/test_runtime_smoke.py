@@ -309,6 +309,7 @@ async def test_all_tools_have_clear_results_in_simulated_runtime(tmp_path, monke
         "list_knowledge_notes": {},
         "lookup_slang": {"query": "难绷", "limit": 8},
         "delete_knowledge_note": {"entry_id": "abcdef123456"},
+        "container": {"action": "status"},
     }
     assert set(calls) == {spec.name for spec in get_default_specs()}
 

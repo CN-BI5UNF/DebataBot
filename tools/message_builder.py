@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from utils.image_contracts import SUPPORTED_IMAGE_EXTS
+from utils.qq_faces import face_name, face_options_hint, resolve_face_id
 
 logger = logging.getLogger(__name__)
 
@@ -235,14 +236,20 @@ def build_message_action(
     image: str | None,
     emoji_dir: Path | None,
     workspace_dir: Path | None,
+    *,
+    face: str | None = None,
 ) -> dict:
-    """把 content/emoji/image 三选一输入拼成发送动作片段。
+    """把 content/emoji/image/face 四选一输入拼成发送动作片段。
 
     返回字段可直接 merge 到发送 action。
     """
-    values = [value for value in (content, emoji, image) if str(value or "").strip()]
+    values = [
+        value
+        for value in (content, emoji, image, face)
+        if str(value or "").strip()
+    ]
     if len(values) != 1:
-        raise MessageBuildError("content、emoji、image 必须且只能填写一个")
+        raise MessageBuildError("content、emoji、image、face 必须且只能填写一个")
 
     if content and content.strip():
         return {
@@ -266,5 +273,18 @@ def build_message_action(
             "image_url": image_url or "",
             "content": "",
             "label": label,
+        }
+    if face and face.strip():
+        face_id = resolve_face_id(face)
+        if face_id is None:
+            raise MessageBuildError(
+                f"未知 QQ 表情：{face.strip()}。可用中文名如：{face_options_hint()}"
+            )
+        name = face_name(face_id) or str(face).strip()
+        return {
+            "kind": "face",
+            "face_id": face_id,
+            "content": f"[CQ:face,id={face_id}]",
+            "label": f"[{name}]",
         }
     raise MessageBuildError("内容为空")

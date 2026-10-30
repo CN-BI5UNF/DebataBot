@@ -16,6 +16,7 @@ from utils.image_budget import (
     wire_image_metrics,
 )
 from utils.image_contracts import (
+    GIF_TRANSFORM_VERSION,
     TRANSFORM_VERSION_V2,
     ImageAssetError,
     ImageBudgetProfile,
@@ -37,6 +38,22 @@ def _ref(index: int = 0, *, byte_size: int = 300, message_id: str = "m1") -> dic
         "message_id": message_id,
         "index": index,
         "transform_version": TRANSFORM_VERSION_V2,
+    }
+
+
+def _gif_ref(index: int = 0, *, byte_size: int = 300, message_id: str = "m1") -> dict:
+    sha = f"{index + 11:064x}"
+    return {
+        "sha256": sha,
+        "mime": "image/gif",
+        "width": 32,
+        "height": 24,
+        "byte_size": byte_size,
+        "path": asset_relative_path(GIF_TRANSFORM_VERSION, sha, "image/gif"),
+        "detail": "auto",
+        "message_id": message_id,
+        "index": index,
+        "transform_version": GIF_TRANSFORM_VERSION,
     }
 
 
@@ -108,6 +125,26 @@ def test_budget_view_rejects_already_materialized_or_non_user_assets():
     non_user["role"] = "assistant"
     with pytest.raises(ImageAssetError, match="真实用户消息"):
         build_budget_messages([non_user], {0: [_ref(0)]})
+
+
+def test_wire_metrics_accepts_complete_gif_data_url():
+    refs = [_gif_ref(0)]
+    url = "data:image/gif;base64," + ("A" * 100)
+    message = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "看这个动图"},
+            {
+                "type": "text",
+                "text": "[GIF所属消息 msg_id=m1 index=0]",
+            },
+            {"type": "image_url", "image_url": {"url": url, "detail": "auto"}},
+        ],
+        "metadata": {"image_assets": refs},
+    }
+
+    assert wire_image_metrics([message]) == (1, len(url))
+    assert assert_wire_request_fits([message]) == (1, len(url))
 
 
 def test_wire_metrics_requires_managed_data_url_and_matching_count():

@@ -771,6 +771,7 @@ export function buildPayload(state) {
   const provider = {
     id: state.provider.id || 'main_provider',
     preset: state.provider.preset || null,
+    model_vendor: state.provider.model_vendor || null,
     display_name: state.provider.display_name || state.provider.id,
     protocol: state.provider.protocol || null,
     base_url: state.provider.base_url || null,

@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 # 已实现图片块协议转换的协议。
 _NATIVE_IMAGE_PROTOCOLS = frozenset({"openai_compat", "anthropic"})
 
+# 已实现完整视频 video_url 传递的协议；Anthropic Messages API 不支持视频。
+_NATIVE_VIDEO_PROTOCOLS = frozenset({"openai_compat"})
+
 _VISION_FAILURE_MESSAGES = {
     "vision_local_not_implemented": "features.vision.type=local 当前未实装，独立视觉服务不可用",
     "vision_config_invalid": "独立视觉服务配置无效，请检查 provider、model 和地址",
@@ -106,6 +109,7 @@ class Runtime:
         self.web_search: Any = None
         self.web_fetch: Any = None
         self.weather: Any = None
+        self.container: Any = None
         self.embedding_service: Any = None
         self.rag_store: Any = None
         self.rag_memory: Any = None
@@ -124,6 +128,7 @@ class Runtime:
             "updated_at": time.time(),
         }
         self._provider_health_task: asyncio.Task | None = None
+        self._container_prepare_task: asyncio.Task | None = None
         self._dependency_install_started: set[str] = set()
         self._shutdown_started = False
         self._shutdown_complete = False
@@ -534,6 +539,25 @@ class Runtime:
                     f"没找到密钥，weather 服务跳过实例化"
                 )
 
+        # ----- 6.4 受控 Docker 容器（惰性启动，不探测/拉取镜像）-----
+        from features.container import ContainerService
+
+        self.container = ContainerService(self.config.features.container, self.paths)
+        if self.container.enabled:
+            self.container.start()
+            # 不阻塞 Runtime 启动：检查 Docker/镜像，缺失且允许时后台拉取。
+            # 不在这里挂载 C 存储或启动容器；C 仍需用户完成管理员初始化。
+            self._container_prepare_task = asyncio.create_task(
+                self._prepare_container_startup(),
+                name="container-prepare",
+            )
+            logger.info(
+                "ContainerService 已启用：mode=%s image=%s name=%s",
+                self.config.features.container.storage_mode,
+                self.config.features.container.image,
+                self.config.features.container.container_name,
+            )
+
         # ----- 6.5 RAG 长期记忆（embedding + 向量存储）-----
         if self.config.features.long_term_memory.mode == "rag":
             vector_dir = self.paths.vector_dir_for(self.persona.name)
@@ -633,6 +657,7 @@ class Runtime:
         )
         chat_context_length = self._model_context_length(chat_cfg.provider, chat_cfg.model)
         main_model_images_enabled = self._main_model_images_enabled()
+        main_model_videos_enabled = self._main_model_videos_enabled()
         vision_cfg = self.config.features.vision
         from utils.image_budget import resolve_image_budget_profile
 
@@ -681,9 +706,15 @@ class Runtime:
             "image_limits": vision_cfg.image_limits.to_image_limits(),
             "image_budget_profile": image_budget_profile,
             "image_token_reserve": image_token_reserve,
+            "gif_mode": vision_cfg.gif_mode,
+            "main_model_videos_enabled": main_model_videos_enabled,
+            "video_limits": vision_cfg.video_limits.to_video_limits(),
+            "video_budget_profile": "reserve_v1",
+            "video_token_reserve": int(vision_cfg.video_token_reserve),
             "web_search": self.web_search,
             "web_fetch": self.web_fetch,
             "weather": self.weather,
+            "container": self.container,
             "slang_service": self.slang_service,
             "knowledge_service": self.knowledge_service,
             "asr": self.asr,
@@ -765,13 +796,39 @@ class Runtime:
         preset = getattr(self.provider_registry, "presets", {}).get(preset_id)
         return str(getattr(preset, "protocol", "") or "")
 
-    def _main_model_images_enabled(self) -> bool:
-        """解析主模型附图开关；auto 只信任实际预设的已知模型能力。
+    def _main_model_capability(self, capability: str) -> bool:
+        """主模型是否声明了某项能力（中转站按 model_vendor / 模型 ID 识别）。
 
-        - off：不附图；
-        - on：显式声明视觉模型，但仍要求协议能转换图片块；
-        - auto：只对已收录且精确匹配的 provider/preset+model 开启。
+        只信任精确匹配的能力表或预设模型；未知模型仍不猜测。自定义中转站可在
+        provider 上设置 model_vendor，或者由模型 ID 前缀自动识别为 Gemini/Claude 等。
         """
+        chat = self.config.agents.chat
+        cfg = self.config.providers.get(chat.provider)
+        preset_id = (cfg.preset or "").lower() if cfg else ""
+        from providers.model_capabilities import resolve_model_capability
+
+        explicit_vendor = str(
+            getattr(cfg, "model_vendor", None) or ""
+        ).strip().lower() if cfg else ""
+        info, _used_vendor = resolve_model_capability(
+            chat.provider,
+            chat.model,
+            vendor=explicit_vendor,
+            preset=preset_id,
+        )
+        if info is not None:
+            return info.supports(capability)
+        # 用户手动声明了厂商、但模型 ID 尚未收录时，视觉可沿用该厂商的
+        # vision_reuse 声明（Gemini/Claude/OpenAI 等全系视觉）。视频不猜。
+        if capability == "vision" and explicit_vendor:
+            from providers.model_capabilities import load_model_capabilities
+
+            vendor_info = load_model_capabilities().get(explicit_vendor)
+            return bool(vendor_info and vendor_info.vision_reuse)
+        return False
+
+    def _main_model_images_enabled(self) -> bool:
+        """解析主模型附图开关；auto 只信任精确匹配的模型能力。"""
         mode = self.config.features.vision.main_model_images
         if mode == "off":
             return False
@@ -781,19 +838,20 @@ class Runtime:
             return False
         if mode == "on":
             return True
-        cfg = self.config.providers.get(chat.provider)
-        preset_id = (cfg.preset or "").lower() if cfg else ""
-        if not preset_id:
-            return False
-        preset = getattr(self.provider_registry, "presets", {}).get(preset_id)
-        if preset is not None:
-            for model in preset.models:
-                if model.id == chat.model:
-                    return "vision" in model.capabilities
-        from providers.model_capabilities import model_capability
+        return self._main_model_capability("vision")
 
-        info = model_capability(preset_id, chat.model)
-        return bool(info is not None and info.supports("vision"))
+    def _main_model_videos_enabled(self) -> bool:
+        """解析主模型原生视频开关；auto 只信任精确匹配的视频能力。"""
+        mode = self.config.features.vision.main_model_videos
+        if mode == "off":
+            return False
+        chat = self.config.agents.chat
+        protocol = self._provider_protocol(chat.provider)
+        if protocol not in _NATIVE_VIDEO_PROTOCOLS:
+            return False
+        if mode == "on":
+            return True
+        return self._main_model_capability("video")
 
     def _vision_provider_config(self) -> Any:
         """复制独立视觉配置；绝不把其密钥/地址写回共享主 provider。"""
@@ -971,6 +1029,30 @@ class Runtime:
     # 优雅关闭（严格相反顺序）
     # ============================================================
 
+    async def _prepare_container_startup(self) -> None:
+        """启动后台检查 Docker 与镜像；不启动容器、不挂载 C 存储。"""
+        service = getattr(self, "container", None)
+        if service is None or not getattr(service, "enabled", False):
+            return
+        try:
+            result = await asyncio.wait_for(service.prepare(), timeout=620.0)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 可选功能不能拖垮启动
+            logger.warning("容器启动检查失败（不影响主流程）：%s", exc)
+            self.feature_failures["container"] = f"启动检查失败：{exc}"
+            return
+        # Docker 后来恢复时，不要让旧的启动失败一直挂在功能诊断里。
+        self.feature_failures.pop("container", None)
+        self.feature_failure_codes.pop("container", None)
+        if result.get("image_ready"):
+            logger.info("容器镜像已就绪：%s", result.get("image", ""))
+        if not result.get("storage_ready"):
+            logger.warning(
+                "容器 C 存储尚未就绪（%s）；请在 WebUI「容器」页初始化存储",
+                result.get("storage_error") or result.get("storage_code") or "未挂载",
+            )
+
     async def shutdown(self) -> None:
         """按相反顺序关闭所有组件，单个失败不影响其它。"""
         if self._shutdown_complete:
@@ -996,6 +1078,14 @@ class Runtime:
             self._provider_health_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._provider_health_task
+
+        if (
+            self._container_prepare_task is not None
+            and not self._container_prepare_task.done()
+        ):
+            self._container_prepare_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._container_prepare_task
 
         async def _close(label: str, coro_factory, timeout: float = 8.0) -> None:
             t0 = time.monotonic()
@@ -1023,6 +1113,9 @@ class Runtime:
         knowledge_service = getattr(self, "knowledge_service", None)
         if knowledge_service is not None:
             await _close("knowledge_service", knowledge_service.aclose)
+        container_service = getattr(self, "container", None)
+        if container_service is not None:
+            await _close("container", container_service.aclose)
         storage_service = getattr(self, "_storage_maintenance_service", None)
         if storage_service is not None:
             await _close("storage_maintenance", storage_service.shutdown)

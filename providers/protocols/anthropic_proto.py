@@ -583,6 +583,11 @@ def _convert_user_content(content: Any) -> str | list[dict[str, Any]]:
                 }
             )
             continue
+        if block_type == "video_url":
+            raise ProviderUnsupportedError(
+                "Anthropic Messages API 不支持视频输入，请改用支持 video_url 的"
+                " OpenAI 兼容 provider"
+            )
         if block_type == "image":
             source = block.get("source")
             if not isinstance(source, dict):

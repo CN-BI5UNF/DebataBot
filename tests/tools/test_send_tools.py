@@ -286,6 +286,27 @@ async def test_send_group_emoji_uses_emoji_name_without_suffix(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_send_group_face_uses_qq_face_name(tmp_path):
+    cfg = _make_config()
+    reg = build_default_registry(cfg)
+    adapter = FakeSendAdapter()
+    ctx = ToolContext(adapter=adapter)
+    executor = reg.get_executor(ctx)
+
+    result = await executor(
+        "send_group_message",
+        {
+            "group_id": 100,
+            "targets": [{"face": "流眼泪", "order": 1, "delay": 0}],
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["sent"][0]["content"] == "[流眼泪]"
+    assert [content for _, content in adapter.sent] == ["[CQ:face,id=5]"]
+
+
+@pytest.mark.asyncio
 async def test_send_group_image_is_workspace_or_url_not_emoji(tmp_path):
     cfg = _make_config()
     reg = build_default_registry(cfg)

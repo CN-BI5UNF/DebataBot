@@ -16,6 +16,7 @@ from urllib.parse import unquote, urlsplit
 from adapters.types import IncomingMessage, MediaSegment, MediaType
 from utils import parse_raw_cq
 from utils.image_contracts import ImageAssetError, ImageLimits
+from utils.video_contracts import VideoAssetError, VideoLimits
 
 logger = logging.getLogger("core.message_pipeline")
 
@@ -28,6 +29,7 @@ class MediaPipelineMixin:
         结果存在 event.text 里。这里只在 event.text 为空（异常路径）时回退重算。
         然后扫描 event.media，把占位升级为含 URL / 转录 / workspace 路径的版本：
             - 图片：[图片] → [图片 url=... workspace=<相对路径>]
+            - 视频：[视频] → [视频 workspace=<相对路径>]（仅启用原生视频输入时存储）
             - 语音：[语音] → [音频消息: 转录文本 workspace=<相对路径>]
             - 文件：[文件] → [文件 url=... workspace=<相对路径>]
         媒体文件会下载落地到 data/workspace/incoming/，让 AI 可以用 read_file 直接读。
@@ -38,10 +40,13 @@ class MediaPipelineMixin:
             text = parse_raw_cq(event.raw_message, bot_qq)
         text = text or ""
 
-        # 图片资产只由本方法写入；重复调用时先清空，避免重复归属。
+        # 媒体资产只由本方法写入；重复调用时先清空，避免重复归属。
         event.image_assets = []
         event.image_input_errors = []
+        event.video_assets = []
+        event.video_input_errors = []
         image_index = 0
+        video_index = 0
 
         # 升级媒体占位为含 URL / 转录 / 受管图片路径的版本
         for seg in event.media:
@@ -111,6 +116,82 @@ class MediaPipelineMixin:
                                 replacement = f"[图片未附加: {message}]"
                     if "[图片]" in text:
                         text = text.replace("[图片]", replacement, 1)
+                    else:
+                        text = f"{text} {replacement}".strip()
+                elif seg.type == MediaType.VIDEO:
+                    video_position = video_index
+                    video_index += 1
+                    if not getattr(self, "main_model_videos_enabled", False):
+                        replacement = (
+                            "[视频: 未发送给主模型（当前未启用原生视频输入）]"
+                        )
+                    else:
+                        limits = self._video_limits()
+                        if video_position >= limits.max_videos_per_message:
+                            message = "超过每条消息视频数量限制"
+                            self._record_video_error(
+                                event,
+                                video_position,
+                                "video_request_count_exceeded",
+                                message,
+                            )
+                            replacement = f"[视频未附加: {message}]"
+                        else:
+                            store = None
+                            try:
+                                store = self._video_asset_store()
+                            except Exception:  # noqa: BLE001
+                                logger.exception("初始化视频资产 Store 失败")
+                            if store is None:
+                                message = "未配置视频workspace"
+                                self._record_video_error(
+                                    event,
+                                    video_position,
+                                    "video_source_unavailable",
+                                    message,
+                                )
+                                replacement = f"[视频未附加: {message}]"
+                            else:
+                                try:
+                                    source, trusted_local = (
+                                        await self._resolve_video_source(seg)
+                                    )
+                                    if source is None:
+                                        raise VideoAssetError(
+                                            "视频来源不可用",
+                                            code="video_source_unavailable",
+                                        )
+                                    ref = await store.ingest(
+                                        source,
+                                        message_id=event.message_id,
+                                        index=video_position,
+                                        trusted_local=trusted_local,
+                                    )
+                                    event.video_assets.append(dict(ref))
+                                    replacement = (
+                                        f"[视频 workspace={ref['path']}]"
+                                    )
+                                except VideoAssetError as exc:
+                                    message = exc.safe_message()
+                                    self._record_video_error(
+                                        event,
+                                        video_position,
+                                        exc.code,
+                                        message,
+                                    )
+                                    replacement = f"[视频未附加: {message}]"
+                                except Exception:  # noqa: BLE001
+                                    logger.exception("视频入站处理失败")
+                                    message = "视频处理失败"
+                                    self._record_video_error(
+                                        event,
+                                        video_position,
+                                        "video_source_unavailable",
+                                        message,
+                                    )
+                                    replacement = f"[视频未附加: {message}]"
+                    if "[视频]" in text:
+                        text = text.replace("[视频]", replacement, 1)
                     else:
                         text = f"{text} {replacement}".strip()
                 elif seg.type in (MediaType.VOICE, MediaType.RECORD):
@@ -329,9 +410,104 @@ class MediaPipelineMixin:
             return store
         from features.vision.image_assets import ImageAssetStore
 
-        store = ImageAssetStore(workspace, limits=self._image_limits())
+        store = ImageAssetStore(
+            workspace,
+            limits=self._image_limits(),
+            gif_mode=getattr(self, "gif_mode", "native"),
+        )
         self._image_asset_store_instance = store
         return store
+
+    def _video_limits(self) -> VideoLimits:
+        limits = getattr(self, "video_limits", None)
+        return limits if isinstance(limits, VideoLimits) else VideoLimits()
+
+    def _video_asset_store(self):
+        """懒创建受管视频 Store；无 workspace 时不建目录。"""
+        workspace = getattr(self, "workspace_dir", None)
+        if not workspace:
+            return None
+        store = getattr(self, "_video_asset_store_instance", None)
+        if store is not None:
+            return store
+        from features.vision.video_assets import VideoAssetStore
+
+        store = VideoAssetStore(workspace, limits=self._video_limits())
+        self._video_asset_store_instance = store
+        return store
+
+    async def _resolve_video_source(
+        self,
+        seg: MediaSegment,
+    ) -> tuple[str | Path | None, bool]:
+        """返回 (source, trusted_local)；只信任适配器提供的本地路径。
+
+        优先使用适配器给出的本地路径/resolver，最后才尝试远程 URL；这样
+        NapCat 的本机临时文件不会因为公网 SSRF 护栏被误拒。
+        """
+        candidates: list[str] = []
+        extra = seg.extra if isinstance(seg.extra, dict) else {}
+        for value in (extra.get("path"), extra.get("file_path")):
+            if isinstance(value, str) and value.strip():
+                candidates.append(value.strip())
+        if seg.file_id and self._is_opaque_platform_file_id(seg.file_id):
+            get_file_url = getattr(self.adapter, "get_file_url", None)
+            if get_file_url is not None:
+                try:
+                    resolved = await get_file_url(seg.file_id)
+                except (AttributeError, NotImplementedError):
+                    resolved = None
+                except Exception:  # noqa: BLE001
+                    logger.warning("适配器视频 resolver 执行失败（已隐藏来源）")
+                    resolved = None
+                if isinstance(resolved, str) and resolved.strip():
+                    candidates.append(resolved.strip())
+        if isinstance(seg.url, str) and seg.url.strip():
+            candidates.append(seg.url.strip())
+        for candidate in candidates:
+            if candidate == seg.file_id:
+                continue
+            try:
+                parsed = urlsplit(candidate)
+            except ValueError:
+                continue
+            if parsed.scheme in {"http", "https"}:
+                return candidate, False
+            if parsed.scheme == "file":
+                if parsed.netloc not in {"", "localhost"}:
+                    continue
+                value = unquote(parsed.path)
+                if re.match(r"^/[A-Za-z]:/", value):
+                    value = value[1:]
+                path = Path(value)
+                if path.is_absolute() and path.is_file():
+                    return path, True
+                continue
+            if re.match(r"^[A-Za-z]:[\\/]", candidate):
+                path = Path(candidate)
+                if path.is_absolute() and path.is_file():
+                    return path, True
+                continue
+            if not parsed.scheme:
+                path = Path(candidate)
+                if path.is_absolute() and path.is_file():
+                    return path, True
+        return None, False
+
+    @staticmethod
+    def _record_video_error(
+        event: IncomingMessage,
+        index: int,
+        code: str,
+        message: str,
+    ) -> None:
+        event.video_input_errors.append(
+            {
+                "index": index,
+                "code": code,
+                "message": message,
+            }
+        )
 
     @staticmethod
     def _is_opaque_platform_file_id(value: str | None) -> bool:

@@ -5,20 +5,25 @@
 
 import { h, fill, card, empty, field, table, formatNumber } from '../dom.js';
 import { endpoints } from '../api.js';
-import { renderModelsPanel } from '../providers.js';
+import { promptStorageSetup } from '../container_setup.js';
+import { resolvePresetModel, resolveProviderVendor } from '../providers.js';
 import { renderReleaseList, formatDateTime, promptBackendRestart } from '../releases.js';
 
 // 视觉字段由专用面板渲染；这里再按路径兜底一次，避免旧进程尚未加载
 // settings_spec 的 hidden 标记时，通用表单和专用面板重复出现同一批字段。
 const VISION_FIELD_PATHS = new Set([
   'features.vision.main_model_images',
+  'features.vision.gif_mode',
+  'features.vision.main_model_videos',
   'features.vision.enabled',
   'features.vision.provider',
   'features.vision.model',
   'features.vision.base_url',
   'features.vision.api_key_id',
   'features.vision.image_token_reserve',
+  'features.vision.video_token_reserve',
   'features.vision.image_limits.max_images_per_request',
+  'features.vision.video_limits.max_videos_per_request',
 ]);
 
 const SEARCH_FIELD_PATHS = new Set([
@@ -45,7 +50,7 @@ export async function render(container, ctx) {
 
   const groups = payload.groups || [];
   const pathsInfo = payload.paths || {};
-  let activeKey = 'models';
+  let activeKey = groups[0]?.key || 'paths';
   let restartHint = null;
 
   const nav = h('div', { class: 'settings-nav' });
@@ -57,7 +62,6 @@ export async function render(container, ctx) {
   const hintHost = h('div', {});
 
   const tabs = [
-    { key: 'models', title: '模型' },
     ...groups.map((g) => ({ key: g.key, title: g.title })),
     { key: 'paths', title: '路径与诊断' },
   ];
@@ -247,6 +251,17 @@ export async function render(container, ctx) {
       fieldSpec.value = result.value;
       ctx.toast(`${fieldSpec.label} 已保存`, 'ok');
       if (result.needs_restart) markRestart();
+      // 首次启用容器（或切到 C 模式）时，如果固定大小存储还没挂载，
+      // 直接弹出一次管理员初始化窗口；B 模式不会触发。
+      const containerSetupTrigger = (
+        fieldSpec.path === 'features.container.enabled' && value === true
+      ) || (
+        fieldSpec.path === 'features.container.storage_mode'
+        && value === 'image_fixed'
+      );
+      if (containerSetupTrigger) {
+        await promptStorageSetup(ctx);
+      }
     } catch (e) {
       ctx.toast(`${fieldSpec.label} 保存失败：${e.message}`, 'error');
     }
@@ -266,6 +281,11 @@ export async function render(container, ctx) {
     const apiKeySpec = byPath.get('features.vision.api_key_id');
     const tokenSpec = byPath.get('features.vision.image_token_reserve');
     const maxImagesSpec = byPath.get('features.vision.image_limits.max_images_per_request');
+    const gifSpec = byPath.get('features.vision.gif_mode');
+    const videoSpec = byPath.get('features.vision.main_model_videos');
+    const videoTokenSpec = byPath.get('features.vision.video_token_reserve');
+    const maxVideosSpec = byPath.get(
+      'features.vision.video_limits.max_videos_per_request');
     if (!nativeSpec || !enabledSpec || !providerSpec || !modelSpec
         || !baseUrlSpec || !apiKeySpec) {
       return;
@@ -297,12 +317,13 @@ export async function render(container, ctx) {
       const chat = providerPayload.agents?.chat;
       if (!chat) return null;
       const provider = providerList.find((item) => item.id === chat.provider) || null;
-      const preset = presetOf(provider);
-      const model = preset?.models?.find((item) => item.id === chat.model) || null;
+      const matched = resolvePresetModel(presets, provider, chat.model);
       return {
         chat,
         provider,
-        supports: Boolean(model?.capabilities?.includes('vision')),
+        vendor: matched.vendor,
+        supports: Boolean(matched.model?.capabilities?.includes('vision')),
+        supportsVideo: Boolean(matched.model?.capabilities?.includes('video')),
       };
     }
 
@@ -355,6 +376,10 @@ export async function render(container, ctx) {
       nativeChildren.push(control(maxImagesSpec,
         (value) => saveField(maxImagesSpec, value)));
     }
+    if (gifSpec) {
+      nativeChildren.push(control(gifSpec,
+        (value) => saveField(gifSpec, value)));
+    }
     if (providerLoadError) {
       nativeChildren.push(h('p', { class: 'field-help' },
         `读取 provider/预设失败，无法判断当前聊天模型：${providerLoadError}`));
@@ -363,6 +388,65 @@ export async function render(container, ctx) {
       '让聊天模型直接接收用户图片。预设模型是否支持由能力表决定；'
       + '这条路径不需要独立视觉 provider。',
       ...nativeChildren));
+
+    // ---- 主模型原生视频输入 ----------------------------------
+
+    if (videoSpec) {
+      const videoSelect = h('select', { dataset: { visionVideo: '1' } });
+      for (const [value, label] of videoSpec.options || []) {
+        videoSelect.append(h('option', {
+          value,
+          selected: value === videoSpec.value,
+        }, label));
+      }
+      const videoHint = h('p', { class: 'field-help' });
+      function refreshVideoHint() {
+        if (videoSelect.value === 'off') {
+          videoHint.textContent = '不向主模型发送视频；仍会保留“未发送”占位。';
+          return;
+        }
+        if (videoSelect.value === 'on') {
+          videoHint.textContent =
+            '明确声明主模型可接收完整 video_url；协议不支持时不会发送。';
+          return;
+        }
+        const info = chatVisionInfo();
+        if (!info) {
+          videoHint.textContent = '还没有配置聊天模型，auto 无法判断视频能力。';
+          return;
+        }
+        const label = `${info.provider?.display_name || info.chat.provider} / ${info.chat.model}`;
+        videoHint.textContent = info.supportsVideo
+          ? `当前聊天模型 ${label} 在预设中标记了 video，auto 会发送完整视频。`
+          : `当前聊天模型 ${label} 未被预设标记为 video，auto 不会发送视频；`
+            + '可改成“开启”或换用支持视频的模型。';
+      }
+      videoSelect.addEventListener('change', async () => {
+        await saveField(videoSpec, videoSelect.value);
+        refreshVideoHint();
+      });
+      refreshVideoHint();
+
+      const videoChildren = [
+        field('视频输入策略', videoSelect,
+          'auto：仅预设标记 video 的聊天模型；on：显式开启；off：不发送。'
+          + '视频以受管 data URL 发送完整文件，不抽帧降级；'
+          + 'provider 需接受该视频格式。'),
+        videoHint,
+      ];
+      if (videoTokenSpec) {
+        videoChildren.push(control(videoTokenSpec,
+          (value) => saveField(videoTokenSpec, value)));
+      }
+      if (maxVideosSpec) {
+        videoChildren.push(control(maxVideosSpec,
+          (value) => saveField(maxVideosSpec, value)));
+      }
+      nodes.push(card('主模型原生视频输入',
+        '把完整视频作为 video_url 发给聊天模型；是否支持由 provider/model '
+        + '能力表决定。不支持时只保留 workspace 占位，不会静默抽帧。',
+        ...videoChildren));
+    }
 
     // ---- 独立视觉识别 ----------------------------------------
 
@@ -407,7 +491,8 @@ export async function render(container, ctx) {
     function visionModelsFor(providerId) {
       if (providerId) {
         const provider = providerList.find((item) => item.id === providerId);
-        const preset = presetOf(provider);
+        const vendor = resolveProviderVendor(provider, '', presets);
+        const preset = presets.find((item) => item.id === vendor) || null;
         const models = Array.isArray(preset?.models) ? preset.models : [];
         const visionModels = models.filter(
           (model) => (model.capabilities || []).includes('vision'));
@@ -455,7 +540,7 @@ export async function render(container, ctx) {
     const overrideRow = h('label', { class: 'switch' }, overrideInput,
       '覆盖该 provider 的地址/密钥（高级）');
     const providerRow = field('视觉 provider', providerSelect,
-      '引用“设置→模型”里已添加的 provider；选择已有 provider 后通常不需要再填地址和 Key。');
+      '引用「模型管理」里已添加的 provider；选择已有 provider 后通常不需要再填地址和 Key。');
     const modelRow = field('视觉模型', h('div', {}, modelInput, modelDatalist),
       '独立看图模型 ID，例如 glm-4v / qwen-vl-max；可以和聊天模型不同。');
     const baseUrlRow = field('视觉独立 base_url', baseUrlInput,
@@ -571,7 +656,7 @@ export async function render(container, ctx) {
       if (providerLoadError) {
         warning = `读取 provider 列表失败：${providerLoadError}`;
       } else if (!providerList.length) {
-        warning = '还没有添加 provider。可以到“模型”页添加，或使用自定义端点。';
+        warning = '还没有添加 provider。可以到「模型管理」添加，或使用自定义端点。';
       }
       providerWarning.textContent = warning;
       providerWarning.style.display = warning ? '' : 'none';
@@ -777,7 +862,7 @@ export async function render(container, ctx) {
       !officialOptions.length
         ? h('p', { class: 'field-help' },
           '当前已添加的 provider 没有已确认的官方搜索通道；'
-          + '可以先到「模型」页添加对应预设。')
+          + '可以先到「模型管理」添加对应预设。')
         : null,
       h('p', { class: 'field-help' },
         '官方搜索会调用模型/搜索 API，可能产生额外 token 或按次搜索费用，'
@@ -908,16 +993,6 @@ export async function render(container, ctx) {
         saveBtn),
       saveStatus,
     ));
-  }
-
-  // ============================================================
-  // 模型分页
-  // ============================================================
-
-  async function renderModels(panelBody = body) {
-    // 提供商增删改、测试连接、拉取模型列表都在 providers.js 里，
-    // 首次向导也复用同一套表单，避免两处各写一份。
-    await renderModelsPanel(panelBody, ctx, { markRestart });
   }
 
   // ============================================================
@@ -1492,7 +1567,6 @@ export async function render(container, ctx) {
     for (const btn of nav.querySelectorAll('button')) {
       btn.classList.toggle('active', btn.dataset.key === key);
     }
-    if (key === 'models') return renderModels(panelBody);
     if (key === 'paths') return renderPaths(panelBody);
 
     const group = groups.find((g) => g.key === key);

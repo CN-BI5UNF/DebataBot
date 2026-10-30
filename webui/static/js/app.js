@@ -18,6 +18,7 @@ import * as slang from './pages/slang.js';
 import * as knowledge from './pages/knowledge.js';
 import * as models from './pages/models.js';
 import * as emoji from './pages/emoji.js';
+import * as containerPage from './pages/container.js';
 import * as storage from './pages/storage.js';
 import * as settings from './pages/settings.js';
 import * as blacklist from './pages/blacklist.js';
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { key: 'knowledge', title: '知识', icon: 'knowledge', page: knowledge },
   { key: 'models', title: '模型管理', icon: 'models', page: models },
   { key: 'emoji', title: '表情包', icon: 'emoji', page: emoji },
+  { key: 'container', title: '容器', icon: 'container', page: containerPage },
   { key: 'storage', title: '存储与缓存', icon: 'storage', page: storage },
   { key: 'blacklist', title: '黑名单', icon: 'blacklist', page: blacklist },
   { key: 'settings', title: '设置', icon: 'settings', page: settings },
@@ -188,12 +190,41 @@ function buildNav() {
     h('button', {
       class: 'nav-item',
       dataset: { key: item.key },
+      title: item.title,
+      'aria-label': item.title,
       onclick: () => navigate(item.key),
     },
       h('span', { class: 'nav-icon' }, icon(item.icon)),
       h('span', {}, item.title),
     ),
   ));
+}
+
+// ============================================================
+// 侧栏折叠：折叠后只显示图标，状态记在 localStorage
+// ============================================================
+
+function applySidebarCollapsed(collapsed, { persist = true } = {}) {
+  const sidebar = qs('#sidebar');
+  const button = qs('#btn-sidebar');
+  if (!sidebar || !button) return;
+  sidebar.classList.toggle('collapsed', collapsed);
+  fill(button, icon(collapsed ? 'chevron-right' : 'chevron-left', { size: 18 }));
+  button.title = collapsed ? '展开侧栏' : '折叠侧栏';
+  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-expanded', String(!collapsed));
+  if (persist) localStorage.setItem('karen-sidebar-collapsed', collapsed ? '1' : '0');
+}
+
+function initSidebar() {
+  const button = qs('#btn-sidebar');
+  if (!button) return;
+  applySidebarCollapsed(localStorage.getItem('karen-sidebar-collapsed') === '1',
+    { persist: false });
+  button.addEventListener('click', () => {
+    const collapsed = !qs('#sidebar').classList.contains('collapsed');
+    applySidebarCollapsed(collapsed);
+  });
 }
 
 // ============================================================
@@ -226,6 +257,7 @@ let loadingHintTimer = null;
 
 async function boot() {
   initTheme();
+  initSidebar();
 
   // 先把外壳亮出来再问后端。
   // 之前是 await 完 /api/auth/state 和 /api/status 才决定显示哪个界面，

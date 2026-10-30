@@ -221,18 +221,33 @@ code, pre, .mono {
   flex-direction: column;
   background: var(--bg-card);
   border-right: 1px solid var(--border);
+  transition: width .18s ease, flex-basis .18s ease;
 }
 
 .brand {
   height: var(--topbar-h);
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  gap: 6px;
+  padding: 0 8px 0 16px;
   font-weight: 600;
   color: var(--accent);
   letter-spacing: .02em;
   border-bottom: 1px solid var(--border);
 }
+.brand-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
+.sidebar-toggle { flex: 0 0 auto; color: var(--text-secondary); }
+
+/* 折叠后只保留图标；title/aria-label 提供悬停提示。 */
+.sidebar.collapsed { width: 64px; flex-basis: 64px; }
+.sidebar.collapsed .brand { justify-content: center; padding: 0; }
+.sidebar.collapsed .brand-text { display: none; }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 10px; }
+.sidebar.collapsed .nav-item > span:not(.nav-icon) { display: none; }
+.sidebar.collapsed .sidebar-foot { padding: 12px 0; }
+.sidebar.collapsed .conn { justify-content: center; }
+.sidebar.collapsed #side-conn-text { display: none; }
+.sidebar.collapsed .nav-icon { width: 18px; height: 18px; flex-basis: 18px; }
 
 .nav { padding: 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
 

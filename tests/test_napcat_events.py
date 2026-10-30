@@ -452,7 +452,7 @@ def test_cq_parser_image_voice_video_placeholders():
 
 
 def test_cq_parser_face():
-    assert _parse_raw_message("[CQ:face,id=21]", "9999") == "[表情21]"
+    assert _parse_raw_message("[CQ:face,id=21]", "9999") == "[可爱]"
 
 
 def test_cq_parser_forward():
@@ -471,7 +471,7 @@ def test_cq_parser_mixed():
     assert out.startswith("[引用msg_id=99]")
     assert "@QQ1234" in out
     assert "[图片]" in out
-    assert "[表情13]" in out
+    assert "[呲牙]" in out
 
 
 def test_cq_parser_unknown_type():

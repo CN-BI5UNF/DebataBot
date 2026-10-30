@@ -1,8 +1,11 @@
-// 模型管理页 —— 对应 ui/dashboard/models_page.py。
-// 本地插件（TTS / Embedding）的扫描、状态、安装指引与依赖安装。
+// 模型管理页 —— 云端提供商/Agent 模型 + 本地模型插件。
+//
+// 原先「设置 → 模型」里的提供商/Agent 配置已移到这里，用户不再需要先猜
+// 「模型」是在设置里还是在模型管理里。
 
 import { h, fill, card, empty } from '../dom.js';
 import { endpoints } from '../api.js';
+import { renderModelsPanel } from '../providers.js';
 
 const STATUS_CLASS = {
   ENABLED: 'ok',
@@ -18,6 +21,34 @@ export async function render(container, ctx) {
 
   const listBox = h('div', {});
   const detailBox = h('div', {});
+  const providerHost = h('div', {});
+  const hintHost = h('div', {});
+  let restartHint = null;
+
+  function markRestart() {
+    if (restartHint) return;
+    restartHint = card(null, '',
+      h('div', { class: 'row' },
+        h('span', {}, '模型配置已保存，需要重启 Runtime 才能生效。'),
+        h('div', { class: 'spacer' }),
+        h('button', {
+          class: 'btn btn-primary',
+          onclick: async (event) => {
+            event.currentTarget.disabled = true;
+            try {
+              await endpoints.restart();
+              ctx.toast('Runtime 已重启', 'ok');
+              restartHint = null;
+              fill(hintHost);
+            } catch (e) {
+              ctx.toast(e.message, 'error');
+              event.currentTarget.disabled = false;
+            }
+          },
+        }, '立即重启'),
+      ));
+    fill(hintHost, restartHint);
+  }
 
   async function load(rescan = false) {
     fill(listBox, empty(rescan ? '正在重新扫描…' : '读取中…'));
@@ -157,14 +188,20 @@ export async function render(container, ctx) {
       h('div', {},
         h('h1', { class: 'page-title' }, '模型管理'),
         h('p', { class: 'page-desc' },
-          '本地语音合成 / 向量模型。装依赖或导入模型后点「重新扫描」刷新状态。'),
+          '在这里配置云端提供商/主模型，以及本地语音合成、向量模型插件。'
+          + '中转站记得选择「上游模型厂商」，Gemini/Claude 等能力才能自动识别。'),
       ),
-      h('button', { class: 'btn', onclick: () => load(true) }, '重新扫描'),
+      h('button', { class: 'btn', onclick: () => load(true) }, '重新扫描本地模型'),
     ),
-    card('', '', listBox),
+    hintHost,
+    providerHost,
+    card('本地模型插件', '装依赖或导入模型后点「重新扫描本地模型」刷新状态。', listBox),
     detailBox,
   );
 
-  await load();
+  await Promise.all([
+    load(),
+    renderModelsPanel(providerHost, ctx, { markRestart }),
+  ]);
   return { destroy() { disposed = true; void disposed; } };
 }

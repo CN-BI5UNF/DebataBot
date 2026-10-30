@@ -67,7 +67,14 @@ def _reasoning_effort_options(
     fallback = ["low", "medium", "high"]
     provider_cfg = (rt.config.providers or {}).get(provider_id)
     preset_id = str(getattr(provider_cfg, "preset", "") or "").lower()
-    preset = _presets(rt).get(preset_id) if preset_id else None
+    from providers.model_vendors import resolve_model_vendor
+
+    vendor = resolve_model_vendor(
+        model_id,
+        explicit=getattr(provider_cfg, "model_vendor", None),
+        preset=preset_id,
+    )
+    preset = _presets(rt).get(vendor) if vendor else None
     if preset is None:
         return fallback
     for model in preset.models:
@@ -164,7 +171,9 @@ async def list_presets(request: Request) -> dict[str, Any]:
                 "has_tutorial": preset.tutorial_dir is not None,
             }
         )
-    return {"presets": presets}
+    from providers.model_vendors import vendor_choices
+
+    return {"presets": presets, "vendors": vendor_choices()}
 
 
 # ============================================================
@@ -340,7 +349,11 @@ async def _fetch_models(target: Any, provider_id: str) -> dict[str, Any]:
 
     try:
         infos = await fetch_model_infos(
-            target.base_url, target.api_key, target.protocol, provider_id=provider_id
+            target.base_url,
+            target.api_key,
+            target.protocol,
+            provider_id=provider_id,
+            vendor=getattr(target, "vendor", ""),
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from e
@@ -353,6 +366,7 @@ async def _fetch_models(target: Any, provider_id: str) -> dict[str, Any]:
                 "capabilities": sorted(m.capabilities),
                 "context_length": m.context_length,
                 "status": m.status,
+                "vendor": m.vendor,
             }
             for m in infos
         ],

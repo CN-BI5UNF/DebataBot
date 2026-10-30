@@ -18,7 +18,7 @@ models:
 
   - id: qwen3.6-plus
     display_name: Qwen3.6 Plus（推荐 · 1M · 多模态）
-    capabilities: [chat, tool_call, reasoning, vision, web_search]
+    capabilities: [chat, tool_call, reasoning, vision, video, web_search]
     context_length: 1000000
     search_channel: qwen_enable_search
     search_payload:
@@ -55,10 +55,10 @@ models:
 
   - id: qwen3-vl-plus
     display_name: Qwen3-VL Plus（视觉专用）
-    capabilities: [chat, vision]
+    capabilities: [chat, vision, video]
     context_length: 131072
 
   - id: qwen3-vl-max
     display_name: Qwen3-VL Max（视觉旗舰）
-    capabilities: [chat, vision]
+    capabilities: [chat, vision, video]
     context_length: 131072

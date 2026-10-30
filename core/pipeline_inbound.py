@@ -405,6 +405,7 @@ class PipelineInboundMixin:
         lines: list[str] = []
         meta_messages: list[dict[str, Any]] = []
         meta_image_assets: list[dict[str, Any]] = []
+        meta_video_assets: list[dict[str, Any]] = []
         for item in items:
             lines.append(
                 f"【{now} {item.location} {item.nickname}({item.user_id}) "
@@ -434,12 +435,17 @@ class PipelineInboundMixin:
             for asset in getattr(raw, "image_assets", []) or []:
                 if isinstance(asset, dict):
                     meta_image_assets.append(copy.deepcopy(asset))
+            for asset in getattr(raw, "video_assets", []) or []:
+                if isinstance(asset, dict):
+                    meta_video_assets.append(copy.deepcopy(asset))
         metadata: dict[str, Any] = {
             "timestamp": now,
             "messages": meta_messages,
         }
         if meta_image_assets:
             metadata["image_assets"] = meta_image_assets
+        if meta_video_assets:
+            metadata["video_assets"] = meta_video_assets
         return {
             "role": "user",
             "content": "\n".join(lines),

@@ -105,6 +105,13 @@ class AppPaths:
         # AI 可通过 read/write/edit/list/delete/upload_file/run_python 工具操作其中文件。
         self.WORKSPACE_DIR: Path = self.DATA_DIR / "workspace"
 
+        # Docker 容器专用状态/固定大小存储。不要把 ext4/VHDX 大文件放进备份。
+        self.CONTAINER_DIR: Path = self.DATA_DIR / "container"
+        self.CONTAINER_WORKSPACE_DIR: Path = self.CONTAINER_DIR / "workspace"
+        self.CONTAINER_IMAGE_PATH: Path = self.CONTAINER_DIR / "workspace.ext4"
+        self.CONTAINER_VHDX_PATH: Path = self.CONTAINER_DIR / "workspace.vhdx"
+        self.CONTAINER_STATE_FILE: Path = self.CONTAINER_DIR / "state.json"
+
         # === 仓库内 personas/ —— 所有人格平级（仓库自带 + 用户自创共存）===
         # 仓库自带（大肥鱼/、deepseek/）入 git，其它由 .gitignore 排除
         self.PERSONAS_DIR: Path = project_root / "personas"
@@ -189,6 +196,7 @@ class AppPaths:
             self.TMP_DIR,
             self.MAINTENANCE_DIR,
             self.WORKSPACE_DIR,
+            self.CONTAINER_DIR,
             self.USER_PROVIDER_PRESETS_DIR,
         ):
             d.mkdir(parents=True, exist_ok=True)

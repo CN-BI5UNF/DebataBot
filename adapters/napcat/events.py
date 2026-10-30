@@ -27,6 +27,7 @@ from adapters.types import (
     RequestType,
 )
 from utils import parse_raw_cq
+from utils.qq_faces import face_label
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,11 @@ def _extract_media(segments: list[Any]) -> list[MediaSegment]:
                     type=MediaType.VIDEO,
                     file_id=_clean_cq_value(data.get("file")),
                     url=_clean_cq_value(data.get("url")),
+                    extra={
+                        str(key): value
+                        for key, value in data.items()
+                        if key not in ("url", "file")
+                    },
                 )
             )
         elif seg_type == "file":
@@ -212,7 +218,7 @@ def _render_onebot_segment(segment: Any, self_id: str) -> str:
     if seg_type == "video":
         return "[视频]"
     if seg_type == "face":
-        return f"[表情{data.get('id') or ''}]"
+        return face_label(str(data.get("id") or ""))
     if seg_type == "file":
         return "[文件]"
     if seg_type == "forward":
@@ -267,6 +273,11 @@ def _extract_media_from_cq(raw_message: str) -> list[MediaSegment]:
                     type=MediaType.VIDEO,
                     file_id=file_id,
                     url=params.get("url"),
+                    extra={
+                        key: value
+                        for key, value in params.items()
+                        if key not in ("url", "file")
+                    },
                 )
             )
         elif cq_type == "file":

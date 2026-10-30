@@ -32,13 +32,21 @@ MAX_IMAGE_TOKEN_RESERVE = 65536
 
 TRANSFORM_VERSION_V1 = "pillow-first-frame-v1"
 TRANSFORM_VERSION_V2 = "pillow-first-frame-max2048-v2"
-SUPPORTED_OUTPUT_MIMES = frozenset({"image/jpeg", "image/png"})
+GIF_TRANSFORM_VERSION = "gif-native-v1"
+"""GIF 不再冻结首帧；原始完整 GIF 字节直接进入受管资产。"""
+MAX_GIF_FRAMES = 2000
+MAX_GIF_TOTAL_PIXELS = 100_000_000
+SUPPORTED_OUTPUT_MIMES = frozenset({"image/jpeg", "image/png", "image/gif"})
 SUPPORTED_DETAILS = frozenset({"auto", "low", "high"})
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 _V2_VERSION_RE = re.compile(r"^pillow-first-frame-max(\d+)-v2$")
-_OUTPUT_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png"}
+_OUTPUT_EXTENSIONS = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+}
 _ASSET_REF_KEYS = frozenset(
     {
         "sha256",
@@ -150,11 +158,13 @@ def transform_version_for_limits(limits: ImageLimits) -> str:
 
 
 def supported_transform_versions() -> frozenset[str]:
-    return frozenset({TRANSFORM_VERSION_V1, TRANSFORM_VERSION_V2})
+    return frozenset(
+        {TRANSFORM_VERSION_V1, TRANSFORM_VERSION_V2, GIF_TRANSFORM_VERSION}
+    )
 
 
 def is_supported_transform_version(version: str) -> bool:
-    if version == TRANSFORM_VERSION_V1:
+    if version in {TRANSFORM_VERSION_V1, GIF_TRANSFORM_VERSION}:
         return True
     match = _V2_VERSION_RE.fullmatch(version)
     if match is None:
@@ -175,10 +185,11 @@ def asset_relative_path(version: str, sha256: str, mime: str) -> str:
 
 
 def build_image_attribution_text(asset: Mapping[str, Any]) -> str:
-    """稳定的图片归属文本；只使用可信 message_id/index。"""
+    """稳定的媒体归属文本；只使用可信 message_id/index。"""
     message_id = str(asset.get("message_id") or "")
     index = asset.get("index")
-    return f"[图片所属消息 msg_id={message_id} index={index}]"
+    label = "GIF" if asset.get("mime") == "image/gif" else "图片"
+    return f"[{label}所属消息 msg_id={message_id} index={index}]"
 
 
 def build_image_content_blocks(
@@ -217,6 +228,9 @@ def _version_side_limit(version: str) -> int:
     if version == TRANSFORM_VERSION_V1:
         # v1 未做固定缩放，旧资产仍可能有较大的合法边长。
         return MAX_IMAGE_PIXELS
+    if version == GIF_TRANSFORM_VERSION:
+        # 完整 GIF 保留原尺寸，但边长仍受项目硬上限约束。
+        return MAX_IMAGE_SIDE
     match = _V2_VERSION_RE.fullmatch(version)
     return int(match.group(1)) if match is not None else MAX_IMAGE_SIDE
 
@@ -259,6 +273,8 @@ def validate_image_asset_ref(
     version = ref.get("transform_version")
     if not isinstance(version, str) or not is_supported_transform_version(version):
         raise ImageAssetError("图片资产转换版本不受支持")
+    if (mime == "image/gif") != (version == GIF_TRANSFORM_VERSION):
+        raise ImageAssetError("GIF 资产必须使用 gif-native-v1，且该版本只能用于 GIF")
     if allowed_versions is not None and version not in allowed_versions:
         raise ImageAssetError("图片资产转换版本不受支持")
 
@@ -519,12 +535,15 @@ def validate_declared_assets(
 
 __all__ = [
     "DEFAULT_IMAGE_TOKEN_RESERVE",
+    "GIF_TRANSFORM_VERSION",
     "ImageAssetError",
     "ImageBudgetEstimate",
     "ImageBudgetProfile",
     "ImageBudgetUsage",
     "ImageLimits",
     "MAX_CACHE_BYTES",
+    "MAX_GIF_FRAMES",
+    "MAX_GIF_TOTAL_PIXELS",
     "MAX_ENCODED_IMAGE_BYTES",
     "MAX_IMAGE_BYTES",
     "MAX_IMAGE_PIXELS",

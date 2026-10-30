@@ -13,6 +13,7 @@
 #     tool_call    - 函数调用 / 工具使用
 #     reasoning    - 思考/推理（extended thinking / reasoning_effort / thinking budget）
 #     vision       - 图像/多模态输入
+#     video        - 完整 video_url 视频输入（不抽帧；仅标记已核实的模型）
 #     embedding    - 向量嵌入（通常独立模型，不与 chat 模型共用）
 #   context_length - 最大上下文窗口（tokens）
 #   status:
@@ -462,10 +463,10 @@ providers:
         notes: "OpenAI via OpenRouter 路由"
       - id: google/gemini-2.5-flash
         display_name: Gemini 2.5 Flash（via OpenRouter）
-        capabilities: [chat, tool_call, vision]
+        capabilities: [chat, tool_call, vision, video]
         context_length: 1000000
         status: active
-        notes: "Gemini via OpenRouter 路由"
+        notes: "Gemini via OpenRouter 路由；支持 video_url"
       - id: meta-llama/llama-3.3-70b-instruct
         display_name: Llama 3.3 70B Instruct
         capabilities: [chat, tool_call]
@@ -504,7 +505,7 @@ providers:
         notes: "最新旗舰文本模型；1M 上下文"
       - id: qwen3.6-plus
         display_name: Qwen3.6 Plus（推荐 · 1M · 多模态）
-        capabilities: [chat, tool_call, reasoning, vision]
+        capabilities: [chat, tool_call, reasoning, vision, video]
         context_length: 1000000
         status: recommended
         notes: "1M 上下文；文本+图像+视频；201 语言；旗舰多模态"
@@ -528,16 +529,16 @@ providers:
         notes: "1M 上下文；thinking 支持；$0.40/$1.20"
       - id: qwen3-vl-plus
         display_name: Qwen3-VL Plus（视觉专用）
-        capabilities: [chat, vision]
+        capabilities: [chat, vision, video]
         context_length: 131072
         status: active
         notes: "视觉专用模型；支持图像+视频"
       - id: qwen3-vl-max
         display_name: Qwen3-VL Max（视觉专用）
-        capabilities: [chat, vision]
+        capabilities: [chat, vision, video]
         context_length: 131072
         status: active
-        notes: "视觉旗舰"
+        notes: "视觉旗舰；支持图像+视频"
       - id: qwen3-turbo
         display_name: Qwen3 Turbo
         capabilities: [chat, tool_call]

@@ -131,6 +131,8 @@ class VisionSettingPatch(BaseModel):
     """
 
     main_model_images: Literal["auto", "on", "off"] | None = None
+    gif_mode: Literal["native", "first_frame"] | None = None
+    main_model_videos: Literal["auto", "on", "off"] | None = None
     enabled: bool | None = None
     provider: str | None = None
     model: str | None = None
@@ -138,6 +140,8 @@ class VisionSettingPatch(BaseModel):
     api_key_id: str | None = None
     image_token_reserve: int | None = None
     max_images_per_request: int | None = None
+    video_token_reserve: int | None = None
+    max_videos_per_request: int | None = None
     api_key: str | None = Field(default=None, max_length=4096)
 
 
@@ -145,6 +149,10 @@ def _apply_vision_patch(draft: Any, payload: VisionSettingPatch) -> None:
     vision = draft.features.vision
     if payload.main_model_images is not None:
         vision.main_model_images = payload.main_model_images
+    if payload.gif_mode is not None:
+        vision.gif_mode = payload.gif_mode
+    if payload.main_model_videos is not None:
+        vision.main_model_videos = payload.main_model_videos
     if payload.enabled is not None:
         vision.enabled = payload.enabled
     if payload.provider is not None:
@@ -164,6 +172,12 @@ def _apply_vision_patch(draft: Any, payload: VisionSettingPatch) -> None:
     if payload.max_images_per_request is not None:
         vision.image_limits.max_images_per_request = (
             payload.max_images_per_request
+        )
+    if payload.video_token_reserve is not None:
+        vision.video_token_reserve = payload.video_token_reserve
+    if payload.max_videos_per_request is not None:
+        vision.video_limits.max_videos_per_request = (
+            payload.max_videos_per_request
         )
 
 
@@ -210,6 +224,8 @@ async def patch_vision_settings(
         "api_key_saved": bool(api_key),
         "value": {
             "main_model_images": vision.main_model_images,
+            "gif_mode": vision.gif_mode,
+            "main_model_videos": vision.main_model_videos,
             "enabled": vision.enabled,
             "provider": vision.provider or "",
             "model": vision.model,
@@ -218,6 +234,10 @@ async def patch_vision_settings(
             "image_token_reserve": vision.image_token_reserve,
             "max_images_per_request": (
                 vision.image_limits.max_images_per_request
+            ),
+            "video_token_reserve": vision.video_token_reserve,
+            "max_videos_per_request": (
+                vision.video_limits.max_videos_per_request
             ),
         },
         "message": "视觉设置已保存；重启 Runtime 后生效",

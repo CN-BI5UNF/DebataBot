@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from providers.model_capabilities import model_capability
+from providers.model_capabilities import resolve_model_capability
 from utils.token_budget import BudgetSnapshot, build_budget_snapshot
 
 
@@ -243,7 +243,12 @@ def resolve_agent_binding(
         else:
             protocol = "openai_compat"
 
-    capability = model_capability(preset_id or provider_id, str(agent_cfg.model))
+    capability, _capability_vendor = resolve_model_capability(
+        provider_id,
+        str(agent_cfg.model),
+        vendor=getattr(provider_cfg, "model_vendor", None),
+        preset=preset_id,
+    )
     context_limit: int | None = None
     source = "unknown"
     if isinstance(model_context_length, int) and model_context_length > 0:

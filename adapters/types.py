@@ -147,6 +147,20 @@ class IncomingMessage(BaseEvent):
     )
     """入站图片失败的安全错误（code/index/message），不含 URL/base64。"""
 
+    video_assets: list[dict[str, Any]] = field(
+        default_factory=list,
+        init=False,
+        repr=False,
+    )
+    """仅由内部媒体管线填充的可信视频资产引用；不从 raw/extra 复制。"""
+
+    video_input_errors: list[dict[str, Any]] = field(
+        default_factory=list,
+        init=False,
+        repr=False,
+    )
+    """入站视频失败的安全错误（code/index/message），不含 URL/base64。"""
+
     def is_private(self) -> bool:
         return self.scope == "private"
 

@@ -313,7 +313,81 @@ def test_main_model_images_auto_on_off_uses_exact_preset_capability():
     rt = object.__new__(Runtime)
     rt.config = custom
     rt.provider_registry = SimpleNamespace(presets={})
+    # 自定义中转站不再一律 false：已知模型按 ID 自动识别能力。
+    assert Runtime._main_model_images_enabled(rt)
+
+    custom.agents.chat.model = "mystery-model"
     assert not Runtime._main_model_images_enabled(rt)
+
+    custom.agents.chat.model = "gemini-2.5-flash"
+    custom.providers["p"].model_vendor = "gemini"
+    assert Runtime._main_model_images_enabled(rt)
+
+    # 显式声明厂商后，未收录的新 Gemini 模型沿用厂商 vision_reuse；
+    # 但不能把视频也一起猜出来。
+    custom.agents.chat.model = "gemini-9.9-unknown"
+    assert Runtime._main_model_images_enabled(rt)
+    custom.features.vision.main_model_videos = "auto"
+    assert not Runtime._main_model_videos_enabled(rt)
+
+
+def test_main_model_video_capability_is_exact_and_protocol_gated():
+    from app_config.schema import (
+        AgentConfig,
+        AgentsConfig,
+        FeaturesConfig,
+        ProviderConfig,
+        RootConfig,
+        VisionFeatureConfig,
+    )
+    from providers.presets_loader import ModelInfo, ProviderPreset
+
+    preset = ProviderPreset(
+        id="qwen",
+        display_name="Qwen",
+        protocol="openai_compat",
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        models=[
+            ModelInfo(
+                id="qwen3.6-plus",
+                capabilities=["chat", "tool_call", "vision", "video"],
+            ),
+            ModelInfo(id="qwen3.7-max", capabilities=["chat", "tool_call"]),
+        ],
+    )
+
+    def runtime_for(mode: str, model: str, protocol: str = "openai_compat") -> Runtime:
+        cfg = RootConfig(
+            providers={
+                "p": ProviderConfig(
+                    preset="qwen",
+                    protocol=protocol,
+                    base_url="https://example.com/v1",
+                )
+            },
+            agents=AgentsConfig(chat=AgentConfig(provider="p", model=model)),
+            features=FeaturesConfig(
+                vision=VisionFeatureConfig(main_model_videos=mode),
+            ),
+        )
+        rt = object.__new__(Runtime)
+        rt.config = cfg
+        rt.provider_registry = SimpleNamespace(presets={"qwen": preset})
+        return rt
+
+    assert Runtime._main_model_videos_enabled(runtime_for("auto", "qwen3.6-plus"))
+    assert not Runtime._main_model_videos_enabled(
+        runtime_for("auto", "qwen3.7-max")
+    )
+    assert Runtime._main_model_videos_enabled(
+        runtime_for("on", "unknown-video")
+    )
+    assert not Runtime._main_model_videos_enabled(
+        runtime_for("off", "qwen3.6-plus")
+    )
+    assert not Runtime._main_model_videos_enabled(
+        runtime_for("on", "qwen3.6-plus", protocol="anthropic")
+    )
 
 
 @pytest.mark.asyncio

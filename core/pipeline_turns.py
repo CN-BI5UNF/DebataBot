@@ -331,6 +331,11 @@ class PipelineTurnsMixin:
                         if conversation_id
                         else None
                     ),
+                    pending_media_projector=(
+                        self._project_pending_media_record
+                        if conversation_id
+                        else None
+                    ),
                     runtime_event_callback=self._runtime_event_callback(
                         record_conversation_id or conversation_id or "system:global"
                     ),
@@ -343,7 +348,21 @@ class PipelineTurnsMixin:
                     kv_diagnostics_mode=str(
                         getattr(self.behavior_cfg, "kv_prompt_diagnostics", "summary")
                     ),
-                    image_limits=self._main_prompt_image_limits(),
+                    image_limits=(
+                        self._main_prompt_image_limits()
+                        if getattr(self, "main_model_images_enabled", False)
+                        else None
+                    ),
+                    video_limits=(
+                        self._main_prompt_video_limits()
+                        if getattr(self, "main_model_videos_enabled", False)
+                        else None
+                    ),
+                    video_token_reserve=(
+                        int(getattr(self, "video_token_reserve", 0))
+                        if getattr(self, "main_model_videos_enabled", False)
+                        else 0
+                    ),
                     provider_limit_bytes=self._provider_request_body_limit_bytes(),
                     prompt_budget_tokens=active_budget.input_budget,
                     token_estimator=self._token_estimator(),

@@ -40,6 +40,10 @@ _DATA_IMAGE_ERROR_RE = re.compile(
     r"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+",
     re.IGNORECASE,
 )
+_DATA_VIDEO_ERROR_RE = re.compile(
+    r"data:video/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+",
+    re.IGNORECASE,
+)
 _HTTP_ERROR_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _BEARER_ERROR_RE = re.compile(
     r"(?i)\b(authorization\s*:\s*bearer\s+)[^\s,;\"']+"
@@ -51,12 +55,13 @@ _API_KEY_ERROR_RE = re.compile(
 
 
 def safe_provider_error_text(error: Any, *, limit: int = 300) -> str:
-    """受控 provider 错误摘要：去掉图片 base64、URL 鉴权和常见密钥文本。"""
+    """受控 provider 错误摘要：去掉图片/视频 base64、URL 鉴权和常见密钥文本。"""
     try:
         text = str(error or "")
     except Exception:  # noqa: BLE001
         text = f"<{type(error).__name__}>"
     text = _DATA_IMAGE_ERROR_RE.sub("<image-data>", text)
+    text = _DATA_VIDEO_ERROR_RE.sub("<video-data>", text)
     text = _HTTP_ERROR_URL_RE.sub(_safe_error_url, text)
     text = _BEARER_ERROR_RE.sub(r"\1<redacted>", text)
     text = _BEARER_TOKEN_RE.sub(r"\1<redacted>", text)

@@ -52,11 +52,19 @@ def known_protocols() -> list[str]:
 
 
 def normalize_base_url(url: str, protocol: str) -> str:
-    """OpenAI 兼容协议的 base_url 若不以 /v{N} 结尾则自动补 /v1。"""
+    """OpenAI 兼容协议的 base_url 若不以版本路径结尾则自动补 /v1。
+
+    Google 的 OpenAI 兼容端点是 ``.../v1beta/openai``（不是 ``/v1``），中转站
+    也常用 ``.../openai``；这类地址不能再拼 ``/v1``，否则请求会打到不存在的
+    ``/openai/v1/chat/completions``。其它地址保持旧行为。
+    """
     if protocol == "openai_compat":
         url = url.rstrip("/")
-        if not re.search(r"/v\d+$", url):
-            url += "/v1"
+        if re.search(r"/v\d+$", url):
+            return url
+        if re.search(r"/(?:v\d+(?:beta|alpha)?/openai|openai)$", url, re.IGNORECASE):
+            return url
+        url += "/v1"
     return url
 
 

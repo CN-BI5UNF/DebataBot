@@ -100,6 +100,7 @@ class PipelineToolContextMixin:
             web_fetch=getattr(self, "web_fetch", None),
             knowledge_service=getattr(self, "knowledge_service", None),
             slang_service=getattr(self, "slang_service", None),
+            container=getattr(self, "container", None),
             weather=self.weather,
             tts=self.tts,
             persona_agent=getattr(self, "persona_agent", None),

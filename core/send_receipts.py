@@ -47,6 +47,7 @@ def _send_action_counts(
         "text": sum(1 for action in actions if action.get("kind", "text") == "text"),
         "voice": sum(1 for action in actions if action.get("kind") == "voice"),
         "image": sum(1 for action in actions if action.get("kind") in {"image", "emoji"}),
+        "face": sum(1 for action in actions if action.get("kind") == "face"),
     }
 
 

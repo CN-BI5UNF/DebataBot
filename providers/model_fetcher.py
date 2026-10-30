@@ -48,6 +48,7 @@ class FetchedModel:
     status: str = ""
     notes: str = ""
     source: str = "remote"
+    vendor: str = ""
 
 
 def _should_skip(model_id: str) -> bool:
@@ -188,6 +189,7 @@ async def fetch_model_infos(
     protocol: str,
     *,
     provider_id: str = "",
+    vendor: str = "",
     timeout: float = 15.0,
 ) -> list[FetchedModel]:
     """获取模型列表，并用本地能力矩阵补齐能力字段。
@@ -196,27 +198,41 @@ async def fetch_model_infos(
     确定性补充。未知模型不猜能力，只保留 ID。
     """
     ids = await fetch_model_list(base_url, api_key, protocol, timeout=timeout)
-    return [_fetched_model(mid, provider_id=provider_id) for mid in ids]
+    return [
+        _fetched_model(mid, provider_id=provider_id, vendor=vendor) for mid in ids
+    ]
 
 
-def _fetched_model(model_id: str, *, provider_id: str = "") -> FetchedModel:
-    if provider_id:
-        try:
-            from .model_capabilities import model_capability
+def _fetched_model(
+    model_id: str, *, provider_id: str = "", vendor: str = ""
+) -> FetchedModel:
+    try:
+        from .model_capabilities import resolve_model_capability
 
-            info = model_capability(provider_id, model_id)
-            if info is not None:
-                return FetchedModel(
-                    id=model_id,
-                    display_name=info.display_name,
-                    capabilities=set(info.capabilities),
-                    context_length=info.context_length,
-                    status=info.status,
-                    notes=info.notes,
-                    source="remote+capabilities",
-                )
-        except Exception:
-            logger.debug("补齐模型能力失败 provider=%s model=%s", provider_id, model_id, exc_info=True)
+        info, used_vendor = resolve_model_capability(
+            provider_id, model_id, vendor=vendor
+        )
+        if info is not None:
+            return FetchedModel(
+                id=model_id,
+                display_name=info.display_name,
+                capabilities=set(info.capabilities),
+                context_length=info.context_length,
+                status=info.status,
+                notes=info.notes,
+                source="remote+capabilities",
+                vendor=used_vendor,
+            )
+        from .model_vendors import detect_model_vendor
+
+        return FetchedModel(id=model_id, vendor=detect_model_vendor(model_id))
+    except Exception:
+        logger.debug(
+            "补齐模型能力失败 provider=%s model=%s",
+            provider_id,
+            model_id,
+            exc_info=True,
+        )
     return FetchedModel(id=model_id)
 
 

@@ -29,6 +29,10 @@ uv run python main.py
 
 环境要求：Python 3.10+（CI 覆盖 3.11/3.12），一个 LLM API 密钥（推荐 [DeepSeek](https://platform.deepseek.com)）。
 
+正常启动会在导入应用前检查 `pyproject.toml` 的基础依赖；缺失或版本不符时自动用
+uv（没有 uv 时用 pip）执行 editable 安装。可选依赖不会自动安装。若网络受限导致
+安装失败，应用会继续启动并在日志里说明；可手动执行 `uv sync` 后重启。
+
 Linux 服务器或 SSH 环境可以直接跑纯 CLI 向导：
 
 ```bash
@@ -167,11 +171,14 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ### 改模型 / 加中转站
 
-设置 →「模型」：
+模型管理：
 
 - **添加提供商**：填名称，协议选「OpenAI 兼容」，Base URL 填中转站地址，粘 API Key。
   点「获取模型列表」能拉到就直接选，拉不到就手填模型 ID。
   点「测试连接」会真发一次最小请求，通过再保存。
+- **上游模型厂商**：中转站同时挂 Gemini/Claude/OpenAI 等模型时，选择对应厂商；
+  模型 ID 也会自动识别（如 `gemini-*`、`claude-*`）。这只影响视觉/视频/上下文能力
+  识别，不会改变协议或请求地址。
 - **换模型**：在下面的 Agent 卡片里选提供商、填模型 ID。
 - **思考参数风格**：中转站拿不准就选 `none`，这样不会把厂商私有字段发给不认识它的网关。
 
@@ -179,7 +186,7 @@ CLI 向导覆盖主模型、子 Agent、图片理解、天气、TTS、RAG、NapC
 
 ![设置模型](https://raw.githubusercontent.com/CN-BI5UNF/KarenBot/main/docs/images/dashboard_settings_model.png)
 
-设置页 → 模型 → 改 Provider 密钥或 Agent 模型。点「测试连接」确认可用。
+模型管理 → 改 Provider 密钥或 Agent 模型。点「测试连接」确认可用。
 
 ### 调上下文预算
 

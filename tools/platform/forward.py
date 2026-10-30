@@ -8,6 +8,8 @@ import time
 from html import unescape
 from typing import Any
 
+from utils.qq_faces import face_label
+
 _SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 _PARAM_SPLIT_RE = re.compile(r",(?=\w+=)")
 
@@ -274,6 +276,9 @@ def _segment_to_markdown(segment: Any) -> str:
     seg_type = str(segment.get("type") or "unknown")
     if seg_type == "text":
         return str(segment.get("text") or "")
+    if seg_type == "face":
+        return face_label(str(segment.get("id") or segment.get("file") or ""))
+
     if seg_type == "forward":
         text = f"[合并转发 id={segment.get('forward_id')}]"
         node = segment.get("node")

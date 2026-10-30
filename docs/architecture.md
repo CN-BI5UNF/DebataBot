@@ -170,6 +170,14 @@ C02 在真实阈值前加了一层轻量状态机（`core/compaction.py`）：
 OpenAI 兼容协议中移除 `image_url.detail`。OpenAI/OpenRouter 保留 detail，
 Anthropic 走原生图块，其余预设保守不发送未声明的 detail。
 
+完整 GIF 使用 `gif-native-v1` 保留原始动图字节；只有显式配置
+`features.vision.gif_mode=first_frame` 才退回旧的冻结首帧行为。完整视频使用
+`video-native-v1` 保存原始文件，通过 OpenAI 兼容协议的 `video_url` 数据 URL
+发送，`features.vision.main_model_videos=auto` 只对预设能力表标记 `video` 的
+模型开启（当前为 Qwen3.6-Plus、Qwen3-VL 系列和 OpenRouter Gemini）。不支持的
+模型只看到 workspace 占位，绝不抽帧降级。视频 token 用可配置的
+`video_token_reserve` 预留，并受独立字节/数量/请求体上限约束。
+
 ---
 
 ## 模型视图（运行时噪声裁剪）

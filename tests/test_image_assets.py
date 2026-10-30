@@ -18,6 +18,7 @@ from features.vision.image_assets import (
     prepare_image_data_url,
 )
 from utils.image_contracts import (
+    GIF_TRANSFORM_VERSION,
     TRANSFORM_VERSION_V1,
     ImageLimits,
     asset_relative_path,
@@ -89,8 +90,7 @@ async def test_exif_orientation_is_applied(tmp_path):
     assert (ref["width"], ref["height"]) == (50, 100)
 
 
-@pytest.mark.asyncio
-async def test_animated_gif_uses_first_frame(tmp_path):
+def _animated_gif_bytes() -> bytes:
     first = Image.new("RGB", (32, 16), (255, 0, 0))
     second = Image.new("RGB", (32, 16), (0, 255, 0))
     buffer = io.BytesIO()
@@ -102,10 +102,48 @@ async def test_animated_gif_uses_first_frame(tmp_path):
         duration=100,
         loop=0,
     )
+    return buffer.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_animated_gif_is_preserved_complete(tmp_path):
+    source = _animated_gif_bytes()
     store = ImageAssetStore(tmp_path / "workspace")
+
+    ref = await store.ingest(source)
+    data = store._read_asset(ref)
+
+    assert ref["mime"] == "image/gif"
+    assert ref["transform_version"] == GIF_TRANSFORM_VERSION
+    assert ref["path"].endswith(".gif")
+    assert data == source
+    validate_image_asset_ref(ref)
+    block = await store.image_content(ref)
+    assert block["image_url"]["url"].startswith("data:image/gif;base64,")
+    with Image.open(io.BytesIO(data)) as output:
+        assert output.n_frames == 2
+
+
+@pytest.mark.asyncio
+async def test_animated_gif_can_still_use_first_frame_mode(tmp_path):
+    first = Image.new("RGB", (32, 16), (255, 0, 0))
+    second = Image.new("RGB", (32, 16), (0, 255, 0))
+    buffer = io.BytesIO()
+    first.save(
+        buffer,
+        format="GIF",
+        save_all=True,
+        append_images=[second],
+        duration=100,
+        loop=0,
+    )
+    store = ImageAssetStore(tmp_path / "workspace", gif_mode="first_frame")
 
     ref = await store.ingest(buffer.getvalue())
     data = store._read_asset(ref)
+
+    assert ref["mime"] == "image/png"
+    assert ref["transform_version"] == store.transform_version
     with Image.open(io.BytesIO(data)) as output:
         assert output.size == (32, 16)
         assert output.convert("RGB").getpixel((0, 0)) == (255, 0, 0)

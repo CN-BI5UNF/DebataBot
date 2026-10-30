@@ -19,9 +19,12 @@ from core.model_view import build_model_view
 from core.pipeline_summary import SummaryAttemptResult
 from core.state import PendingMessageItem, ProtectedInput
 from features.vision.image_assets import ImageAssetStore
+from features.vision.video_assets import VideoAssetStore
 from memory import ArchiveStore, HistoryManager, RollingSummaryStore
+from utils.image_budget import assert_wire_request_fits
 from utils.image_contracts import ImageBudgetProfile, ImageLimits
 from utils.model_records import ModelViewPolicy
+from utils.video_contracts import VideoBudgetProfile, VideoLimits
 
 
 def _png_bytes(width: int = 32, height: int = 24) -> bytes:
@@ -46,6 +49,8 @@ def _make_pipeline(
     limits: ImageLimits | None = None,
     max_context_tokens: int = 100_000,
     reserve_output_tokens: int = 0,
+    videos: bool = False,
+    video_limits: VideoLimits | None = None,
 ) -> MessagePipeline:
     pipeline = MessagePipeline.__new__(MessagePipeline)
     pipeline.workspace_dir = tmp_path / "workspace"
@@ -54,6 +59,20 @@ def _make_pipeline(
     pipeline.main_model_images_enabled = True
     pipeline.image_limits = limits or ImageLimits()
     pipeline._image_budget_profile = _profile()
+    pipeline.main_model_videos_enabled = videos
+    pipeline.video_limits = video_limits or VideoLimits()
+    pipeline.video_token_reserve = 256
+    pipeline._video_budget_profile = (
+        VideoBudgetProfile(
+            name="reserve_v1",
+            per_video_tokens=256,
+            basis="configured_reserve",
+            exact=False,
+        )
+        if videos
+        else None
+    )
+    pipeline._video_asset_store_instance = None
     pipeline._active_input_guards = []
     pipeline._token_calib_ratio = 1.0
     pipeline._token_calib_provider = "fake"
@@ -127,6 +146,37 @@ def _wire_has_image(messages: list[dict]) -> bool:
     )
 
 
+def _mp4_bytes() -> bytes:
+    return b"\x00\x00\x00\x18ftypisom" + (b"\xab" * 2048)
+
+
+async def _video_ref(tmp_path, pipeline, *, index: int = 0) -> dict:
+    store = VideoAssetStore(
+        pipeline.workspace_dir,
+        limits=pipeline.video_limits,
+    )
+    return await store.ingest(
+        _mp4_bytes(),
+        message_id="m1",
+        index=index,
+    )
+
+
+def _video_messages(refs: list[dict]) -> list[dict]:
+    return [
+        {"role": "system", "content": "system"},
+        {
+            "role": "user",
+            "content": "看看视频",
+            "conversation_id": "private:1",
+            "metadata": {
+                "messages": [{"message_id": "m1", "inbound_seq": 1}],
+                "video_assets": refs,
+            },
+        },
+    ]
+
+
 @pytest.mark.asyncio
 async def test_direct_success_materializes_and_no_image_skips_store(tmp_path):
     pipeline = _make_pipeline(tmp_path)
@@ -162,6 +212,195 @@ async def test_direct_success_materializes_and_no_image_skips_store(tmp_path):
     assert text_result.ok is True
     assert text_result.contains_images is False
     assert plain._image_asset_store_instance is None
+
+
+@pytest.mark.asyncio
+async def test_direct_video_success_materializes_complete_video(tmp_path):
+    pipeline = _make_pipeline(tmp_path, videos=True)
+    ref = await _video_ref(tmp_path, pipeline)
+    result = await MessagePipeline._prepare_main_prompt_for_model(
+        pipeline,
+        conversation_id="private:1",
+        phase="test_video",
+        tools_schema=None,
+        rebuild_messages=lambda: asyncio.sleep(0, result=_video_messages([ref])),
+    )
+
+    assert result.ok is True
+    assert result.contains_videos is True
+    assert result.video_count == 1
+    assert result.video_bytes > 0
+    assert result.video_tokens == 256
+    user = result.messages[-1]
+    assert isinstance(user["content"], list)
+    assert user["content"][1]["text"].startswith("[视频所属消息")
+    assert user["content"][2]["type"] == "video_url"
+    assert user["content"][2]["video_url"]["url"].startswith(
+        "data:video/mp4;base64,"
+    )
+    assert result.estimated_tokens >= result.video_tokens
+
+
+@pytest.mark.asyncio
+async def test_image_and_video_are_both_projected_in_order(tmp_path):
+    pipeline = _make_pipeline(tmp_path, videos=True)
+    image_ref = await _ref(tmp_path, pipeline)
+    video_ref = await _video_ref(tmp_path, pipeline)
+    messages = [
+        {"role": "system", "content": "system"},
+        {
+            "role": "user",
+            "content": "图片和视频",
+            "conversation_id": "private:1",
+            "metadata": {
+                "messages": [{"message_id": "m1", "inbound_seq": 1}],
+                "image_assets": [image_ref],
+                "video_assets": [video_ref],
+            },
+        },
+    ]
+    result = await MessagePipeline._prepare_main_prompt_for_model(
+        pipeline,
+        conversation_id="private:1",
+        phase="test_mixed_media",
+        tools_schema=None,
+        rebuild_messages=lambda: asyncio.sleep(0, result=messages),
+    )
+
+    assert result.ok is True
+    assert result.contains_images is True
+    assert result.contains_videos is True
+    user_content = result.messages[-1]["content"]
+    image_pos = next(
+        index
+        for index, block in enumerate(user_content)
+        if block.get("type") == "image_url"
+    )
+    video_pos = next(
+        index
+        for index, block in enumerate(user_content)
+        if block.get("type") == "video_url"
+    )
+    assert image_pos < video_pos
+    assert user_content[image_pos]["image_url"]["url"].startswith(
+        "data:image/png;base64,"
+    )
+    assert user_content[video_pos]["video_url"]["url"].startswith(
+        "data:video/mp4;base64,"
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_media_record_projects_model_copy_but_keeps_history_raw(tmp_path):
+    pipeline = _make_pipeline(tmp_path)
+    ref = await _ref(tmp_path, pipeline)
+    raw = {
+        "role": "user",
+        "content": "刚来的图片",
+        "conversation_id": "private:1",
+        "metadata": {
+            "messages": [{"message_id": "m1", "inbound_seq": 1}],
+            "image_assets": [ref],
+        },
+    }
+
+    projected = await MessagePipeline._project_pending_media_record(
+        pipeline, raw
+    )
+
+    assert isinstance(projected["content"], list)
+    assert projected["content"][1]["text"].startswith("[图片所属消息")
+    assert projected["content"][2]["image_url"]["url"].startswith(
+        "data:image/png;base64,"
+    )
+    assert assert_wire_request_fits([projected])[0] == 1
+    # 历史仍保存原始 refs/文本，不能持久化模型副本里的 data URL。
+    assert raw["content"] == "刚来的图片"
+    assert raw["metadata"]["image_assets"] == [ref]
+
+
+@pytest.mark.asyncio
+async def test_pending_media_record_strips_disabled_image_refs(tmp_path):
+    pipeline = _make_pipeline(tmp_path)
+    pipeline.main_model_images_enabled = False
+    raw = {
+        "role": "user",
+        "content": "刚来的图片",
+        "conversation_id": "private:1",
+        "metadata": {
+            "messages": [{"message_id": "m1", "inbound_seq": 1}],
+            "image_assets": [
+                {
+                    "sha256": "a" * 64,
+                    "mime": "image/png",
+                    "width": 1,
+                    "height": 1,
+                    "byte_size": 1,
+                    "path": "incoming/images/old.png",
+                    "detail": "auto",
+                    "message_id": "m1",
+                    "index": 0,
+                    "transform_version": "pillow-first-frame-max2048-v2",
+                }
+            ],
+        },
+    }
+
+    projected = await MessagePipeline._project_pending_media_record(
+        pipeline, raw
+    )
+
+    assert projected["content"] == "刚来的图片"
+    assert "image_assets" not in projected["metadata"]
+    assert raw["metadata"]["image_assets"]
+
+
+@pytest.mark.asyncio
+async def test_pending_media_record_projects_video_for_model_only(tmp_path):
+    pipeline = _make_pipeline(tmp_path, videos=True)
+    video_ref = await _video_ref(tmp_path, pipeline)
+    raw = {
+        "role": "user",
+        "content": "刚来的视频",
+        "conversation_id": "private:1",
+        "metadata": {
+            "messages": [{"message_id": "m1", "inbound_seq": 1}],
+            "video_assets": [video_ref],
+        },
+    }
+
+    projected = await MessagePipeline._project_pending_media_record(
+        pipeline, raw
+    )
+
+    assert isinstance(projected["content"], list)
+    assert projected["content"][1]["text"].startswith("[视频所属消息")
+    assert projected["content"][2]["type"] == "video_url"
+    assert raw["content"] == "刚来的视频"
+    assert raw["metadata"]["video_assets"] == [video_ref]
+
+
+@pytest.mark.asyncio
+async def test_video_request_over_count_limit_is_rejected_before_provider(tmp_path):
+    pipeline = _make_pipeline(
+        tmp_path,
+        videos=True,
+        video_limits=VideoLimits(max_videos_per_request=1),
+    )
+    refs = [
+        await _video_ref(tmp_path, pipeline, index=0),
+        await _video_ref(tmp_path, pipeline, index=1),
+    ]
+    usage = pipeline._main_prompt_budget_usage(
+        _video_messages(refs),
+        None,
+        100_000,
+    )
+
+    code, message = pipeline._main_prompt_budget_failure(usage)
+    assert code == "video_request_count_exceeded"
+    assert message == "请求视频数量超过限制"
+    assert usage.video_count == 2
 
 
 @pytest.mark.asyncio

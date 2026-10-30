@@ -27,6 +27,17 @@ from utils.image_contracts import (
     MIN_IMAGE_TOKEN_RESERVE,
     ImageLimits,
 )
+from utils.video_contracts import (
+    DEFAULT_VIDEO_TOKEN_RESERVE,
+    MAX_ENCODED_VIDEO_BYTES,
+    MAX_VIDEO_BYTES,
+    MAX_VIDEO_REQUEST_BODY_BYTES,
+    MAX_VIDEO_TOKEN_RESERVE,
+    MAX_VIDEOS_PER_MESSAGE,
+    MAX_VIDEOS_PER_REQUEST,
+    MIN_VIDEO_TOKEN_RESERVE,
+    VideoLimits,
+)
 
 # ============================================================
 # 基础设施
@@ -272,6 +283,13 @@ class ProviderConfig(StrictModel):
     preset: str | None = None
     """内置预设名（providers/presets/{preset}/preset.yaml）。"""
 
+    model_vendor: str | None = None
+    """上游模型厂商，仅用于能力识别（gemini/anthropic/openai/...）。
+
+    自定义中转站没有 preset 时，用它查视觉/视频/上下文能力；留空则按模型 ID
+    前缀自动识别。它不会改变协议、Base URL 或请求格式。
+    """
+
     display_name: str | None = None
     """显示名。preset 模式下若留空则取 preset.yaml 的 display_name；自定义模式建议填。"""
 
@@ -303,6 +321,20 @@ class ProviderConfig(StrictModel):
     留空时：有 preset 则取 preset.yaml 的值；无 preset 取 ``none``。
     只有明确支持 ``reasoning_effort`` 的端点才应打开，避免向未知网关发送未知字段。
     """
+
+    @field_validator("model_vendor")
+    @classmethod
+    def _validate_model_vendor(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if not text:
+            return None
+        import re
+
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", text):
+            raise ValueError("模型厂商标识只能包含小写字母、数字、_、-")
+        return text
 
     @model_validator(mode="after")
     def validate_provider(self) -> ProviderConfig:
@@ -442,16 +474,79 @@ class ImageLimitsConfig(StrictModel):
         return ImageLimits(**self.model_dump())
 
 
+class VideoLimitsConfig(StrictModel):
+    """完整视频的资源护栏；默认值即硬上限，只允许向下收紧。"""
+
+    max_video_bytes: int = Field(
+        default=MAX_VIDEO_BYTES, strict=True, ge=1, le=MAX_VIDEO_BYTES
+    )
+    """单段视频原始文件字节上限。"""
+
+    max_videos_per_message: int = Field(
+        default=MAX_VIDEOS_PER_MESSAGE,
+        strict=True,
+        ge=1,
+        le=MAX_VIDEOS_PER_MESSAGE,
+    )
+    """每条入站消息最多视频数。"""
+
+    max_videos_per_request: int = Field(
+        default=MAX_VIDEOS_PER_REQUEST,
+        strict=True,
+        ge=1,
+        le=MAX_VIDEOS_PER_REQUEST,
+    )
+    """单次主模型请求最多视频数。"""
+
+    max_encoded_video_bytes: int = Field(
+        default=MAX_ENCODED_VIDEO_BYTES,
+        strict=True,
+        ge=1,
+        le=MAX_ENCODED_VIDEO_BYTES,
+    )
+    """单次请求视频 base64/data URL 编码总量上限。"""
+
+    max_request_body_bytes: int = Field(
+        default=MAX_VIDEO_REQUEST_BODY_BYTES,
+        strict=True,
+        ge=1,
+        le=MAX_VIDEO_REQUEST_BODY_BYTES,
+    )
+    """单次含视频请求的完整序列化体上限。"""
+
+    def to_video_limits(self) -> VideoLimits:
+        return VideoLimits(**self.model_dump())
+
+
 class VisionFeatureConfig(StrictModel):
-    """主模型原生图片输入与独立图像理解服务，两个开关互不影响。"""
+    """主模型原生图片/视频输入与独立图像理解服务，开关互不影响。"""
 
     main_model_images: Literal["auto", "on", "off"] = "auto"
     """auto = 仅已知 provider 预设/模型支持视觉时向主模型附图；
     on = 明确启用（适用于尚未收录的视觉模型）；off = 不向主模型附图。
     不会启用独立 VisionService，也不会更改已有的独立视觉配置。"""
 
+    gif_mode: Literal["native", "first_frame"] = "native"
+    """GIF 处理方式：native 保留完整动图并发送原始 GIF；first_frame 兼容旧行为。"""
+
+    main_model_videos: Literal["auto", "on", "off"] = "auto"
+    """auto = 仅已知 provider 预设/模型支持视频时向主模型发送完整视频；
+    on = 明确启用（适用于尚未收录的视频模型）；off = 不发送视频。
+    不支持的模型只看到 workspace 占位，不会静默抽帧降级。"""
+
     image_limits: ImageLimitsConfig = Field(default_factory=ImageLimitsConfig)
     """主模型图片资源护栏；默认值即硬上限，只能向下收紧。"""
+
+    video_limits: VideoLimitsConfig = Field(default_factory=VideoLimitsConfig)
+    """主模型完整视频资源护栏；默认值即硬上限，只能向下收紧。"""
+
+    video_token_reserve: int = Field(
+        default=DEFAULT_VIDEO_TOKEN_RESERVE,
+        strict=True,
+        ge=MIN_VIDEO_TOKEN_RESERVE,
+        le=MAX_VIDEO_TOKEN_RESERVE,
+    )
+    """每个视频的 token 预留量；是项目资源护栏，不是供应商精确账单。"""
 
     image_budget_profile: Literal["auto", "reserve_v1"] = "auto"
     """图片 token 预算策略；当前 auto 也使用显式 reserve_v1，不是官方计费公式。"""
@@ -790,6 +885,110 @@ class EmbeddingFeatureConfig(StrictModel):
     local_model_dir: str = ""
 
 
+class ContainerFeatureConfig(StrictModel):
+    """受控 Docker 容器工具。默认关闭；B 命名卷开箱即用，C 固定镜像为高级选项。"""
+
+    enabled: bool = False
+    """启用后 Runtime 构造容器服务，并只对启用的会话注入 container 工具。"""
+
+    storage_mode: Literal["image_fixed", "volume_soft"] = "volume_soft"
+    """volume_soft（B）= Docker 命名卷 + 软配额，免管理员、开箱即用；
+    image_fixed（C）= 固定大小文件系统镜像，硬上限，需要一次性管理员初始化。
+    C 未就绪时明确报错，不自动降级。"""
+
+    image: str = Field(default="python:3.12-slim", min_length=1, max_length=256)
+    """容器镜像；启用容器且 auto_pull_image=true 时，启动后台检查并拉取。"""
+
+    container_name: str = Field(default="karen-container", min_length=1, max_length=64)
+    """专用容器名；必须以 Karen 前缀命名空间避免冲突。"""
+
+    volume_name: str = Field(
+        default="karen-container-workspace", min_length=1, max_length=64
+    )
+    """B 模式命名卷；reset 不删除该卷。"""
+
+    workspace_size_mb: int = Field(default=2048, strict=True, ge=64, le=65536)
+    """C 镜像大小 / B 软配额（MiB）。扩容需重建镜像并迁移。"""
+
+    memory_mb: int = Field(default=512, strict=True, ge=64, le=16384)
+    """容器内存上限（MiB），memory-swap 与 memory 相同以禁用 swap。"""
+
+    cpus: float = Field(default=1.0, ge=0.1, le=16.0)
+    """CPU 配额。"""
+
+    pids_limit: int = Field(default=256, strict=True, ge=16, le=4096)
+    """pids-limit，防止 fork 炸弹。"""
+
+    file_size_mb: int = Field(default=64, strict=True, ge=1, le=4096)
+    """单文件上限（MiB），通过 ulimit fsize 与工具层双重限制。"""
+
+    exec_timeout_seconds: int = Field(default=120, strict=True, ge=1, le=1800)
+    """单次 exec 超时。"""
+
+    max_output_bytes: int = Field(
+        default=256 * 1024, strict=True, ge=1024, le=4 * 1024 * 1024
+    )
+    """单次 exec/read/list 输出字节上限；超出截断并标记。"""
+
+    network: Literal["none", "bridge"] = "none"
+    """默认无网络；bridge 需用户显式选择，存在外传风险。"""
+
+    idle_timeout_minutes: int = Field(default=30, strict=True, ge=0, le=1440)
+    """空闲多少分钟后停止容器；0 = 不自动停止。"""
+
+    auto_pull_image: bool = True
+    """镜像缺失时是否自动 docker pull。
+
+    只在容器功能已启用时发生；容器默认关闭，因此不会在普通启动时下载镜像。
+    """
+
+    image_mirror: str = Field(default="", max_length=256)
+    """Docker Hub 镜像加速前缀，例如 docker.m.daocloud.io。
+
+    留空直连 Docker Hub。只对官方 Docker Hub 镜像生效；拉取后仍会 tag 成配置里的
+    image 名称，容器参数不受影响。"""
+
+    image_fixed_mountpoint: str = Field(default="", max_length=1024)
+    """C 模式宿主机挂载点；留空使用数据目录下的 container/workspace。"""
+
+    image_fixed_image_path: str = Field(default="", max_length=1024)
+    """C 模式镜像文件路径；留空使用数据目录下的 workspace.ext4 / .vhdx。"""
+
+    @field_validator("container_name", "volume_name")
+    @classmethod
+    def _validate_docker_name(cls, value: str) -> str:
+        import re
+
+        value = str(value).strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", value):
+            raise ValueError("容器/卷名只能包含字母、数字、_、.、-，且不超过 63 字符")
+        if not value.lower().startswith("karen"):
+            raise ValueError("容器/卷名必须以 karen 开头，避免误操作其它容器")
+        return value
+
+    @field_validator("image")
+    @classmethod
+    def _validate_image(cls, value: str) -> str:
+        value = str(value).strip()
+        if not value or any(ch.isspace() for ch in value):
+            raise ValueError("容器镜像名不能为空或包含空白")
+        return value
+
+    @field_validator("image_mirror")
+    @classmethod
+    def _validate_image_mirror(cls, value: str) -> str:
+        text = str(value or "").strip().rstrip("/")
+        if "://" in text:
+            text = text.split("://", 1)[1].strip().rstrip("/")
+        if not text:
+            return ""
+        if any(ch.isspace() or ord(ch) < 32 for ch in text):
+            raise ValueError("镜像加速前缀不能包含空白或控制字符")
+        if text.startswith("-") or "@" in text:
+            raise ValueError("镜像加速前缀不能以 - 开头或包含账号信息")
+        return text
+
+
 class FeaturesConfig(StrictModel):
     vision: VisionFeatureConfig = Field(default_factory=VisionFeatureConfig)
     asr: ASRFeatureConfig = Field(default_factory=ASRFeatureConfig)
@@ -800,6 +999,7 @@ class FeaturesConfig(StrictModel):
     long_term_memory: LongTermMemoryConfig = Field(default_factory=LongTermMemoryConfig)
     slang: SlangFeatureConfig = Field(default_factory=SlangFeatureConfig)
     knowledge: KnowledgeFeatureConfig = Field(default_factory=KnowledgeFeatureConfig)
+    container: ContainerFeatureConfig = Field(default_factory=ContainerFeatureConfig)
 
 
 # ============================================================

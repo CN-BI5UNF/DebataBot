@@ -25,8 +25,12 @@ VISION_PATHS = (
     "features.vision.model",
     "features.vision.base_url",
     "features.vision.api_key_id",
+    "features.vision.gif_mode",
+    "features.vision.main_model_videos",
     "features.vision.image_token_reserve",
+    "features.vision.video_token_reserve",
     "features.vision.image_limits.max_images_per_request",
+    "features.vision.video_limits.max_videos_per_request",
 )
 
 

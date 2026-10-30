@@ -50,7 +50,9 @@ def test_send_private_schema_derivation():
     target_required = fn["parameters"]["properties"]["targets"]["items"]["required"]
     assert "emoji" in target_props
     assert "image" in target_props
+    assert "face" in target_props
     assert "不是表情包" in target_props["image"]["description"]
+    assert "QQ 原生表情" in target_props["face"]["description"]
     assert "delay" in target_required
     assert "最后一条也必须填写" in target_props["delay"]["description"]
     assert "1.5 个中文字/秒" in target_props["delay"]["description"]
@@ -315,6 +317,8 @@ def test_all_expected_tools_registered():
         # knowledge / web research / slang lookup tools
         "save_knowledge_note", "research_web_to_prompt",
         "list_knowledge_notes", "delete_knowledge_note", "lookup_slang",
+        # controlled Docker container
+        "container",
     }
     actual = {s.name for s in get_default_specs()}
     assert actual == expected, f"差异：{expected ^ actual}"

@@ -7,7 +7,7 @@
   <title>KarenBot 控制台</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <!-- 无构建步骤：用版本查询串让升级后的浏览器立即丢弃旧 CSS/入口模块。 -->
-  <link rel="stylesheet" href="/static/app.css?v=20261023-2">
+  <link rel="stylesheet" href="/static/app.css?v=20261030-1">
 </head>
 <body>
   <!-- 登录遮罩：需要令牌时先挡住整个界面 -->
@@ -35,8 +35,12 @@
   </div>
 
   <div id="shell" class="shell hidden">
-    <aside class="sidebar">
-      <div class="brand">KarenBot</div>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-text">KarenBot</span>
+        <button type="button" class="icon-btn sidebar-toggle" id="btn-sidebar"
+                title="折叠侧栏" aria-label="折叠侧栏"></button>
+      </div>
       <nav class="nav" id="nav"></nav>
       <div class="sidebar-foot">
         <div class="conn" id="side-conn">
@@ -68,6 +72,6 @@
   <!-- 版本占位：当前开发阶段不发布正式版本号，位置先留在右下角。 -->
   <div id="version-mark" class="version-mark hidden" aria-hidden="true"></div>
 
-  <script type="module" src="/static/js/app.js?v=20261023-2"></script>
+  <script type="module" src="/static/js/app.js?v=20261030-1"></script>
 </body>
 </html>

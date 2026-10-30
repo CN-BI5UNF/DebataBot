@@ -34,11 +34,12 @@ The project is named **KarenBot** after **Karen**, Plankton's robot girlfriend i
 - QQ / NapCat integration (private and group chats, send queue).
 - Long-term memory and archival without rewriting raw history.
 - Multi-turn tool loop: messaging, recall, memory, search, weather, wake-ups, sub-agents.
-- WebUI built with FastAPI and dependency-free static assets.
-- Multi-provider support: OpenAI, Anthropic, DeepSeek, GLM, Qwen, Gemini, OpenRouter, custom compatible endpoints.
-- Native and standalone vision paths.
+- WebUI built with FastAPI and dependency-free static assets; model configuration lives in Model Management, and the sidebar collapses to icons.
+- Multi-provider support: OpenAI, Anthropic, DeepSeek, GLM, Qwen, Gemini, OpenRouter, custom compatible endpoints; relays can declare a Gemini/Claude/OpenAI vendor for capability lookup.
+- Native vision paths for images, complete animated GIFs, and complete videos where the selected main model supports them; standalone vision remains available. Videos are sent as managed data URLs without frame extraction; unsupported models receive a workspace placeholder only.
 - On-demand knowledge and group-slang lookup, per-entry sharing, and deduplication.
-- LLM-managed emoji folder tools.
+- LLM-managed emoji folder tools plus native QQ face adaptation: inbound faces show Chinese names (e.g. `[流眼泪]` for `[表情5]`) and send tools accept face names.
+- Controlled Docker container: command execution, `/workspace` file tools, import/export; no network/privileges/non-root by default, with memory, CPU, pids, and storage limits. B named-volume soft quota is the default and needs no administrator; C fixed-size storage is an advanced hard limit. It supports Docker registry-mirror prefixes, one-click prepare/start, and background image pulls. First C-mode enable opens a Linux sudo-password dialog (stdin only, never stored) or a Windows UAC prompt. Windows includes a VHDX setup script (see [container docs](docs/container.md)).
 - Bounded summaries, CAS commits, media lifecycle, scoped deletion/recovery, transactional config writes.
 - In-app updates from GitHub Releases/tags; source-only updates do not overwrite data.
 
@@ -60,6 +61,8 @@ uv run python main.py
 ```
 
 The WebUI listens on `0.0.0.0:8000` by default. Use `--host 127.0.0.1` for local-only access. The terminal prints the WebUI token; the first launch opens the setup wizard.
+
+Normal launches check the base dependencies declared in `pyproject.toml` before importing the app. Missing or out-of-range packages are installed editable with the running interpreter (`uv pip install --python <interpreter> -e .`, falling back to pip). Optional extras and local-model dependencies are never installed implicitly. Set `KAREN_DISABLE_DEPENDENCY_CHECK=1` to skip the check or `KAREN_DISABLE_DEPENDENCY_INSTALL=1` to check without installing.
 
 For servers or SSH sessions:
 
@@ -88,7 +91,7 @@ uv sync
 uv run python main.py --host 127.0.0.1 --port 8000
 ```
 
-The Windows data directory defaults to `%LOCALAPPDATA%\KarenBot`. Docker, GIF/video input, and Windows service integration are planned for later phases.
+The Windows data directory defaults to `%LOCALAPPDATA%\KarenBot`. Docker Desktop containers are supported; the C-mode VHDX script still needs real-Windows validation, and Windows service integration is planned for a later phase. Complete GIF/video input is enabled only for main models verified in the capability table (currently Qwen3.6-Plus, Qwen3-VL, and OpenRouter Gemini).
 
 ## karen commands
 
@@ -154,7 +157,7 @@ CI runs Ubuntu/Windows × Python 3.11/3.12.
 ## Known limitations
 
 - Development snapshot: interfaces may change; production migration, restore drills, and launcher installation are not performed automatically.
-- Docker, GIF/video input, and routed toolsets are planned for later phases.
+- Routed toolsets are planned for a later phase; complete GIF/video input is limited to verified main models (currently Qwen3.6-Plus, Qwen3-VL, and OpenRouter Gemini). Docker C-mode storage requires a one-time administrator setup (Linux sudo-password dialog / Windows UAC), and the Windows VHDX script is pending real-machine validation.
 - The legacy data directory is used by default until an explicit migration.
 - Without a connected NapCat, QQ messages will not flow.
 

@@ -91,6 +91,33 @@ async def test_openai_sdk_receives_real_blocks_without_internal_fields():
     assert message == original
 
 
+def test_raw_prompt_dump_redacts_complete_gif_data_url():
+    gif_url = "data:image/gif;base64," + ("G" * 4096)
+    payload = _raw_prompt_dump_payload(
+        provider="fake",
+        kwargs={
+            "model": "fake-model",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "动图"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": gif_url, "detail": "auto"},
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    dumped = json.dumps(payload, ensure_ascii=False)
+
+    assert "G" * 128 not in dumped
+    assert "data:image/gif" not in dumped
+    assert "<image-data:mime=image/gif;sha256=" in dumped
+
+
 def test_raw_prompt_dump_redacts_images_and_does_not_mutate_kwargs():
     message = _message()
     original = json.loads(json.dumps(message))

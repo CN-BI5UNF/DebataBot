@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import getpass
 import json
 import os
@@ -81,6 +82,7 @@ COMMANDS = (
     "disable",
     "install",
     "uninstall",
+    "container",
     "help",
 )
 
@@ -96,6 +98,10 @@ HELP = """Karen 后台服务管理
   karen disable     取消开机自启
   karen install     只安装服务，不启动
   karen uninstall   卸载服务
+  karen container status|start|stop|reset|storage status
+                    受控 Docker 容器诊断/生命周期（不自动执行 sudo）
+  karen container storage setup [--yes]
+                    打印或执行 C 固定大小存储的一次性管理员安装命令
   karen help        显示本帮助
 
 说明:
@@ -728,6 +734,100 @@ def cmd_uninstall() -> int:
     return 0
 
 
+def _container_service() -> Any:
+    from app_config.loader import load_config
+    from app_config.paths import AppPaths
+    from features.container import ContainerService
+
+    paths = AppPaths()
+    cfg = load_config(paths, set_global=False)
+    return ContainerService(cfg.features.container, paths)
+
+
+def cmd_container(argv: list[str]) -> int:
+    """Container diagnostics/lifecycle. Never invokes sudo without --yes."""
+    args = list(argv)
+    if not args or args[0] in ("help", "-h", "--help"):
+        print(
+            "用法:\n"
+            "  karen container status\n"
+            "  karen container start\n"
+            "  karen container stop\n"
+            "  karen container reset --yes\n"
+            "  karen container storage status\n"
+            "  karen container storage setup [--yes]\n"
+        )
+        return 0
+    try:
+        service = _container_service()
+    except Exception as exc:  # noqa: BLE001
+        print(f"读取容器配置失败: {exc}")
+        return 1
+
+    action = args[0]
+    if action == "storage":
+        storage_action = args[1] if len(args) > 1 else "status"
+        if storage_action == "status":
+            print(
+                json.dumps(
+                    service.storage.status(include_host_paths=True).as_dict(),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            print()
+            print("C 模式安装/修复命令:")
+            print(service.storage.setup_commands()["command"])
+            return 0
+        if storage_action in {"setup", "repair"}:
+            if service.storage.mode != "image_fixed":
+                print("当前存储模式不是 image_fixed，无需执行 C 安装。")
+                return 1
+            payload = service.storage.setup_commands()
+            print(payload["note"])
+            print(payload["command"])
+            if "--yes" not in args:
+                print("\n未执行。确认后加 --yes 再运行。")
+                return 0
+            return subprocess.call(payload["argv"])
+        print(f"未知 storage 子命令: {storage_action}")
+        return 2
+
+    if action == "status":
+        try:
+            data = asyncio.run(service.status(public=False))
+        except Exception as exc:  # noqa: BLE001
+            print(f"读取容器状态失败: {exc}")
+            return 1
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return 0
+    if action == "start":
+        try:
+            asyncio.run(service.ensure_running())
+        except Exception as exc:  # noqa: BLE001
+            print(f"启动容器失败: {exc}")
+            return 1
+        print("容器已启动。")
+        return 0
+    if action == "stop":
+        asyncio.run(service.stop())
+        print("已请求停止容器。")
+        return 0
+    if action == "reset":
+        if "--yes" not in args:
+            print("reset 只重建容器、保留持久 workspace；确认后加 --yes。")
+            return 0
+        try:
+            asyncio.run(service.reset())
+        except Exception as exc:  # noqa: BLE001
+            print(f"重建容器失败: {exc}")
+            return 1
+        print("容器已重建；持久数据保留。")
+        return 0
+    print(f"未知 container 命令: {action}")
+    return 2
+
+
 _DISPATCH = {
     "start": cmd_start,
     "stop": cmd_stop,
@@ -753,6 +853,8 @@ def main(argv: list[str] | None = None) -> int:
         except (IndexError, ValueError):
             old_pid = 0
         return cmd_restart_helper(old_pid)
+    if command == "container":
+        return cmd_container(args[1:])
     handler = _DISPATCH.get(command)
     if handler is None:
         print(f"未知命令: {command}\n")

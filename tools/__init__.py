@@ -30,6 +30,7 @@ from dataclasses import replace
 # 导入各模块的副作用：注册装饰器把工具加入全局列表
 from . import (  # noqa: F401
     agent_task_tools,
+    container_tools,
     control_tools,
     emoji_tools,
     feature_tools,
@@ -140,6 +141,7 @@ FEATURE_TOOL_FEATURES: dict[str, str] = {
     "web_fetch": "web_search",
     "get_weather": "weather",
     "send_voice_message": "tts",
+    "container": "container",
 }
 """feature 工具名 → features 字典里的字段名。"""
 
@@ -197,6 +199,7 @@ COMPACT_SCHEMA_TOOLS: set[str] = {
     "lookup_slang",
     "list_knowledge_notes",
     "tool_search",
+    "container",
 }
 """compact profile 下直接暴露核心字段的工具。
 
@@ -394,12 +397,17 @@ def build_default_registry(config) -> ToolRegistry:
         getattr(getattr(config, "behavior", None), "tool_schema_profile", "compact")
         or "compact"
     )
+    container_enabled = bool(
+        getattr(getattr(features, "container", None), "enabled", False)
+    )
     enabled: list[ToolSpec] = []
     for spec in specs:
         if spec.name in _PERSONA_CONDITIONAL_TOOLS:
             mode_name, required_mode = _PERSONA_CONDITIONAL_TOOLS[spec.name]
             if not persona_enabled or persona_modes[mode_name] != required_mode:
                 continue
+        if spec.name == "container" and not container_enabled:
+            continue
 
         configured = spec
         if schema_profile == "full":
@@ -446,6 +454,7 @@ def build_default_registry(config) -> ToolRegistry:
         f"vision={features.vision.enabled}, "
         f"web_search={features.web_search.enabled}, "
         f"weather={features.weather.enabled}, "
+        f"container={container_enabled}, "
         f"persona_management={persona_enabled}, "
         f"energy_mode={energy_mode}, "
         f"satiety_mode={satiety_mode})"

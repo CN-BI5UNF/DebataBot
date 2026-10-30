@@ -764,6 +764,7 @@ class _AsyncSendManager:
             "audio_path": str(action.get("audio_path") or ""),
             "image_path": str(action.get("image_path") or ""),
             "image_url": str(action.get("image_url") or ""),
+            "face_id": str(action.get("face_id") or ""),
             "interrupt_policy": str(action.get("interrupt_policy") or "interrupt_all"),
         }
 
@@ -1017,7 +1018,7 @@ class _AsyncSendManager:
             return
         prefix = f"[CQ:reply,id={reply_to}]"
         for action in actions:
-            if action.get("kind", "text") != "text":
+            if action.get("kind", "text") not in {"text", "face"}:
                 continue
             content = str(action.get("content") or "")
             if content.startswith("[CQ:reply,"):
@@ -1334,6 +1335,12 @@ class _AsyncSendManager:
                 ),
                 image_url=str(action.get("image_url") or "") or None,
             )
+        elif kind == "face":
+            face_id = str(action.get("face_id") or "")
+            content = str(action.get("content") or "")
+            if not content and face_id:
+                content = f"[CQ:face,id={face_id}]"
+            msg_id = await self.pipeline.adapter.send_text(target, content)
         else:
             content = action.get("content") or ""
             msg_id = await self.pipeline.adapter.send_text(target, content)

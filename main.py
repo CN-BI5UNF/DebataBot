@@ -4,10 +4,11 @@
 原 PySide6 桌面端已移除，`ui/` 目录与 `gui` 依赖不再存在。
 
 启动顺序：
-    1. 解析命令行参数
-    2. 配置 logging（按 config.app.log_level）
-    3. 安装高性能事件循环（Linux/Mac 上用 uvloop）
-    4. 按模式分流：
+    1. 启动前依赖预检（缺失基础依赖时自动 uv/pip 安装）
+    2. 解析命令行参数
+    3. 配置 logging（按 config.app.log_level）
+    4. 安装高性能事件循环（Linux/Mac 上用 uvloop）
+    5. 按模式分流：
          - 默认        → WebUI（webui/server.py）
          - --no-gui    → 纯命令行 Runtime（无任何界面）
          - --setup 等  → CLI 配置向导 / 专项维护命令
@@ -26,8 +27,7 @@ from getpass import getpass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import main_cli as _main_cli
-from utils.proxy_env import sanitize_no_proxy_env
+from utils.startup_dependencies import run_startup_dependency_check
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ _SERVICE_COMMANDS = frozenset(
         "disable",
         "install",
         "uninstall",
+        "container",
         "help",
     }
 )
@@ -195,17 +196,30 @@ async def run_headless(project_root: Path, config_file: Path | None = None) -> N
 def main(argv: list[str] | None = None) -> None:
     """同步入口。"""
     raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if raw_argv and raw_argv[0] in _SERVICE_COMMANDS:
+    project_root = Path(__file__).resolve().parent
+
+    # 依赖预检必须发生在导入 app_config/core/webui 之前，否则缺包会直接变成
+    # ImportError，用户看不到安装机会。服务管理子命令（start/stop/container…）
+    # 有自己的轻量路径，不走这里；帮助命令也不需要装依赖。
+    is_service_command = bool(raw_argv and raw_argv[0] in _SERVICE_COMMANDS)
+    wants_help = any(arg in {"-h", "--help"} for arg in raw_argv)
+    dependency_result = None
+    if not is_service_command and not wants_help:
+        try:
+            dependency_result = run_startup_dependency_check(project_root)
+        except Exception as exc:  # noqa: BLE001 - 启动预检不能阻断主流程
+            logger.warning("启动依赖预检异常，继续启动：%s", exc)
+
+    if is_service_command:
         # 通过 .venv/bin/karen 启动时，sys.path[0] 是 .venv/bin；显式加入项目根，
         # 保证 service_cli 在源码运行和可编辑安装下都能导入。
-        project_root_text = str(Path(__file__).resolve().parent)
+        project_root_text = str(project_root)
         if project_root_text not in sys.path:
             sys.path.insert(0, project_root_text)
         from service_cli import main as service_main
 
         raise SystemExit(service_main(raw_argv))
     args = parse_args(raw_argv)
-    project_root = Path(__file__).resolve().parent
 
     from app_config import AppPaths, initialize_runtime_data
 
@@ -214,10 +228,30 @@ def main(argv: list[str] | None = None) -> None:
     paths.ensure_data_dirs()
     initialize_runtime_data(paths, project_root=project_root)
     setup_logging("INFO", project_root=project_root, logs_dir=paths.LOGS_DIR)
+    if dependency_result is not None:
+        if dependency_result.attempted and dependency_result.installed:
+            logger.warning(
+                "启动依赖已自动安装；若本次启动仍有模块缺失，请重启一次：%s",
+                ", ".join(dependency_result.missing_before),
+            )
+        elif dependency_result.attempted:
+            logger.error(
+                "启动依赖仍未满足：%s（%s）",
+                ", ".join(dependency_result.missing_after),
+                dependency_result.error or "未知错误",
+            )
+        elif dependency_result.skipped:
+            logger.info("启动依赖检查已跳过")
+        else:
+            logger.info(
+                "启动依赖检查通过（%d 项基础依赖）", dependency_result.requirements
+            )
     install_uvloop()
 
     # 清掉会让 httpx 客户端一构造就抛 InvalidURL 的 NO_PROXY 条目（如 [::1]）。
     # --no-gui 走 headless Runtime，不经过 webui.server.run_webui，所以这里也要做。
+    from utils.proxy_env import sanitize_no_proxy_env
+
     sanitize_no_proxy_env()
 
     # ---- 专项维护命令：做完就退，不启服务 ----
@@ -287,21 +321,29 @@ def _run_webui(
 
 
 def _sync_cli_io() -> None:
-    _main_cli.getpass = getpass
+    import main_cli
+
+    main_cli.getpass = getpass
 
 
 def _run_cli_wizard(paths) -> None:
     _sync_cli_io()
-    _main_cli._run_cli_wizard(paths)
+    import main_cli
+
+    main_cli._run_cli_wizard(paths)
 
 
 def _run_list_secrets(paths) -> None:
-    _main_cli._run_list_secrets(paths)
+    import main_cli
+
+    main_cli._run_list_secrets(paths)
 
 
 def _run_napcat_setup(paths) -> None:
     _sync_cli_io()
-    _main_cli._run_napcat_setup(paths)
+    import main_cli
+
+    main_cli._run_napcat_setup(paths)
 
 
 # ============================================================

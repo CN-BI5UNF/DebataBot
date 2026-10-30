@@ -69,10 +69,12 @@ registration_url: https://platform.myplatform.com
 
 ## 在 WebUI 里自助添加（不用写 preset.yaml）
 
-设置 →「模型」→「添加提供商」：
+模型管理 →「添加提供商」：
 
 - 选一个内置预设，或选「自定义 OpenAI / Anthropic 兼容端点」填 Base URL（中转站走这条）
 - 支持「测试连接」（真发一次最小请求）和「获取模型列表」（打 `{base_url}/models`）
+- 中转站可设置 `model_vendor`（gemini/anthropic/openai/...）或依赖模型 ID 自动识别；
+  它只用于能力表查询，不改变协议和地址
 - 每个 provider 可以单独覆盖 `reasoning_style`、`extra_headers`、`timeout_seconds`
 
 想让自己写的预设出现在下拉里，放进数据目录的 `providers/presets/<name>/preset.yaml`

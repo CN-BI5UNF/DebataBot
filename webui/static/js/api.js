@@ -206,6 +206,13 @@ export const endpoints = {
   uploadModel: (name, formData) =>
     api.upload(`/api/models/${encodeURIComponent(name)}/upload`, formData),
 
+  containerStatus: () => api.get('/api/container/status', { timeoutMs: 30000 }),
+  containerStorage: () => api.get('/api/container/storage', { timeoutMs: 30000 }),
+  containerStorageSetup: (payload = {}) =>
+    api.post('/api/container/storage/setup', payload, { timeoutMs: 330000 }),
+  containerTest: () => api.post('/api/container/test', {}, { timeoutMs: 660000 }),
+  containerReset: () => api.post('/api/container/reset', {}, { timeoutMs: 60000 }),
+
   settings: () => api.get('/api/settings'),
   patchSetting: (path, value) => api.patch('/api/settings', { path, value }),
   patchVision: (payload) => api.patch('/api/settings/vision', payload),
