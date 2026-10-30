@@ -40,7 +40,9 @@ async def test_ingest_preserves_complete_bytes_and_returns_valid_ref(tmp_path):
     )
     path = tmp_path / "workspace" / ref["path"]
     assert path.read_bytes() == source
-    assert os.stat(path).st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        # Windows reports synthesized mode bits and does not support POSIX 0600.
+        assert os.stat(path).st_mode & 0o777 == 0o600
 
 
 @pytest.mark.asyncio
